@@ -263,7 +263,7 @@ prose conventions.
 agent-specific locations.
 
 | Agent | Installed files | Native hooks installed? |
-|---|---|---|
+| --- | --- | --- |
 | Claude Code | `CLAUDE.md`, `.claude/settings.json`, `.claude/hooks/` | Yes |
 | Codex | `AGENTS.md`, `.codex/hooks.json`, `.codex/hooks/`, `.agents/skills/` | Yes, experimental |
 | Cursor | `AGENTS.md`, `.cursor/rules/agent-md.mdc` | No |

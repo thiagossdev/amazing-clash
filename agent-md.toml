@@ -1,0 +1,34 @@
+# agent-md.toml — explicit configuration for agent-md hooks.
+#
+# Copy to the repo root as `agent-md.toml` to override the heuristic
+# tool detection in .claude/hooks/* and .githooks/pre-commit. Anything
+# you leave unset falls back to the heuristic default.
+#
+# Values must be simple strings on a single line. `#` starts a comment.
+
+[verify]
+# Markdown lint (docs work) + GDScript format/lint, project-wide.
+# Uses npx --yes (no local Node project in this repo); npm caches the
+# package after the first run so subsequent invocations are fast.
+# The GDScript half is guarded: no .gd files exist yet (blueprint phase),
+# and gdformat/gdlint error out immediately if handed zero paths, so the
+# find result is checked for emptiness before invoking either tool.
+# addons/ (vendored GUT, pinned per addons/gut/versions.json) is excluded
+# from gdlint via .gdlintrc's excluded_directories, and from gdformat via
+# the -prune below since gdformat has no exclude config of its own.
+lint = "npx --yes markdownlint-cli2 && (GD=$(find . -path ./addons -prune -o -path ./.godot -prune -o -path ./.git -prune -o -name '*.gd' -print); [ -z "$GD" ] || (gdformat --check $GD && gdlint .))"
+
+# Per-file lint used by post-edit-verify (fast, runs after every Write/Edit).
+# The string {file} is substituted with the edited file path.
+# GDScript files (.gd) are handled separately, hardcoded in
+# post-edit-verify.sh, since this string only fits one tool per file
+# extension and markdownlint-cli2 doesn't apply to .gd.
+lint_file = "npx --yes markdownlint-cli2 {file}"
+
+# GUT (Godot Unit Test), vendored at addons/gut/, pinned per
+# addons/gut/versions.json. .gutconfig.json at the project root points
+# GUT at tests/unit/. No type-checker exists for GDScript.
+test = "godot4 --headless -s addons/gut/gut_cmdln.gd"
+
+[visual]
+# required = false
