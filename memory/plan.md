@@ -79,8 +79,7 @@ phase independently playable/demoable even if the next never lands):
    selector — size is emergent from how players are placed), ready-
    check, host-only Start. Replaces `PlayerSpawner`'s automatic
    `index % N` class/team cycling with explicit per-peer assignment.
-   **Not started** — scope designed via `/think` 2026-09-03, see
-   Slice 8 below.
+   **Done** — see Slice 8 below.
 9. Perk selection inside Room Config: 1 perk per player from a small
    fixed pool (same pool for every class), visible live to the rest of
    the room, applied as a flat stat multiplier at spawn (no
@@ -522,18 +521,88 @@ to scoped roadmap phases, not new post-MVP scope).
   - Double-clicking "Join" while a previous attempt is still pending
     isn't guarded against — an untested edge case, not a known bug.
 
-### Slices 8-10 (Room Config / Perks / LAN Discovery) — designed via `/think` 2026-09-03, NOT STARTED
+### Slice 8 (Phase 8): Room Config — mode, friendly fire, manual teams, ready, Start — DONE
+
+- **Scope built exactly as designed** (no deviation): host-only mode
+  dropdown (Team/FFA) and friendly-fire checkbox in `ui/lobby/`
+  (evolved from Phase 7's minimal waiting room, not a competing new
+  screen); manual per-player team assignment via a per-row "Switch
+  Team" button (host-only, Team mode only) rather than 2 drag-target
+  columns — same outcome ("host can move any player between teams,
+  visible to everyone"), far less UI machinery; a ready checkbox per
+  non-host player; a host-only Start button. No numeric team-size
+  selector, as planned — size is just how many players ended up in
+  each team.
+- **`net/lobby_state.gd` grew in place** (not a parallel registry, as
+  planned): `player_team_ids`, `player_ready`, `room_match_mode`,
+  `room_friendly_fire` added alongside the existing `player_class_ids`;
+  the old `registry_changed` signal/`_rpc_receive_registry` RPC were
+  renamed to `room_state_changed`/`_rpc_receive_room_state` to match
+  what the node now actually holds (one full-state broadcast, not
+  delta, same reasoning as Phase 7's class registry). `perk_id` is
+  deliberately not added yet — that's Slice 9's job.
+- **`PlayerSpawner._resolve_team_id()`**: Team mode now prefers a
+  peer's manually-assigned `LobbyState` team, falling back to the
+  original `index % 2` for an unregistered (headless
+  `dev_bootstrap.gd`) peer, mirroring Phase 7's own class-registry
+  fallback pattern exactly. FFA is untouched.
+- **2 real bugs found by `/check` and fixed before merge** (not
+  theoretical — see `memory/gotchas.md` 2026-09-03 for both):
+  1. `MatchState.match_mode` was never replicated to clients, only
+     ever implicitly agreeing across peers because every process used
+     to derive it from the same static `dev_bootstrap.gd` CLI flag
+     before anyone connected. Room Config broke that hidden
+     assumption (only the host's own copy got set when Start was
+     pressed). Fixed by carrying `mode` explicitly through
+     `enter_loading()`/`enter_in_progress()`/`enter_post_game()` and
+     their RPCs, including the existing late-joiner catch-up path.
+     Confirmed live: a client's own local `match_mode` now matches an
+     FFA match the host chose (previously stuck at the `TEAM`
+     default).
+  2. The new manual "Switch Team" control let every connected peer
+     land on the same team, permanently soft-locking a Team-mode match
+     (`WinCondition`'s `teams_ever_present >= 2` guard never resolves
+     a winner otherwise — the match hangs in `IN_PROGRESS` forever).
+     New `LobbyState.has_valid_team_split()` (pure, GUT-tested) blocks
+     Start in that configuration; trivially true under 2 players, so
+     it never blocks the pre-existing solo-host testing convenience.
+  3. (Test-harness only) `--dev-switch-team=<id>` assumed a small,
+     predictable ENet peer id; ids are effectively random 32-bit
+     values. Changed to `--dev-switch-team` (no id): polls for the
+     first registered non-host peer and flips it, same bounded-wait
+     shape the existing autostart hook already uses.
+- **Tests**: 9 new GUT tests in `test_lobby_state.gd` (team/ready pure
+  logic, `has_valid_team_split()`) — 86 total project-wide (was 77).
+- **Verify**: 3 real 2-process live scenarios (temporary `FileAccess`
+  trace instrumentation, removed before the final commit): default
+  team alternation + a host-issued manual switch (both peers correctly
+  ended on the same team); Start correctly disabled while a non-host
+  peer isn't ready, enabled once it is; host-chosen FFA mode +
+  friendly-fire both reaching the real match and the real spawn. A
+  4th live run specifically re-confirmed the `match_mode`-replication
+  fix on the client's own process (not just the host's). See
+  `memory/verify.md`'s Phase 8 section for the full trace evidence.
+  `has_valid_team_split()`'s integration into the Start button's
+  gating was verified by code inspection + its own GUT coverage, not a
+  fresh live run — simple enough host-side boolean wiring on top of
+  already-tested pure logic that a 5th live cycle wasn't worth the
+  time, unlike the `match_mode` fix, which specifically needed a real
+  2nd process to prove (a client's own local state, not observable
+  from the host's side at all).
+- **Known gaps, deferred on purpose**: same visual-verification gap as
+  every prior UI-adjacent phase (still no way to screenshot Godot's
+  real renderer in this environment). The disabled Start button gives
+  the host no explanation of *why* it's disabled (not-ready vs.
+  invalid team split) — a label/tooltip would be a small, cheap
+  follow-up, not done here since it wasn't asked for and doesn't block
+  correctness.
+
+### Slices 9-10 (Perks / LAN Discovery) — designed via `/think` 2026-09-03, NOT STARTED
 
 Confirmed by the human owner (unchanged from the original design pass;
-Slice 7 above is now built exactly consistent with these):
+Slice 8 above already grew `net/lobby_state.gd` in the shape these
+expect):
 
-- New server-authoritative `net/lobby_state.gd` (built in Slice 7)
-  should grow `team_id`/`perk_id`/`ready` fields for these slices,
-  rather than a new parallel registry.
-- Team size gets **no numeric selector** — it's emergent from how many
-  players the host places in each team column in Room Config. This is
-  what satisfies the already-confirmed "team size configurable, 2v2
-  through 5v5" decision without new UI surface.
 - **Perks**: 1 per player, picked in Room Config, visible live to the
   room. Flat stat multiplier only (`gameplay/perks/perk_resource.gd`:
   `max_health_multiplier`, `move_speed_multiplier`,
@@ -542,13 +611,15 @@ Slice 7 above is now built exactly consistent with these):
   every class (`data/perks/`): Vitality (+15% max health), Swift (+10%
   move speed), Adept (-10% all ability cooldowns), Balanced (+7% max
   health, +5% move speed) — starting values, not final balance.
+  `LobbyState` grows a `player_perk_ids` field alongside `player_team_
+  ids`/`player_ready`, same broadcast shape.
 - **LAN discovery** (Slice 10): UDP broadcast beacon/listener, isolated
   from the ENet gameplay connection entirely. Flagged, not resolved:
   broadcast reliability inside this dev environment's WSL2→LAN path is
   unverified; Slice 10 must degrade to Slice 7's manual-IP join if it
   doesn't work, not block the rest.
-- Same visual-verification gap as Slice 7 above applies to Slices 8-9
-  as well (Room Config and the perk picker are both real UI screens).
+- Same visual-verification gap as Slices 7-8 above applies to Slice 9
+  as well (the perk picker is a real UI screen).
 
 ## MVP Status
 

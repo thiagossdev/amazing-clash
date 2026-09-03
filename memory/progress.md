@@ -275,6 +275,35 @@ changed but this file wasn't updated.
   `memory/plan.md`'s Slice 7 block for full evidence and deferred
   items (visual verification still has no solution in this project,
   same gap as every prior UI-adjacent phase).
+- [x] **Phase 8 (Room Config: mode, friendly fire, manual teams,
+  ready, Start) implemented and tactically verified**: evolves Phase
+  7's minimal `ui/lobby/` waiting room into the full Room Config
+  screen -- host-only mode dropdown (Team/FFA) and friendly-fire
+  checkbox, a per-row "Switch Team" button (Team mode only, host-only),
+  a ready checkbox per non-host player, host-only Start gated on
+  `LobbyState.all_non_host_ready()`. `net/lobby_state.gd` grew
+  `player_team_ids`/`player_ready`/`room_match_mode`/`room_friendly_
+  fire` in place (its `registry_changed` signal renamed to `room_state_
+  changed` to match); `PlayerSpawner._resolve_team_id()` now prefers a
+  peer's manually-assigned team, falling back to the original
+  `index % 2` for unregistered (headless) peers. `/check` found and
+  fixed 2 real bugs before merge (see `memory/gotchas.md`
+  2026-09-03): `MatchState.match_mode` wasn't replicated to clients
+  (a client's own MatchHud would show Team-mode text/banners during an
+  actual FFA match -- fixed by carrying `mode` through
+  `enter_loading()`/`enter_in_progress()`/`enter_post_game()` and their
+  RPCs, confirmed live on the client's own process); and manual team
+  assignment could soft-lock a Team-mode match by putting every peer
+  on one team (`WinCondition` never resolves a winner with <2 teams
+  ever populated) -- fixed with new `LobbyState.has_valid_team_split()`
+  gating Start. 9 new GUT tests (86 total project-wide); 4 real
+  2-process live scenarios confirmed default team alternation, a
+  host-issued manual switch, ready-gating on Start, host-chosen
+  FFA+friendly-fire reaching the real match, and the match_mode fix
+  specifically on the client's own process. See `memory/verify.md`'s
+  Phase 8 section and `memory/plan.md`'s Slice 8 block for full
+  evidence and deferred items (same visual-verification gap as every
+  prior UI phase; the disabled Start button doesn't yet explain why).
 
 ## Backlog (next up)
 
@@ -297,11 +326,15 @@ changed but this file wasn't updated.
   which also sketches a suggested implementation shape (short rolling
   position-history buffer keyed by server tick, bounded compensation
   window).
-- [ ] Generalize `PlayerSpawner`'s team assignment/spawn points beyond
-  the current fixed `index % 2` (2v2-only) split, now that team size
-  is confirmed to be configurable (2v2/3v3/4v4/5v5) — needs a match
-  config value for team count/size plus generalized spawn-point
-  layout, not decided this session.
+- [x] ~~Generalize `PlayerSpawner`'s team assignment~~ — resolved by
+  Phase 8: the host manually places any number of connected players on
+  either team in Room Config, which already covers every confirmed
+  team size (2v2 through 5v5, all 2-sided). Spawn *positions* still
+  only have 4 hardcoded points (`SPAWN_POSITIONS`), cycled for a 5th+
+  peer rather than laid out properly for a real 5v5 — a cosmetic gap,
+  not a correctness one (friendly fire/win condition are unaffected by
+  spawn distance, per Phase 5's own note), left as a follow-up if a
+  5v5 is actually played, not invented here.
 - [ ] Decide how many ability slots a real class kit should have (R/F/T
   are reserved in the InputMap but unwired on all 3 classes) — a
   content/balance decision for whenever the roster grows past 3.
@@ -309,12 +342,15 @@ changed but this file wasn't updated.
   state to remote `INTERPOLATED` peers — the snapshot RPC is at a
   practical parameter-count limit; likely needs a packed-int
   restructure before a 4th+ ability slot makes this worse.
-- [ ] Phases 8-10 (Room Config: mode/friendly-fire/manual team
-  assignment/ready-check; 1 perk per player, visible to the room;
-  LAN room discovery) — scope already designed via `/think`
-  2026-09-03, see `memory/plan.md`'s "Slices 8-10" section. Phase 7
-  (Main Menu/Character Select/Host-Join/Lobby) is done; this is what's
-  left of the original combined "lobby" ask.
+- [ ] Phases 9-10 (1 perk per player, visible to the room; LAN room
+  discovery) — scope already designed via `/think` 2026-09-03, see
+  `memory/plan.md`'s "Slices 9-10" section. Phases 7-8 (Main
+  Menu/Character Select/Host-Join/Lobby/Room Config) are done; this is
+  what's left of the original combined "lobby" ask.
+- [ ] Give the Room Config Start button an explanation of why it's
+  disabled (not-ready vs. invalid team split) — a small UX follow-up
+  from Phase 8, not done there since it wasn't asked for and doesn't
+  affect correctness.
 - [ ] A real reconnect/grace-period system — a mid-match disconnect
   currently resolves as an immediate forfeit for that team/player
   (Phase 5's elimination mechanism, generalized to N teams in Phase 6),

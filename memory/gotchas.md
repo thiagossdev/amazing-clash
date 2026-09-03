@@ -140,6 +140,62 @@ Format:
   same process's* own connection to complete, not on a sibling
   process's independent progress.
 
+- **2026-09-03** — Phase 8's live 2-process test used
+  `--dev-switch-team=<id>`, assuming a connecting client would get a
+  small, predictable ENet peer id (like the descriptive "peer 2" used
+  in earlier phases' verification prose). It got id `1625438661` --
+  ENet peer ids are effectively random 32-bit values, not sequential
+  small ints. The flag silently targeted a peer that didn't exist (a
+  harmless no-op registration), so the "manual team switch" it was
+  supposed to prove never actually happened, and the test's own log
+  looked identical whether the feature worked or not -- no error, no
+  crash, just a passing-looking run that proved nothing. → **Rule**:
+  never assume a headless dev-test flag can target a remote peer by a
+  literal numeric id; poll for "the first/only currently-registered
+  non-host peer" instead (see `ui/lobby/lobby.gd`'s
+  `_await_and_switch_first_client_team()`). Only the LOCAL peer's own
+  id/input is safe to hardcode a flag around (see every existing
+  `--simulate-*` flag in `net/dev_bootstrap.gd`, which only ever
+  affects that same process's own character).
+
+- **2026-09-03** — `/check` on the Phase 8 diff found `MatchState.
+  match_mode` was never replicated to clients, even though Room Config
+  (this phase) now lets the host choose it dynamically after clients
+  have already connected. Before this phase, `match_mode` was only
+  ever set via `net/dev_bootstrap.gd`'s `--free-for-all` flag, read
+  identically by both processes before either one connected -- so
+  every peer's own copy happened to already agree, masking that
+  nothing was actually keeping them in sync. Phase 8's Room Config
+  broke that hidden assumption: only the *server's* `MatchState.
+  match_mode` got set when the host pressed Start, so every non-host
+  client's `MatchHud` would silently render Team-mode text/banners
+  during an actual FFA match. → **Rule**: a field that "happens to
+  agree across peers" because every process independently derives it
+  from the same static input (a CLI flag, a hardcoded default) is not
+  actually replicated -- the moment one peer can change that value at
+  runtime (a UI control, a host decision), it needs an explicit RPC,
+  not an assumption that the old bootstrapping coincidence still
+  holds. Re-audit every "read-only, server-only" doc comment on a
+  shared field when the thing that used to set it identically
+  everywhere gets a live UI control instead.
+
+- **2026-09-03** — Also from `/check`: the new host-only "Switch Team"
+  control in Room Config had no guard against moving every connected
+  peer onto the same team. `gameplay/match/win_condition.gd`'s
+  `teams_ever_present >= 2` guard (added Phase 5, generalized Phase 6)
+  never resolves NONE/DRAW/a winner with only 1 team ever populated --
+  a match started that way hangs in `IN_PROGRESS` forever, undetected
+  by anything (no error, no crash, just a match that never ends).
+  Before Phase 8, automatic `index % 2` team assignment made this
+  configuration structurally impossible with 2+ players; manual
+  assignment removed that implicit safety net without anything
+  replacing it. → **Rule**: when replacing an automatic invariant
+  (here: "team assignment always produces >=2 populated teams") with a
+  manual control, explicitly check whether anything downstream was
+  silently relying on that invariant holding -- it usually is, and the
+  fix is almost always cheaper before shipping (one pure validation
+  function, `LobbyState.has_valid_team_split()`) than after.
+
 <!--
 Examples:
 
