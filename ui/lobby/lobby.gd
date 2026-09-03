@@ -54,9 +54,8 @@ func _on_friendly_fire_toggled(value: bool) -> void:
 
 
 func _on_start_pressed() -> void:
-	MatchState.match_mode = LobbyState.room_match_mode as MatchState.MatchMode
 	MatchState.friendly_fire_enabled = LobbyState.room_friendly_fire
-	MatchState.enter_loading()
+	MatchState.enter_loading(LobbyState.room_match_mode as MatchState.MatchMode)
 
 
 ## LOADING (not IN_PROGRESS) is the scene-change trigger -- every peer
@@ -83,7 +82,10 @@ func _refresh_room_ui() -> void:
 	for peer_id in LobbyState.player_class_ids:
 		_player_list_container.add_child(_build_player_row(peer_id, local_id, team_mode))
 
-	_start_button.disabled = not LobbyState.all_non_host_ready(local_id)
+	var team_split_ok := (not team_mode) or LobbyState.has_valid_team_split()
+	_start_button.disabled = (
+		not LobbyState.all_non_host_ready(_host_peer_id()) or not team_split_ok
+	)
 
 
 func _build_player_row(peer_id: int, local_id: int, team_mode: bool) -> HBoxContainer:

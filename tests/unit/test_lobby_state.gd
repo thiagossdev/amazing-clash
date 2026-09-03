@@ -91,3 +91,26 @@ func test_all_non_host_ready_true_once_every_non_host_peer_reports() -> void:
 	lobby.player_ready[3] = true
 	assert_true(lobby.all_non_host_ready(1))
 	lobby.free()
+
+
+func test_has_valid_team_split_true_with_fewer_than_2_players() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby.player_team_ids[1] = 0
+	assert_true(lobby.has_valid_team_split())
+	lobby.free()
+
+
+func test_has_valid_team_split_false_when_everyone_is_on_one_team() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby.player_team_ids[1] = 0
+	lobby.player_team_ids[2] = 0
+	assert_false(lobby.has_valid_team_split())
+	lobby.free()
+
+
+func test_has_valid_team_split_true_when_2_teams_have_members() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby.player_team_ids[1] = 0
+	lobby.player_team_ids[2] = 1
+	assert_true(lobby.has_valid_team_split())
+	lobby.free()

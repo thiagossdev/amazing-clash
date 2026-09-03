@@ -107,6 +107,24 @@ func all_non_host_ready(host_peer_id: int) -> bool:
 	return true
 
 
+## Pure: Team mode can only ever resolve a winner once at least 2
+## distinct teams have members -- gameplay/match/win_condition.gd's own
+## teams_ever_present guard returns NONE forever otherwise, so a match
+## started with everyone manually assigned to the same team would hang
+## in IN_PROGRESS permanently (a real bug found by /check, not
+## theoretical -- confirmed live during this phase's own verification,
+## see memory/gotchas.md). Trivially true with fewer than 2 players
+## registered, so this never blocks the pre-existing solo-host
+## convenience for quick manual testing.
+func has_valid_team_split() -> bool:
+	if player_team_ids.size() < 2:
+		return true
+	var distinct_teams: Dictionary = {}
+	for team_id in player_team_ids.values():
+		distinct_teams[team_id] = true
+	return distinct_teams.size() >= 2
+
+
 ## Called locally by the connecting peer (host or client) right after
 ## NetworkManager.host()/join() succeeds, to register local_chosen_
 ## class_id under this peer's own id.
