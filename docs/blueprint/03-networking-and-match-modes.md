@@ -38,16 +38,30 @@ RECONNECTION: full (non-delta) snapshot resync.
 
 **Why not Rollback**: same reasoning as `amazing-nauts` — Godot doesn't
 guarantee the bit-perfect determinism rollback needs, and resimulation
-cost scales with live entity count. Unlike `amazing-nauts`' continuous
-droid waves, this project's entity count per match is small and
-fixed (one fighter per player, plus their active abilities/projectiles)
-— worth re-examining as a real option once the MVP's actual entity
-count and match length are known, but not assumed here; see
-[5. Open Questions](05-open-questions.md).
+cost scales with live entity count. **Confirmed by the human owner
+(2026-09-03): staying server-authoritative, not moving to rollback.**
+This is grounded in dedicated research, not just the inherited
+reasoning above — see
+[docs/research/networking-architecture-inspiration/](../research/networking-architecture-inspiration/README.md),
+which found this project's own named live-PvP precedent, Battlerite,
+uses this identical model (developer-authored confirmation, not just a
+design-level lesson), and that rollback and a real dedicated-server
+authority are close to structurally incompatible regardless of entity
+count. See [5. Open Questions](05-open-questions.md) for the resolved
+entry.
 
 **Why not P2P**: identical reasoning to `amazing-nauts` — client-side
 damage authority is the most basic cheat vector there is, incompatible
 with a fair, competitive PvP game.
+
+**Known gap**: the lag-compensation piece described above ("rewinds
+hurtboxes to the timestamp the attacker actually saw") is architecture
+intent, not yet implemented — `HitDetection` currently resolves hits
+against each character's live server-tick position only, with no
+position-history buffer or timestamp rewind. See
+[docs/research/networking-architecture-inspiration/04-synthesis-amazingclash.md](../research/networking-architecture-inspiration/04-synthesis-amazingclash.md)
+for a suggested implementation shape and `memory/progress.md` for the
+tracked backlog item.
 
 ## Combat Architecture: Also Inherited
 

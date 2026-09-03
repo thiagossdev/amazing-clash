@@ -70,9 +70,34 @@ phase independently playable/demoable even if the next never lands):
 6. 3rd class (support/control archetype) + free-for-all mode —
    completes `docs/blueprint/04-mvp-scope.md`'s MVP criteria. **Done**
    — see Slice 6 below.
+7. Main Menu + offline character select (no duplicate-class check) +
+   direct-IP host/join, replacing `dev_bootstrap.gd`'s flag-only entry
+   point with a real UI flow (dev_bootstrap itself stays, unchanged,
+   for headless testing). **Not started** — scope designed via `/think`
+   2026-09-03, see Slice 7 below.
+8. Room Config screen: game-mode select (Team/FFA), friendly-fire
+   toggle, manual per-player team assignment (no numeric team-size
+   selector — size is emergent from how players are placed), ready-
+   check, host-only Start. Replaces `PlayerSpawner`'s automatic
+   `index % N` class/team cycling with explicit per-peer assignment.
+   **Not started** — scope designed via `/think` 2026-09-03, see
+   Slice 8 below.
+9. Perk selection inside Room Config: 1 perk per player from a small
+   fixed pool (same pool for every class), visible live to the rest of
+   the room, applied as a flat stat multiplier at spawn (no
+   `DamagePipeline`/`HitDefinition` changes). **Not started** — scope
+   designed via `/think` 2026-09-03, see Slice 9 below.
+10. LAN room discovery: UDP broadcast beacon (host) + listener
+    (client), surfaced as a live room list on Slice 7's Join screen,
+    manual-IP fallback always available. Isolated as its own slice
+    because of real environment risk (WSL2 → LAN broadcast reliability
+    is unverified). **Not started** — scope designed via `/think`
+    2026-09-03, see Slice 10 below.
 
 Post-MVP backlog: `docs/blueprint/06-post-mvp-backlog.md`, not started
-until Phase 6 ships.
+until Phase 6 ships (still true for the backlog itself; Phases 7-10
+above are pre-existing `memory/progress.md` backlog items now promoted
+to scoped roadmap phases, not new post-MVP scope).
 
 ## Vertical Slices
 
@@ -410,6 +435,75 @@ until Phase 6 ships.
   late-joiner catch-up path, confirmed still correct here). See
   `memory/verify.md`'s Phase 6 section for full evidence.
 
+### Slices 7-10 (Lobby / Character-Select / Room-Config / Perks / LAN Discovery) — designed via `/think` 2026-09-03, NOT STARTED
+
+Full design lives in this session's `/think` transcript; the durable
+summary below is what the `ship-phase` skill (`.claude/skills/ship-
+phase/SKILL.md`) reads before re-deriving each slice's plan from
+scratch. Confirmed by the human owner:
+
+- **Flow order** (deliberately different from `docs/blueprint/03`'s
+  original Lobby→CharacterSelect ordering): Main Menu → Character
+  Select (**local, pre-connection, no duplicate-class check** — two
+  players may pick the same class) → Host (direct IP) or Join (direct
+  IP in Slice 7; LAN room list added in Slice 10) → Room Config (mode,
+  friendly fire, manual team placement, perk pick, ready) → in-game.
+- `MatchState.Phase` simplifies from `{LOBBY, CHARACTER_SELECT,
+  LOADING, IN_PROGRESS, POST_GAME}` to `{LOBBY, LOADING, IN_PROGRESS,
+  POST_GAME}` — `LOBBY` now means "connected, in Room Config."
+  `CHARACTER_SELECT` is dropped (genuinely unused: character pick is
+  local/pre-connection now). **`LOADING` is kept, reconsidered
+  2026-09-03** — not for asset-streaming UI (this project has none),
+  but as a real sync barrier: this codebase already hit the exact bug
+  class it prevents once before (`net/dev_bootstrap.gd`'s own comment
+  documents `PlayerSpawner._ready()` racing `host()/join()` and
+  producing an "authority RPC not allowed" engine error). The Room
+  Config → in-game scene change has the identical risk across peers,
+  now that it's a real `change_scene_to_file` transition instead of
+  today's single main-scene load: each peer changes scene locally,
+  reports "loaded" to the server via RPC once its own `TestArena.tscn`
+  (and therefore `PlayerSpawner`) exists, and the server only calls
+  `enter_in_progress()` once every currently-connected peer has
+  reported in — same "wait for everyone" bookkeeping shape Room
+  Config's own ready-check (Slice 8) already needs, reused rather than
+  invented twice. No progress bar, no percentage, no asset list — just
+  the barrier.
+- `net/dev_bootstrap.gd` is **not touched** — headless flag-driven
+  testing for all of Phases 1-6 keeps working unchanged; the new UI is
+  an additive path into the same `NetworkManager`/`PlayerSpawner`.
+- New server-authoritative `net/lobby_state.gd`: `Dictionary` keyed by
+  `peer_id` holding `{class_id, team_id, perk_id, ready}` per
+  connected player, broadcast to all peers (same RPC pattern as
+  `MatchState.team_alive_counts`) so Room Config is visible to
+  everyone, not just the host. `PlayerSpawner` reads this instead of
+  auto-cycling `index % N`.
+- Team size gets **no numeric selector** — it's emergent from how many
+  players the host places in each team column in Room Config. This is
+  what satisfies the already-confirmed "team size configurable, 2v2
+  through 5v5" decision without new UI surface.
+- **Perks**: 1 per player, picked in Room Config, visible live to the
+  room. Flat stat multiplier only (`gameplay/perks/perk_resource.gd`:
+  `max_health_multiplier`, `move_speed_multiplier`,
+  `cooldown_multiplier`), applied once at spawn — zero changes to
+  `DamagePipeline`/`HitDefinition`. One shared pool of 4, same for
+  every class (`data/perks/`): Vitality (+15% max health), Swift (+10%
+  move speed), Adept (-10% all ability cooldowns), Balanced (+7% max
+  health, +5% move speed) — starting values, not final balance.
+- **LAN discovery** (Slice 10): UDP broadcast beacon/listener, isolated
+  from the ENet gameplay connection entirely. Flagged, not resolved:
+  broadcast reliability inside this dev environment's WSL2→LAN path is
+  unverified; Slice 10 must degrade to Slice 7's manual-IP join if it
+  doesn't work, not block the rest.
+- **Visual verification gap, inherited from Phases 1-6, still
+  unsolved**: this project has never had a way to screenshot Godot's
+  actual renderer (`memory/verify.md` flags this explicitly at every
+  UI-adjacent phase so far — `playwright-capture.sh` is web-only and
+  doesn't apply here). Slices 7-9 add the project's first real menu
+  screens with no established way to visually confirm them beyond
+  live headless functional testing + code reading. Carry the same
+  explicit-gap convention forward; do not claim a screenshot check
+  that didn't happen.
+
 ## MVP Status
 
 All 6 roadmap phases (`memory/plan.md`'s own roadmap above, confirmed
@@ -471,8 +565,18 @@ human owner to confirm before that gap is closed.
 
 ## Open Questions
 
-Tracked in full at `docs/blueprint/05-open-questions.md`. Still open:
-team size beyond 2v2, loadout cadence, persistent-tree size/gating,
-setting/tone, monetization. Resolved this session: presentation is 2D
-top-down (see above); friendly-fire toggle scope (Phase 5 — gates all
-damage, since no splash/AoE ability type exists to distinguish).
+Tracked in full at `docs/blueprint/05-open-questions.md`. Still
+genuinely open: **monetization** (deliberately deferred, not decided).
+Resolved this session (2026-09-03): presentation is 2D top-down;
+friendly-fire toggle scope (gates all damage, since no splash/AoE
+ability type exists to distinguish); team size is **configurable, 2v2
+through 5v5** (not fixed at 2v2 — generalizing `PlayerSpawner`'s
+current fixed `index % 2` split is a backlog item, see
+`memory/progress.md`); rollback netcode — **confirmed staying
+server-authoritative**, grounded in deeper research (see
+`docs/research/networking-architecture-inspiration/`); loadout cadence
+— **confirmed adjustable between rounds/rematches** (Battlerite
+Rites-style), which needs a "round" concept this project doesn't have
+yet (backlog item); persistent build-layer — **confirmed small in
+scope, per-character, currency-gated** (not PoE2 scale) (backlog item);
+setting/tone — **confirmed medieval fantasy, Eslabong-style**.

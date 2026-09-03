@@ -235,19 +235,41 @@ changed but this file wasn't updated.
   the generalized N-team model. See `memory/verify.md`'s Phase 6
   section and `memory/plan.md`'s Slice 6 block for full evidence and
   deferred items.
+- [x] Designed Slices 7-10 (lobby → character-select → room-config →
+  perks → LAN discovery) via `/think` (2026-09-03) — see
+  `memory/plan.md`'s new "Slices 7-10" section for the full decided
+  scope. Wrote `.claude/skills/ship-phase/SKILL.md`, a reusable skill
+  generalizing this project's existing per-phase pattern (branch →
+  implement in waves → verify → `/check` → `git merge --no-ff` →
+  document), so future phases (these 4 and beyond) can run the same
+  way, including unattended via `/loop`.
 
 ## Backlog (next up)
 
-- [ ] Review `docs/blueprint/05-open-questions.md` with the human owner
-  — still genuinely open: team size beyond 2v2, persistent-tree
-  size/gating, loadout cadence, rollback reconsideration, setting/tone.
-  Friendly-fire toggle scope (Phase 5) and presentation (2D top-down)
-  are resolved. The build-depth split in
-  `docs/research/poe2-build-depth-inspiration/05-synthesis-amazingclash.md`
-  is the single highest-priority item to confirm — it's what the
-  fuller MVP proposal in `docs/blueprint/04-mvp-scope.md` still needs
-  beyond the roadmap's own now-complete 6 phases (see
-  `memory/plan.md`'s "MVP Status").
+- [ ] `docs/blueprint/05-open-questions.md` is now fully resolved except
+  **monetization**, deliberately deferred (2026-09-03) — revisit once
+  the core loop is proven fun, not before. All other items (presentation,
+  friendly-fire scope, team size, rollback netcode, loadout cadence,
+  persistent build-layer scope, setting/tone) are confirmed — see
+  `docs/blueprint/05-open-questions.md` and `memory/plan.md`'s "Open
+  Questions" section for the decisions and their backlog follow-ups
+  below.
+- [ ] Implement real lag compensation in `HitDetection` (rewind
+  hurtboxes to the timestamp the attacker actually saw, per
+  `docs/blueprint/03-networking-and-match-modes.md`'s intended
+  architecture) — confirmed not yet implemented (no position-history
+  buffer or timestamp rewind exists in `gameplay/combat/` or `net/`
+  today; hits resolve against each character's live server-tick
+  position only). Concrete gap surfaced by
+  `docs/research/networking-architecture-inspiration/04-synthesis-amazingclash.md`,
+  which also sketches a suggested implementation shape (short rolling
+  position-history buffer keyed by server tick, bounded compensation
+  window).
+- [ ] Generalize `PlayerSpawner`'s team assignment/spawn points beyond
+  the current fixed `index % 2` (2v2-only) split, now that team size
+  is confirmed to be configurable (2v2/3v3/4v4/5v5) — needs a match
+  config value for team count/size plus generalized spawn-point
+  layout, not decided this session.
 - [ ] Decide how many ability slots a real class kit should have (R/F/T
   are reserved in the InputMap but unwired on all 3 classes) — a
   content/balance decision for whenever the roster grows past 3.
@@ -265,11 +287,20 @@ changed but this file wasn't updated.
   (Phase 5's elimination mechanism, generalized to N teams in Phase 6),
   matching "online matches should not pause," but the docs' own
   "Reconnect" sub-state is unbuilt.
-- [ ] The full persistent build-investment layer (unlocks, node tree,
-  respec economy) and a minimal pre-match loadout draft — the single
-  biggest gap between "roadmap done" (this session) and the fuller MVP
-  proposal in `docs/blueprint/04-mvp-scope.md`. Blocked on the
-  build-depth-split confirmation above.
+- [ ] The persistent build-investment layer (unlocks, respec economy)
+  and a minimal pre-match loadout draft — now scoped by the confirmed
+  decision (2026-09-03): **small, per-character, currency-gated** (not
+  PoE2's ~1,500-node scale). Still the single biggest gap between
+  "roadmap done" (this session) and the fuller MVP proposal in
+  `docs/blueprint/04-mvp-scope.md`, but no longer blocked on the
+  build-depth-split question — that's resolved.
+- [ ] A "round" structure for matches — needed to support the confirmed
+  loadout cadence decision (2026-09-03: loadout is adjustable between
+  rounds/rematches, Battlerite Rites-style). Matches currently run once
+  to a single win condition (Phase 5/6, `WinCondition`/`MatchRules`)
+  with no concept of consecutive rounds within one match/session; this
+  is new structural work, not a small addition to the existing win
+  condition.
 
 ## Blocked
 

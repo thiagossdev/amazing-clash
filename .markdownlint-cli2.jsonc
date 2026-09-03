@@ -6,5 +6,5 @@
     "MD033": false
   },
   "globs": ["**/*.md"],
-  "ignores": [".git/**", ".godot/**", "node_modules/**"]
+  "ignores": [".git/**", ".godot/**", "node_modules/**", ".claude/worktrees/**"]
 }

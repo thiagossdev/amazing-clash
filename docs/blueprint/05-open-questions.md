@@ -19,54 +19,60 @@ detail lives:
 - Live PvP with an **authoritative server**, following `amazing-nauts`:
   **confirmed**.
 - **Team mode and free-for-all mode**, both supported: **confirmed**.
-- **Friendly fire is a per-match toggle**: **confirmed** as a concept;
-  exact scope is still open, see below.
+- **Friendly fire is a per-match toggle**: **confirmed**, and its scope
+  is now also confirmed (2026-09-03): it gates **all damage** between
+  teammates, not just area/splash abilities. This is also the only
+  mechanically possible reading today, since no AoE/splash ability type
+  exists in this codebase (`docs/blueprint/03-networking-and-match-modes.md`'s
+  `friendly_fire_enabled` gate already implements this).
+- **Team size**: **confirmed** (2026-09-03) as **configurable, not
+  fixed at 2v2** — the mode must support 2v2, 3v3, 4v4, and 5v5.
+  Implemented today only as the fixed `index % 2` split (Phase 5/6);
+  generalizing spawn points, HUD, and match-start gating to an
+  arbitrary, chosen team size is tracked as a backlog item (see
+  `memory/progress.md`).
+- **Loadout cadence**: **confirmed** (2026-09-03) as **adjustable
+  between rounds/rematches**, Battlerite Rites-style, not locked for
+  the whole match. This requires a "round" concept this project does
+  not have yet (current matches run once to a single win condition,
+  Phase 5/6) — building that structure is tracked as a backlog item
+  (see `memory/progress.md`).
+- **Persistent build-layer size and gating**: **confirmed** (2026-09-03)
+  as **small in scope, per-character, and currency-gated** — explicitly
+  not PoE2's ~1,500-node scale. Design/implementation of this layer is
+  tracked as a backlog item (see `memory/progress.md`); the account-
+  level vs. per-champion split in
+  [research/poe2-build-depth-inspiration/05](../research/poe2-build-depth-inspiration/05-synthesis-amazingclash.md)
+  is now resolved toward per-character.
+- **Setting and tone**: **confirmed** (2026-09-03) as **medieval
+  fantasy, Eslabong-style** — the working reference in
+  [docs/research/eslabong-inspiration/](../research/eslabong-inspiration/)
+  is now the settled direction, not just a placeholder.
+- **Monetization**: **deliberately deferred** (2026-09-03), not decided
+  now — see Still open below for the reasoning that still applies.
+- **2D or 3D presentation**: **confirmed 2D top-down** (2026-09-02,
+  per `memory/plan.md`) — the `3d/physics_engine="Jolt Physics"` line
+  in `project.godot` was Godot project-creation template leftover, not
+  a deliberate choice, and was removed in Phase 1. This bullet was
+  never synced back to this file when that was confirmed; correcting
+  the drift now rather than leaving it listed as open.
+- **Rollback netcode, reconsidered**: **confirmed** (2026-09-03) —
+  staying server-authoritative, not moving to rollback. Grounded in
+  dedicated research (not just the inherited `amazing-nauts` reasoning
+  in [3](03-networking-and-match-modes.md)): this project's own named
+  live-PvP precedent, Battlerite, was confirmed via a primary
+  developer source to use this identical model, and rollback was found
+  to be close to structurally incompatible with having a real
+  dedicated-server authority at all, independent of entity count — see
+  [docs/research/networking-architecture-inspiration/](../research/networking-architecture-inspiration/README.md).
+  One real gap the research surfaced: lag compensation (rewinding
+  hurtboxes to the attacker's observed timestamp) is described in
+  [3](03-networking-and-match-modes.md) as intended architecture but is
+  not yet implemented — tracked as a backlog item in
+  `memory/progress.md`.
 
 ## Still open
 
-- **2D or 3D presentation.** `project.godot` sets
-  `3d/physics_engine="Jolt Physics"`, but that could be a Godot
-  project-creation default rather than a deliberate choice, the same
-  ambiguity `amazing-dungeons` flagged and later resolved explicitly
-  (see
-  [amazing-dungeons/docs/blueprint/01](../../../amazing-dungeons/docs/blueprint/01-executive-summary.md)).
-  Eslabong itself is top-down 2D pixel art (per its Steam tags);
-  Battlerite is fixed-camera 3D. Needs an explicit answer, not an
-  inherited default.
-- **Friendly-fire toggle scope.** Does it gate all damage between
-  teammates, or only area/splash abilities (the specific interaction
-  Eslabong's own AI already reasons about, per
-  [research/eslabong-inspiration/01](../research/eslabong-inspiration/01-arena-combat-and-club-management-loop.md))?
-  What is the default per mode?
-- **Team size.** [4. MVP Scope](04-mvp-scope.md) proposes 2v2 as a
-  starting point; not confirmed. Battlerite shipped both 2v2 and 3v3
-  (per
-  [research/eslabong-inspiration/04](../research/eslabong-inspiration/04-a-precedent-for-live-pvp-battlerite.md));
-  which size (or whether to support more than one) is open.
-- **Persistent build-layer size and gating.** Node/tree size for the
-  account-level layer proposed in
-  [research/poe2-build-depth-inspiration/05](../research/poe2-build-depth-inspiration/05-synthesis-amazingclash.md)
-  is undetermined; PoE2's own ~1,500 nodes is explicitly not assumed to
-  transfer. Whether unlocks are time-gated, currency-gated, both, or
-  account-wide vs. per-champion is also undecided.
-- **Loadout cadence.** Whether the pre-match loadout is locked for the
-  whole match, or adjustable between rounds/rematches within a session
-  (closer to Battlerite's per-round Rites) — see
-  [research/poe2-build-depth-inspiration/05](../research/poe2-build-depth-inspiration/05-synthesis-amazingclash.md)
-  for why this is not a small detail: it changes how "opponent-legible"
-  the build layer actually is mid-session.
-- **Rollback netcode, reconsidered.** [3](03-networking-and-match-modes.md)
-  inherits `amazing-nauts`' server-authoritative reasoning, but notes
-  this project's per-match entity count (one fighter per player plus
-  active abilities) is much smaller and more bounded than
-  `amazing-nauts`' continuous-droid-wave scenario, the specific
-  condition that made rollback a poor fit there. Worth an explicit
-  revisit once real entity counts and target match length are known,
-  rather than assuming the inherited answer transfers unexamined.
-- **Setting and tone.** Eslabong's medieval fantasy is this blueprint's
-  working reference, not a locked decision — no research or owner
-  conversation has settled this the way `amazing-dungeons` settled its
-  post-apocalyptic-salvage setting and comic tone.
 - **Monetization**, noted for later per Battlerite's own cautionary
   history (Bloodline Champions' free-to-play champion-gating actively
   shrank an already content-thin game and drove early quits, per

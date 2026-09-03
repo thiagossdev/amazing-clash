@@ -16,7 +16,11 @@
 # addons/ (vendored GUT, pinned per addons/gut/versions.json) is excluded
 # from gdlint via .gdlintrc's excluded_directories, and from gdformat via
 # the -prune below since gdformat has no exclude config of its own.
-lint = "npx --yes markdownlint-cli2 && (GD=$(find . -path ./addons -prune -o -path ./.godot -prune -o -path ./.git -prune -o -name '*.gd' -print); [ -z "$GD" ] || (gdformat --check $GD && gdlint .))"
+# .claude/worktrees/ holds full nested checkouts (including their own
+# addons/gut/) created by Agent tool calls with isolation: "worktree" --
+# pruned the same way, or gdformat tries to reformat vendored GUT files
+# living inside a subagent's in-progress worktree.
+lint = "npx --yes markdownlint-cli2 && (GD=$(find . -path ./addons -prune -o -path ./.godot -prune -o -path ./.git -prune -o -path ./.claude/worktrees -prune -o -name '*.gd' -print); [ -z "$GD" ] || (gdformat --check $GD && gdlint .))"
 
 # Per-file lint used by post-edit-verify (fast, runs after every Write/Edit).
 # The string {file} is substituted with the edited file path.
