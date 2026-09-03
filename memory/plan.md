@@ -91,6 +91,26 @@ phase independently playable/demoable even if the next never lands):
     because of real environment risk (WSL2 → LAN broadcast reliability
     was unverified going in). **Done** — see Slice 10 below. The
     roadmap's original Slices 7-10 ("lobby") ask is now fully complete.
+11. Lag compensation in `HitDetection`: a short per-character
+    position-history buffer (server-only), so a hit resolves against
+    where the defender was at the attacker's estimated one-way-latency
+    timestamp (from `NetworkManager.get_peer_rtt_ms()`), not their
+    live current position, bounded to a max compensation window.
+    Closes the gap `docs/research/networking-architecture-inspiration/`
+    flagged. **Not started** — scope below.
+12. Spawn layout generalized beyond the 4 hardcoded `SPAWN_POSITIONS`
+    points to a computed `(team_id, index_within_team, team_count)`
+    layout, so a real 5v5 (or any confirmed team-size combination)
+    gets a sane arrangement instead of cycling through 4 points.
+    **Not started** — scope below.
+13. Reconnect/grace-period system: a mid-match disconnect freezes the
+    character in place (vulnerable, not invulnerable -- disconnecting
+    has a real cost) for 30s instead of an immediate forfeit; a
+    reconnect within that window is authenticated by a per-player
+    secret token (issued once, held in the client's own memory, not
+    IP-matched) and resumes the same character under the new peer_id.
+    Expiring the window falls back to today's behavior (forfeit via
+    despawn). **Not started** — scope below.
 
 Post-MVP backlog: `docs/blueprint/06-post-mvp-backlog.md`, not started
 until Phase 6 ships (still true for the backlog itself; Phases 7-10
@@ -737,6 +757,76 @@ to scoped roadmap phases, not new post-MVP scope).
   naming UI exists (not asked for) -- rooms are listed by IP and
   player count only.
 - Same visual-verification gap as Slices 7-9 above.
+
+### Slice 11 (Lag Compensation) — NOT STARTED
+
+Confirmed by the human owner 2026-09-03 (no real fork of approach --
+the single reasonable shape, already researched in
+`docs/research/networking-architecture-inspiration/`):
+
+- Server-only, per-character position-history ring buffer (~20 ticks,
+  ~333ms @60Hz), appended every `_physics_step_authoritative` tick.
+- `HitDetection` gains a pure lookup function: given a history buffer
+  and a target tick, return the position at-or-before that tick (GUT-
+  testable without a live character/network).
+- `CombatResolver._resolve_melee`/`_resolve_projectile_hit` resolve
+  against the defender's *compensated* position (rewound by the
+  attacker's estimated one-way latency, `NetworkManager.
+  get_peer_rtt_ms(attacker_peer_id) / 2`, converted to a tick count),
+  not `defender.global_position` live -- bounded to a max compensation
+  window (~200ms / 12 ticks) so a very high-latency attacker can't
+  reach arbitrarily far into the past.
+- No client-visible change: this only affects what the server accepts
+  as a hit, not movement/prediction.
+
+### Slice 12 (Spawn Layout Generalization) — NOT STARTED
+
+Confirmed by the human owner 2026-09-03 (mechanical, no real fork):
+
+- `net/player_spawner.gd`'s hardcoded 4-point `SPAWN_POSITIONS`
+  replaced by a computed layout: teams distributed around the arena
+  center (600, 400; interior roughly 1200x800 per `TestArena.tscn`'s
+  wall placement), each team's members placed in a short row 60 units
+  apart (unchanged spacing convention from Phase 5). Must correctly
+  handle every already-confirmed team-size combination (2v2 through
+  5v5) and free-for-all (each player is their own team, per
+  `MatchState.MatchMode.FREE_FOR_ALL`).
+- No behavior change to team assignment itself (`_resolve_team_id()`)
+  or class assignment -- purely a spawn-position calculation swap.
+
+### Slice 13 (Reconnect / Grace-Period) — NOT STARTED
+
+Confirmed by the human owner 2026-09-03 (3 real forks resolved):
+
+- **Identity across a peer_id change**: a per-player secret token,
+  issued once (at `LobbyState` registration / Room Config time) and
+  held only in that client's own memory (lost on a full quit, not
+  IP-matched) -- not a persistent account system, scoped to "the same
+  running client instance reconnecting after a network drop."
+- **Vulnerability during the grace period**: the disconnected
+  character freezes in place but stays **vulnerable** -- disconnecting
+  has a real cost, it is not a safe refuge. Same freeze mechanism
+  `apply_lock()`-adjacent code already uses for hitstop/elimination.
+- **Grace period**: 30 seconds. Expiring it without a matching
+  reconnect falls back to today's behavior exactly (`PlayerSpawner.
+  _despawn_for_peer()`, read by `MatchRules` as that team's alive
+  count dropping, per its own already-correct `_ever_present_teams`
+  logic -- unchanged).
+- `core/match_state.gd` gains the `Reconnect` sub-state the original
+  blueprint (`docs/blueprint/03-networking-and-match-modes.md`)
+  described but never built, now finally motivated by a real
+  mechanism instead of a placeholder enum value.
+- `PlayerSpawner` no longer despawns immediately on `peer_disconnected`
+  -- it starts a 30s grace timer for that peer's character instead,
+  despawning only if it elapses unclaimed. A reconnecting peer
+  presents its token via a new RPC before/during Host-Join; if it
+  matches an active grace-period slot, that character is rebound to
+  the new peer_id (name change + control handoff) instead of a fresh
+  spawn through the normal Room Config flow.
+- `MatchHud`/Room Config need some minimal "player X disconnected,
+  reconnecting..." indicator -- exact presentation not specified
+  further than that it must exist, implementation detail for the
+  phase itself to decide.
 
 ## MVP Status
 
