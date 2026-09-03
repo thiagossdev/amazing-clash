@@ -4,30 +4,48 @@ extends Node
 ## a MultiplayerSpawner-watched container, so every peer sees the same
 ## characters replicated automatically. The server also spawns a
 ## character for itself (peer_connected never fires for your own id).
-## Phase 1 has no persistent per-peer state (no health/team yet), so a
-## disconnect just despawns the character and a (re)connecting peer
-## (a new peer id -- Godot never reuses one) simply gets a fresh one;
-## no reconnect-state bookkeeping is needed at this scope. Pattern
-## inherited from amazing-nauts' net/player_spawner.gd, scoped down.
-## See docs/blueprint/03-networking-and-match-modes.md.
+## A disconnect despawns the character; PlayerSpawner does not track
+## which peer_id previously held which team/class, so a (re)connecting
+## peer (a new peer id -- Godot never reuses one) is assigned fresh,
+## not restored to a prior slot -- a real reconnect system is out of
+## scope, see memory/plan.md. Pattern inherited from amazing-nauts'
+## net/player_spawner.gd, scoped down. See
+## docs/blueprint/03-networking-and-match-modes.md.
 ##
 ## Phase 4: alternates the 2 real classes by connection order (same
 ## array-cycling pattern SPAWN_POSITIONS already uses below) -- no
-## lobby/character-select exists yet (that's Phase 5's job), so this is
-## the simplest thing that lets both classes exist and fight each other
-## in a live match today, without requiring Phase 5 to land first.
+## lobby/character-select exists yet, so this is the simplest thing
+## that lets both classes fight each other in a live match. Phase 5:
+## also assigns team = index % 2 for 2v2 team mode, same connection-
+## order auto-assignment, no lobby/character-select UI exists yet to
+## pick team or class explicitly (deferred, see memory/plan.md).
 const CLASS_SCENES: Array[PackedScene] = [
 	preload("res://gameplay/characters/vanguard/Vanguard.tscn"),
 	preload("res://gameplay/characters/ranged_mage/RangedMage.tscn"),
 ]
 
-## Distinct points, clear of the 4 wall colliders in TestArena.tscn and
-## far enough apart that two characters never spawn overlapping (a
-## degenerate case where a melee hitbox and hurtbox can share an exact
-## boundary with no true intersection -- found live, see
-## memory/gotchas.md). Cycles for a 3rd+ peer rather than erroring; a
-## real spawn-point system per match mode is a later phase's concern.
-const SPAWN_POSITIONS: Array[Vector2] = [Vector2(570, 400), Vector2(630, 400)]
+## 4 points (2v2's default team size): team 0 clusters on the left,
+## team 1 clusters on the right -- index parity matches
+## _spawn_for_peer's own `team = index % 2`, so index 0/2 (team 0) land
+## near x=300 and index 1/3 (team 1) near x=900. Teammates are placed
+## side by side, 60 units apart on the same y (the same spacing and
+## axis Phase 2a already verified live puts a melee hitbox in reach of
+## the other, since LocomotionFsm's default facing_direction is
+## Vector2.RIGHT -- a vertical offset wouldn't be in a default-facing
+## melee swing's path). The 2nd-spawned member of each team (index 2/3)
+## is placed at a LOWER x than the 1st (index 0/1) -- with no move
+## input yet, a fresh spawn faces right by default, so this is what
+## puts the 1st member within the 2nd's default-facing melee reach
+## (confirmed live: a 3rd peer's un-aimed --simulate-attack lands on
+## peer 1 exactly when this ordering holds, misses when it doesn't).
+## Clear of the 4 wall colliders in TestArena.tscn, and never spawn
+## exactly overlapping (a degenerate case where a melee hitbox and
+## hurtbox can share an exact boundary with no true intersection --
+## found live, see memory/gotchas.md). Cycles for a 5th+ peer rather
+## than erroring; free-for-all's own spawn layout is Phase 6's concern.
+const SPAWN_POSITIONS: Array[Vector2] = [
+	Vector2(360, 400), Vector2(960, 400), Vector2(300, 400), Vector2(900, 400)
+]
 
 @export var characters_path: NodePath = ^"../Characters"
 
@@ -52,6 +70,7 @@ func _spawn_for_peer(peer_id: int, characters: Node) -> void:
 	var character := class_scene.instantiate()
 	character.name = str(peer_id)
 	character.position = SPAWN_POSITIONS[_next_spawn_index % SPAWN_POSITIONS.size()]
+	character.team = _next_spawn_index % 2
 	_next_spawn_index += 1
 	characters.add_child(character)
 

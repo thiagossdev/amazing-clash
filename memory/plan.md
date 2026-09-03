@@ -16,8 +16,10 @@ skeleton — done and tactically verified 2026-09-02** (see
 (Ability Framework) — done and tactically verified 2026-09-03** (see
 `memory/verify.md`'s Phase 3 section). **Phase 4 (first 2 real
 classes) — done and tactically verified 2026-09-03** (see
-`memory/verify.md`'s Phase 4 section). **Phase 5 (match modes) is
-next.** Full design is in
+`memory/verify.md`'s Phase 4 section). **Phase 5 (match modes) — done
+and tactically verified 2026-09-03** (see `memory/verify.md`'s Phase 5
+section). **Phase 6 (3rd class + free-for-all) is next.** Full design
+is in
 `docs/blueprint/` (start at
 `docs/blueprint/README.md`), grounded in
 `docs/research/eslabong-inspiration/` and
@@ -60,9 +62,9 @@ phase independently playable/demoable even if the next never lands):
 4. First 2 real classes (melee + ranged skillshot archetypes) replace
    the placeholder character. **Done** — see Slice 4 below.
 5. Match modes: team mode (2v2 default), friendly-fire toggle, win
-   condition, minimal lobby/HUD/match flow. **Next.**
+   condition, minimal lobby/HUD/match flow. **Done** — see Slice 5 below.
 6. 3rd class (support/control archetype) + free-for-all mode —
-   completes `docs/blueprint/04-mvp-scope.md`'s MVP criteria.
+   completes `docs/blueprint/04-mvp-scope.md`'s MVP criteria. **Next.**
 
 Post-MVP backlog: `docs/blueprint/06-post-mvp-backlog.md`, not started
 until Phase 6 ships.
@@ -264,6 +266,85 @@ until Phase 6 ships.
   Strike (15) all landed with their exact authored damage values,
   server-authoritatively. See `memory/verify.md`'s Phase 4 section.
 
+### Slice 5 (Phase 5): 2v2 team mode, friendly fire, elimination win condition, minimal HUD — DONE
+
+- **Team assignment**: `PlayerSpawner` assigns `team = index % 2`
+  (unchanged class-cycling formula alongside it, so the already-
+  verified 2-player case is untouched in spirit -- server and the
+  first client still land on different teams). `SPAWN_POSITIONS` grew
+  from 2 to 4 points: team 0 clusters near x=300, team 1 near x=900,
+  teammates 60 units apart on the same y (the 2nd-spawned teammate at
+  a *lower* x than the 1st, so a fresh spawn's default rightward
+  facing reaches the 1st teammate -- confirmed live, see Verify below).
+  Accepted, documented side effect: the base 2-peer test's 2 characters
+  (different teams) now start 600 units apart instead of adjacent,
+  since enemy teams cluster on opposite sides -- intentional for a
+  real 2v2 layout, not a regression (the underlying hit-resolution
+  code is unchanged and independently reconfirmed by the friendly-fire
+  test below).
+- **Friendly fire**: `MatchState.friendly_fire_enabled` (default
+  `false`), read every tick by `CombatResolver`'s 2 hit-resolution
+  loops (`_resolve_melee`, `_resolve_projectile_hit`) -- a same-team
+  hit is skipped unless the flag is true. Decided as a per-match
+  server-startup setting (new `net/dev_bootstrap.gd` `--friendly-fire`
+  flag), not a live-togglable console command -- who's allowed to
+  change a match rule mid-game is a separate authority question, not
+  opened here. Resolves `docs/blueprint/05-open-questions.md`'s
+  "does the toggle gate all damage or only splash?" question by
+  necessity: no splash/AoE ability type exists in this codebase at
+  all, so "all damage" is the only mechanically possible reading right
+  now.
+- **Elimination**: `CharacterController` freezes in place (both
+  server-authoritatively and on the owning client, so a dead local
+  player doesn't see their own input "work" only to be snapped back)
+  once `current_health <= 0`. `CombatResolver._resolve_attacker` also
+  refuses to let an eliminated character land a hit.
+- **Win condition**: new `gameplay/match/win_condition.gd`
+  (`WinCondition`, a pure `RefCounted` static function, unit-tested the
+  same way `ActionFsm`/`HitDetection` are) determines NONE/DRAW/a team
+  index from each team's alive count and whether both teams have ever
+  been observed present (guards against a false "team lost" reading
+  during the brief startup window before both teams' first players
+  have even connected). New `gameplay/match/match_rules.gd`
+  (`MatchRules`, server-only, wired as `TestArena`'s new last child
+  after `CombatResolver`) is the thin Node orchestrator: counts each
+  team's alive members every tick, calls `WinCondition.determine()`,
+  and calls `MatchState.enter_post_game()` on a result. A mid-match
+  disconnect of a team's last member resolves as a loss for that team
+  (the same "alive count dropped to 0" mechanism as an elimination) --
+  intentional, not accidental; a real reconnect/grace-period system is
+  out of scope (see Deferred below).
+- **Match-state client visibility**: `MatchState` previously never
+  reached clients at all (`enter_in_progress()` set a local var with no
+  RPC, and nothing client-side read `current_phase` before this phase)
+  -- a real, previously-latent gap this phase had to fix to make the
+  HUD possible. Both phase-transition methods now broadcast via
+  `@rpc`, and a peer connecting after a transition already fired is
+  caught up in a new `_on_peer_connected()` handler (mirroring
+  `PlayerSpawner`'s own "catch up a late joiner" pattern). New
+  `EventBus.team_status_changed` signal + `MatchState.
+  team_alive_counts`/`winning_team` are the only client-visible match
+  data -- individual characters' `team` assignment is deliberately
+  never replicated (server-only, read by `CombatResolver`/`MatchRules`
+  alone), keeping the new replication surface to one small aggregate,
+  matching the docs' own "Event Bus restricted to ownerless events"
+  convention.
+- **HUD**: new `ui/hud/match_hud.gd` (a `CanvasLayer`, wired inline in
+  `TestArena.tscn` like `NetworkStatsOverlay`, no separate `.tscn`)
+  shows live team-alive counts and a "TEAM X WINS"/"DRAW" banner on
+  `POST_GAME`, reading only `MatchState`'s new aggregate fields.
+- **Tests**: `tests/unit/test_win_condition.gd` (5 tests, pure logic)
+  — 65 total (was 60).
+- **Verify**: live 2-process test confirmed the full elimination →
+  win-condition → RPC broadcast chain reaches the client (`--simulate-
+  self-eliminate`, a new permanent dev-testing flag that zeroes a
+  peer's own health directly, bypassing hit geometry, so this chain is
+  testable deterministically); a live 3-process test confirmed the
+  friendly-fire gate correctly blocks a same-team hit by default and
+  allows it with `--friendly-fire` (same geometry, only the flag
+  differs, ruling out a false-positive from a missed/out-of-range
+  attack). See `memory/verify.md`'s Phase 5 section for full evidence.
+
 ## Deferred / Out of Scope
 
 - Matchmaking/dedicated-server infrastructure — Phase 1 targets direct
@@ -276,9 +357,16 @@ until Phase 6 ships.
   free-for-all mode. Only 2 classes exist after Phase 4 (Vanguard,
   Ranged Mage), both damage-dealer archetypes; no support/control kit
   exists yet.
-- Character-select UI / lobby — Phase 4 alternates class by connection
-  order only; a real pick screen is Phase 5's "minimal lobby/HUD/match
-  flow" item.
+- Character-select UI / lobby — Phase 4/5 both auto-assign class and
+  team by connection order only; a real pick screen (and the network
+  handshake to support a connect-then-select flow) needs its own
+  design pass, not decided this session.
+- A reconnect/grace-period system for a mid-match disconnect — a
+  disconnect currently resolves as an immediate forfeit for that
+  team (see Slice 5 above), matching the docs' own "online matches
+  should not pause" principle, but a real reconnect window (per
+  `docs/blueprint/03-networking-and-match-modes.md`'s own "Reconnect"
+  sub-state) is unbuilt.
 - R/F/T keybindings exist in the InputMap (Phase 3) but are not wired
   to any ability — deferred to whichever later phase adds a 3rd+
   ability slot (needs the human owner's decision on how many slots a

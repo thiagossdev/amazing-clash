@@ -17,7 +17,15 @@ extends Node
 ## for proving the projectile spawns/travels/expires, not for testing a
 ## specific aim). `-- --simulate-ability-q` / `-- --simulate-ability-e`
 ## fire one press each ~1.6s/~1.8s in, same reasoning, to prove Phase
-## 3's independent ability slots. No flags leaves this a no-op. Pattern
+## 3's independent ability slots. `-- --friendly-fire` sets
+## MatchState.friendly_fire_enabled -- a per-match server setting
+## decided at startup, not a live-togglable console command (who's
+## allowed to change a match rule mid-game is a separate authority
+## question, not opened here). `-- --simulate-self-eliminate` directly
+## zeroes this peer's own character's health ~1s in (bypassing hit
+## geometry entirely) so Phase 5's elimination/win-condition/HUD chain
+## can be exercised deterministically without depending on 2 characters
+## actually connecting a hit. No flags leaves this a no-op. Pattern
 ## inherited from amazing-nauts' net/dev_bootstrap.gd.
 ##
 ## host()/join() run first and synchronously, before anything that
@@ -36,6 +44,8 @@ func _ready() -> void:
 	for arg in args:
 		if arg.begins_with("--latency="):
 			NetworkManager.artificial_latency_ms = arg.trim_prefix("--latency=").to_int()
+	if "--friendly-fire" in args:
+		MatchState.friendly_fire_enabled = true
 
 	if "--server" in args:
 		var err := NetworkManager.host()
@@ -68,3 +78,12 @@ func _ready() -> void:
 	if "--simulate-ability-e" in args:
 		await get_tree().create_timer(1.8).timeout
 		Input.action_press(&"ability_e")
+
+	if "--simulate-self-eliminate" in args:
+		await get_tree().create_timer(1.0).timeout
+		var characters := get_node_or_null(^"../Characters")
+		var own_character := (
+			characters.get_node_or_null(str(multiplayer.get_unique_id())) if characters else null
+		)
+		if own_character:
+			own_character.take_damage(9999.0)

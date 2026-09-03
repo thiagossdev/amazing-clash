@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://net/dev_bootstrap.gd" id="1_boot"]
 [ext_resource type="Script" path="res://net/player_spawner.gd" id="2_spwn"]
@@ -6,6 +6,8 @@
 [ext_resource type="PackedScene" path="res://camera/ArenaCamera.tscn" id="4_cam"]
 [ext_resource type="PackedScene" path="res://ui/debug/HitboxViewer.tscn" id="5_cshv"]
 [ext_resource type="Script" path="res://gameplay/combat/combat_resolver.gd" id="6_cmbtr"]
+[ext_resource type="Script" path="res://ui/hud/match_hud.gd" id="7_mhud"]
+[ext_resource type="Script" path="res://gameplay/match/match_rules.gd" id="8_mrule"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_horiz"]
 size = Vector2(1200, 32)
@@ -74,5 +76,27 @@ offset_right = 416.0
 offset_bottom = 92.0
 placeholder_text = "/help | /latency <ms> | /hitbox"
 
+[node name="MatchHud" type="CanvasLayer" parent="."]
+script = ExtResource("7_mhud")
+
+[node name="StatusLabel" type="Label" parent="MatchHud"]
+offset_left = 450.0
+offset_top = 16.0
+offset_right = 750.0
+offset_bottom = 40.0
+horizontal_alignment = 1
+
+[node name="BannerLabel" type="Label" parent="MatchHud"]
+offset_left = 400.0
+offset_top = 350.0
+offset_right = 800.0
+offset_bottom = 450.0
+theme_override_font_sizes/font_size = 48
+horizontal_alignment = 1
+vertical_alignment = 1
+
 [node name="CombatResolver" type="Node" parent="."]
 script = ExtResource("6_cmbtr")
+
+[node name="MatchRules" type="Node" parent="."]
+script = ExtResource("8_mrule")

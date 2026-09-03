@@ -85,6 +85,14 @@ var pending_skillshot_direction: Vector2 = Vector2.RIGHT
 ## get_aim_direction() instead, same as the base melee move).
 var pending_ability_q_direction: Vector2 = Vector2.RIGHT
 var pending_ability_e_direction: Vector2 = Vector2.RIGHT
+## Server-only: set by PlayerSpawner right after instantiate, before
+## add_child (same pattern as `position`) -- 0 or 1, read by
+## CombatResolver's friendly-fire check and MatchRules' alive-per-team
+## count. Never replicated to clients: no per-character team indicator
+## exists yet, only MatchState's aggregate team_alive_counts (the
+## minimal HUD's own scope), so this stays a plain, unsynced var like
+## action_fsm.already_hit.
+var team: int = 0
 
 var _local_sequence: int = 0
 var _server_sim: ServerSim
@@ -159,8 +167,9 @@ func is_owned_by_me() -> bool:
 
 func _physics_step_predicted(delta: float) -> void:
 	var sample := _sample_local_input(delta)
-	apply_input(sample)
-	move_and_slide()
+	if current_health > 0.0:
+		apply_input(sample)
+		move_and_slide()
 	_client_predictor.record_predicted_input(sample, _capture_predicted_state(sample.sequence))
 	_decay_visual_position_error(delta)
 	if multiplayer.has_multiplayer_peer():
@@ -182,14 +191,17 @@ func _physics_step_predicted(delta: float) -> void:
 ## listen-server player. A locked character (hitstop/hitstun from a
 ## confirmed hit) still consumes buffered input so it doesn't back up,
 ## but doesn't act on it -- and still broadcasts a snapshot, so clients
-## see the frozen/health-changed state promptly.
+## see the frozen/health-changed state promptly. An eliminated
+## character (current_health <= 0) freezes in place permanently, same
+## reasoning as the lock but never expiring -- MatchRules reads this
+## same current_health to resolve the match's win condition.
 func _physics_step_authoritative(delta: float) -> void:
 	if is_owned_by_me():
 		_server_sim.record_input(_sample_local_input(delta))
 	var sample := _server_sim.next_input(delta)
 	if _lock_frames > 0:
 		_lock_frames -= 1
-	else:
+	elif current_health > 0.0:
 		apply_input(sample)
 		move_and_slide()
 	if _server_sim.should_broadcast_snapshot():
