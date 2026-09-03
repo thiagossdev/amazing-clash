@@ -1,8 +1,8 @@
 class_name PlayerSpawner
 extends Node
-## Server-side: mirrors connected peers into Character.tscn instances
-## under a MultiplayerSpawner-watched container, so every peer sees the
-## same characters replicated automatically. The server also spawns a
+## Server-side: mirrors connected peers into class-scene instances under
+## a MultiplayerSpawner-watched container, so every peer sees the same
+## characters replicated automatically. The server also spawns a
 ## character for itself (peer_connected never fires for your own id).
 ## Phase 1 has no persistent per-peer state (no health/team yet), so a
 ## disconnect just despawns the character and a (re)connecting peer
@@ -10,8 +10,16 @@ extends Node
 ## no reconnect-state bookkeeping is needed at this scope. Pattern
 ## inherited from amazing-nauts' net/player_spawner.gd, scoped down.
 ## See docs/blueprint/03-networking-and-match-modes.md.
-
-const CHARACTER_SCENE := preload("res://gameplay/characters/character_base/Character.tscn")
+##
+## Phase 4: alternates the 2 real classes by connection order (same
+## array-cycling pattern SPAWN_POSITIONS already uses below) -- no
+## lobby/character-select exists yet (that's Phase 5's job), so this is
+## the simplest thing that lets both classes exist and fight each other
+## in a live match today, without requiring Phase 5 to land first.
+const CLASS_SCENES: Array[PackedScene] = [
+	preload("res://gameplay/characters/vanguard/Vanguard.tscn"),
+	preload("res://gameplay/characters/ranged_mage/RangedMage.tscn"),
+]
 
 ## Distinct points, clear of the 4 wall colliders in TestArena.tscn and
 ## far enough apart that two characters never spawn overlapping (a
@@ -40,7 +48,8 @@ func _ready() -> void:
 func _spawn_for_peer(peer_id: int, characters: Node) -> void:
 	if characters.has_node(str(peer_id)):
 		return
-	var character := CHARACTER_SCENE.instantiate()
+	var class_scene := CLASS_SCENES[_next_spawn_index % CLASS_SCENES.size()]
+	var character := class_scene.instantiate()
 	character.name = str(peer_id)
 	character.position = SPAWN_POSITIONS[_next_spawn_index % SPAWN_POSITIONS.size()]
 	_next_spawn_index += 1
