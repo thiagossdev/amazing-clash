@@ -142,6 +142,35 @@ func _ready() -> void:
 		var camera := get_tree().get_first_node_in_group(&"local_camera")
 		if camera:
 			camera.target = self
+	_apply_perk_from_lobby_state()
+
+
+## Runs on EVERY peer's own local instance of this character -- the
+## server's AUTHORITATIVE copy, the owning client's PREDICTED copy, AND
+## every other client's INTERPOLATED copy -- not just the server.
+## Deliberately NOT done in net/player_spawner.gd (server-only): a
+## perk's move_speed_multiplier/cooldown_multiplier are read during
+## client-side PREDICTION (apply_input(), the exact same code path
+## AUTHORITATIVE uses), so a client whose own local mirror never got the
+## multiplier would visibly mispredict its own movement/ability timing
+## against the server's every snapshot -- unlike `team`, which only
+## ever matters to server-only logic and can safely stay unreplicated.
+## LobbyState.player_perk_ids is already fully replicated to every peer
+## by spawn time (perks are picked and broadcast live during Room
+## Config, well before LOADING), so no new replication is needed here --
+## just read what every peer already has, keyed by this node's own name
+## (the same str(peer_id) convention is_owned_by_me() already relies
+## on). A peer with no registered perk (net/dev_bootstrap.gd's headless
+## test peers) is a no-op: every PerkResource multiplier defaults to 1.0.
+func _apply_perk_from_lobby_state() -> void:
+	var perk_id := LobbyState.get_perk_id(str(name).to_int(), "")
+	var registered_index := LobbyState.PERK_IDS.find(perk_id)
+	if registered_index == -1:
+		return
+	var perk := LobbyState.PERK_RESOURCES[registered_index]
+	max_health *= perk.max_health_multiplier
+	fsm.move_speed_multiplier = perk.move_speed_multiplier
+	cooldown_multiplier = perk.cooldown_multiplier
 
 
 func _physics_process(delta: float) -> void:

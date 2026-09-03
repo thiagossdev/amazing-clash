@@ -33,12 +33,29 @@ signal room_state_changed
 ## 4th class later only touches this list plus CLASS_SCENES.
 const CLASS_IDS: Array[String] = ["vanguard", "ranged_mage", "warden"]
 
-## Canonical perk id strings, in the same order as
-## net/player_spawner.gd's PERK_RESOURCES -- one fixed pool, identical
-## for every class (confirmed by the human owner, see memory/plan.md's
-## "Slices 8-10" Perks block), so unlike CLASS_IDS this list never
-## varies per character.
+## Canonical perk id strings, in the same order as PERK_RESOURCES below
+## -- one fixed pool, identical for every class (confirmed by the human
+## owner, see memory/plan.md's "Slices 8-10" Perks block), so unlike
+## CLASS_IDS this list never varies per character.
 const PERK_IDS: Array[String] = ["vitality", "swift", "adept", "balanced"]
+
+## Lives here (an autoload), not on PlayerSpawner (a class_name script
+## CharacterController would need to reference), specifically so
+## CharacterController._apply_perk_from_lobby_state() can read it
+## without creating a circular class_name dependency between the two
+## scripts -- confirmed as a real breakage, not a theoretical one: it
+## broke a pre-existing `var x: CharacterController = ...instantiate()`
+## typed assignment project-wide when first tried on PlayerSpawner
+## (Godot silently fell back to treating instances as the untyped base
+## CharacterBody2D). Autoload singleton access doesn't have this
+## problem, same reason CharacterController already safely references
+## NetworkManager/LobbyState/MatchState elsewhere.
+const PERK_RESOURCES: Array[PerkResource] = [
+	preload("res://data/perks/vitality.tres"),
+	preload("res://data/perks/swift.tres"),
+	preload("res://data/perks/adept.tres"),
+	preload("res://data/perks/balanced.tres"),
+]
 
 ## Set locally by CharacterSelect before ever connecting; read once,
 ## right after a successful host()/join(), by register_local_player().

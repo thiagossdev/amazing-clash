@@ -43,19 +43,6 @@ const CLASS_SCENES: Array[PackedScene] = [
 	preload("res://gameplay/characters/warden/Warden.tscn"),
 ]
 
-## Same order as LobbyState.PERK_IDS -- one fixed pool, identical for
-## every class (Phase 9). An unregistered peer (net/dev_bootstrap.gd's
-## headless test peers) gets no perk at all (see _resolve_perk() below),
-## not PERK_RESOURCES[0] -- unlike class/team, there's no sane "default"
-## perk to fall back to, and every multiplier already defaults to a
-## no-op 1.0 on a bare PerkResource.
-const PERK_RESOURCES: Array[PerkResource] = [
-	preload("res://data/perks/vitality.tres"),
-	preload("res://data/perks/swift.tres"),
-	preload("res://data/perks/adept.tres"),
-	preload("res://data/perks/balanced.tres"),
-]
-
 ## 4 points (2v2's default team size): team 0 clusters on the left,
 ## team 1 clusters on the right -- index parity matches
 ## _spawn_for_peer's own `team = index % 2`, so index 0/2 (team 0) land
@@ -130,31 +117,24 @@ func _spawn_for_peer(peer_id: int, characters: Node) -> void:
 	character.name = str(peer_id)
 	character.position = SPAWN_POSITIONS[_next_spawn_index % SPAWN_POSITIONS.size()]
 	character.team = _resolve_team_id(peer_id)
-	_apply_perk(character, _resolve_perk(peer_id))
 	_next_spawn_index += 1
 	characters.add_child(character)
-
-
-## No perk (all multipliers 1.0) for a peer with no registered choice --
-## see PERK_RESOURCES' own doc comment for why that's null, not
-## PERK_RESOURCES[0].
-func _resolve_perk(peer_id: int) -> PerkResource:
-	var perk_id := LobbyState.get_perk_id(peer_id, "")
-	var registered_index := LobbyState.PERK_IDS.find(perk_id)
-	return PERK_RESOURCES[registered_index] if registered_index != -1 else null
-
-
-## Applied once, at spawn -- see gameplay/perks/perk_resource.gd's own
-## doc comment for why this never touches DamagePipeline/HitDefinition.
-## A null perk (unregistered peer) is a no-op: every multiplier field on
-## a bare PerkResource already defaults to 1.0, but a null perk has no
-## fields to read at all, hence the early return.
-func _apply_perk(character: CharacterController, perk: PerkResource) -> void:
-	if not perk:
-		return
-	character.max_health *= perk.max_health_multiplier
-	character.fsm.move_speed_multiplier = perk.move_speed_multiplier
-	character.cooldown_multiplier = perk.cooldown_multiplier
+	# Perk multipliers are NOT applied here, deliberately -- this method
+	# only ever runs on the server (see _ready()'s own early return
+	# above). A perk's move_speed_multiplier/cooldown_multiplier are
+	# read during client-side PREDICTION (CharacterController.
+	# apply_input(), the same code path AUTHORITATIVE uses), not just
+	# server simulation -- unlike `team`, which only ever matters to
+	# server-only logic (CombatResolver/MatchRules). Applying the perk
+	# here would leave every owning CLIENT's own local mirror at the
+	# default 1.0 multiplier (MultiplayerSpawner replicates the spawn,
+	# not arbitrary script properties set before add_child -- the same
+	# reason `team` itself is documented as never replicated), causing
+	# a visible, permanent misprediction/reconciliation-snap for anyone
+	# who picked Swift/Adept. See CharacterController._ready()'s own
+	# _apply_perk_from_lobby_state(), which runs on every peer's own
+	# instance instead, reading the already-replicated LobbyState
+	# registry directly.
 
 
 ## FFA is unaffected by Phase 8 -- every player still gets a unique
