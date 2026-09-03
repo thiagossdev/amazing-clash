@@ -1,6 +1,6 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene format=3 uid="uid://df7y7wp0nqw0h"]
 
-[ext_resource type="Script" path="res://gameplay/characters/character_base/character_controller.gd" id="1_ctrlr"]
+[ext_resource type="Script" uid="uid://covub2j7g4lgb" path="res://gameplay/characters/character_base/character_controller.gd" id="1_ctrlr"]
 [ext_resource type="Resource" path="res://data/moves/vanguard_attack.tres" id="2_atkmv"]
 [ext_resource type="Resource" path="res://data/moves/vanguard_thrust.tres" id="3_sklmv"]
 [ext_resource type="Resource" path="res://data/abilities/vanguard_heavy_slam.tres" id="4_abqq"]
@@ -9,7 +9,7 @@
 [sub_resource type="CircleShape2D" id="CircleShape2D_char"]
 radius = 20.0
 
-[node name="Character" type="CharacterBody2D"]
+[node name="Character" type="CharacterBody2D" unique_id=1372161772]
 collision_layer = 2
 script = ExtResource("1_ctrlr")
 attack_move = ExtResource("2_atkmv")
@@ -18,9 +18,9 @@ ability_q = ExtResource("4_abqq")
 ability_e = ExtResource("5_abee")
 max_health = 120.0
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=72323140]
 shape = SubResource("CircleShape2D_char")
 
-[node name="Visual" type="Polygon2D" parent="."]
+[node name="Visual" type="Polygon2D" parent="." unique_id=689615523]
 color = Color(0.8, 0.35, 0.2, 1)
 polygon = PackedVector2Array(-20, -20, 20, -20, 20, 20, -20, 20)

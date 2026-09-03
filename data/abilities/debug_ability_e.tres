@@ -1,7 +1,7 @@
-[gd_resource type="Resource" script_class="AbilityResource" load_steps=3 format=3]
+[gd_resource type="Resource" script_class="AbilityResource" format=3 uid="uid://hwdd213m6eo7"]
 
-[ext_resource type="Script" path="res://gameplay/abilities/ability_resource.gd" id="1_abty"]
-[ext_resource type="Resource" path="res://data/moves/debug_ability_e.tres" id="2_move"]
+[ext_resource type="Script" uid="uid://b4blmuhgqbum" path="res://gameplay/abilities/ability_resource.gd" id="1_abty"]
+[ext_resource type="Resource" uid="uid://dcvyp54oeh35m" path="res://data/moves/debug_ability_e.tres" id="2_move"]
 
 [resource]
 script = ExtResource("1_abty")

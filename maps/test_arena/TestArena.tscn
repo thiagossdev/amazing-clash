@@ -1,14 +1,14 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene format=3 uid="uid://bcrmgvee7qvfr"]
 
-[ext_resource type="Script" path="res://net/dev_bootstrap.gd" id="1_boot"]
-[ext_resource type="Script" path="res://net/player_spawner.gd" id="2_spwn"]
-[ext_resource type="Script" path="res://ui/hud/network_stats_overlay.gd" id="3_stats"]
-[ext_resource type="PackedScene" path="res://camera/ArenaCamera.tscn" id="4_cam"]
+[ext_resource type="Script" uid="uid://bvqrnuwwyg1ed" path="res://net/dev_bootstrap.gd" id="1_boot"]
+[ext_resource type="Script" uid="uid://ba17ie54glhmw" path="res://net/player_spawner.gd" id="2_spwn"]
+[ext_resource type="Script" uid="uid://dv3xq8nh2eqdl" path="res://ui/hud/network_stats_overlay.gd" id="3_stats"]
+[ext_resource type="PackedScene" uid="uid://bers5infe7f36" path="res://camera/ArenaCamera.tscn" id="4_cam"]
 [ext_resource type="PackedScene" path="res://ui/debug/HitboxViewer.tscn" id="5_cshv"]
-[ext_resource type="Script" path="res://gameplay/combat/combat_resolver.gd" id="6_cmbtr"]
-[ext_resource type="Script" path="res://ui/hud/match_hud.gd" id="7_mhud"]
-[ext_resource type="Script" path="res://gameplay/match/match_rules.gd" id="8_mrule"]
-[ext_resource type="Script" path="res://net/loading_reporter.gd" id="9_ldrep"]
+[ext_resource type="Script" uid="uid://5dxic7kxfvkc" path="res://gameplay/combat/combat_resolver.gd" id="6_cmbtr"]
+[ext_resource type="Script" uid="uid://d0sc5sg4putp8" path="res://ui/hud/match_hud.gd" id="7_mhud"]
+[ext_resource type="Script" uid="uid://ck2n3c3bjxrcr" path="res://gameplay/match/match_rules.gd" id="8_mrule"]
+[ext_resource type="Script" uid="uid://o3klvpw1hrun" path="res://net/loading_reporter.gd" id="9_ldrep"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_horiz"]
 size = Vector2(1200, 32)
@@ -16,85 +16,85 @@ size = Vector2(1200, 32)
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_vert"]
 size = Vector2(32, 800)
 
-[node name="TestArena" type="Node2D"]
+[node name="TestArena" type="Node2D" unique_id=1660170208]
 
-[node name="DevBootstrap" type="Node" parent="."]
+[node name="DevBootstrap" type="Node" parent="." unique_id=1576311230]
 script = ExtResource("1_boot")
 
-[node name="Walls" type="StaticBody2D" parent="."]
+[node name="Walls" type="StaticBody2D" parent="." unique_id=1272536565]
 
-[node name="Ceiling" type="CollisionShape2D" parent="Walls"]
+[node name="Ceiling" type="CollisionShape2D" parent="Walls" unique_id=1875778883]
 position = Vector2(600, 0)
 shape = SubResource("RectangleShape2D_horiz")
 
-[node name="Floor" type="CollisionShape2D" parent="Walls"]
+[node name="Floor" type="CollisionShape2D" parent="Walls" unique_id=1044140528]
 position = Vector2(600, 800)
 shape = SubResource("RectangleShape2D_horiz")
 
-[node name="LeftWall" type="CollisionShape2D" parent="Walls"]
+[node name="LeftWall" type="CollisionShape2D" parent="Walls" unique_id=135833439]
 position = Vector2(0, 400)
 shape = SubResource("RectangleShape2D_vert")
 
-[node name="RightWall" type="CollisionShape2D" parent="Walls"]
+[node name="RightWall" type="CollisionShape2D" parent="Walls" unique_id=1768974722]
 position = Vector2(1200, 400)
 shape = SubResource("RectangleShape2D_vert")
 
-[node name="Characters" type="Node2D" parent="."]
+[node name="Characters" type="Node2D" parent="." unique_id=1273243326]
 
-[node name="Projectiles" type="Node2D" parent="."]
+[node name="Projectiles" type="Node2D" parent="." unique_id=325601987]
 
-[node name="ArenaCamera" parent="." instance=ExtResource("4_cam")]
+[node name="ArenaCamera" parent="." unique_id=338119131 instance=ExtResource("4_cam")]
 
-[node name="HitboxViewer" parent="." instance=ExtResource("5_cshv")]
+[node name="HitboxViewer" parent="." unique_id=1058627609 instance=ExtResource("5_cshv")]
 
-[node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
-_spawnable_scenes = PackedStringArray("res://gameplay/characters/vanguard/Vanguard.tscn", "res://gameplay/characters/ranged_mage/RangedMage.tscn", "res://gameplay/characters/warden/Warden.tscn")
+[node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="." unique_id=1791402234]
+_spawnable_scenes = PackedStringArray("uid://df7y7wp0nqw0h", "uid://22qypkue23rq", "uid://2vdodgraeiny")
 spawn_path = NodePath("../Characters")
 
-[node name="PlayerSpawner" type="Node" parent="."]
+[node name="PlayerSpawner" type="Node" parent="." unique_id=1602664976]
 script = ExtResource("2_spwn")
 
-[node name="NetworkStatsOverlay" type="CanvasLayer" parent="."]
+[node name="NetworkStatsOverlay" type="CanvasLayer" parent="." unique_id=575075808]
 script = ExtResource("3_stats")
 
-[node name="Label" type="Label" parent="NetworkStatsOverlay"]
+[node name="Label" type="Label" parent="NetworkStatsOverlay" unique_id=1521977498]
 offset_left = 16.0
 offset_top = 16.0
 offset_right = 300.0
 offset_bottom = 40.0
 text = "Ping: -- | Snapshots/s: --"
 
-[node name="ConsoleOutput" type="Label" parent="NetworkStatsOverlay"]
+[node name="ConsoleOutput" type="Label" parent="NetworkStatsOverlay" unique_id=1285880478]
 offset_left = 16.0
 offset_top = 44.0
 offset_right = 16.0
 offset_bottom = 44.0
 
-[node name="ConsoleInput" type="LineEdit" parent="NetworkStatsOverlay"]
+[node name="ConsoleInput" type="LineEdit" parent="NetworkStatsOverlay" unique_id=1565938729]
 offset_left = 16.0
 offset_top = 68.0
 offset_right = 416.0
 offset_bottom = 92.0
 placeholder_text = "/help | /latency <ms> | /hitbox"
 
-[node name="MatchHud" type="CanvasLayer" parent="."]
+[node name="MatchHud" type="CanvasLayer" parent="." unique_id=941905376]
 script = ExtResource("7_mhud")
 
-[node name="StatusLabel" type="Label" parent="MatchHud"]
+[node name="StatusLabel" type="Label" parent="MatchHud" unique_id=1885851396]
 offset_left = 450.0
 offset_top = 16.0
 offset_right = 750.0
 offset_bottom = 40.0
 horizontal_alignment = 1
 
-[node name="GraceLabel" type="Label" parent="MatchHud"]
+[node name="GraceLabel" type="Label" parent="MatchHud" unique_id=95233631]
 offset_left = 450.0
 offset_top = 42.0
 offset_right = 750.0
 offset_bottom = 66.0
 horizontal_alignment = 1
 
-[node name="BannerLabel" type="Label" parent="MatchHud"]
+[node name="BannerLabel" type="Label" parent="MatchHud" unique_id=171751904]
 offset_left = 400.0
 offset_top = 350.0
 offset_right = 800.0
@@ -103,11 +103,11 @@ theme_override_font_sizes/font_size = 48
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="CombatResolver" type="Node" parent="."]
+[node name="CombatResolver" type="Node" parent="." unique_id=1803979365]
 script = ExtResource("6_cmbtr")
 
-[node name="MatchRules" type="Node" parent="."]
+[node name="MatchRules" type="Node" parent="." unique_id=643551326]
 script = ExtResource("8_mrule")
 
-[node name="LoadingReporter" type="Node" parent="."]
+[node name="LoadingReporter" type="Node" parent="." unique_id=1387063650]
 script = ExtResource("9_ldrep")

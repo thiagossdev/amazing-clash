@@ -1,13 +1,12 @@
-[gd_resource type="Resource" script_class="MoveDefinition" load_steps=3 format=3]
+[gd_resource type="Resource" script_class="MoveDefinition" format=3 uid="uid://dtgc3qerdhn0s"]
 
-[ext_resource type="Script" path="res://gameplay/combat/hit_definition.gd" id="1_hit"]
-[ext_resource type="Script" path="res://gameplay/combat/move_resource.gd" id="2_move"]
+[ext_resource type="Script" uid="uid://cd477043vqcmb" path="res://gameplay/combat/hit_definition.gd" id="1_hit"]
+[ext_resource type="Script" uid="uid://bd2x61v2cbx7h" path="res://gameplay/combat/move_resource.gd" id="2_move"]
 
 [sub_resource type="Resource" id="Resource_hit1"]
 script = ExtResource("1_hit")
 damage = 22.0
 hitstun_frames = 16
-hitbox_offset = Vector2(0, 0)
 hitbox_size = Vector2(26, 26)
 hitstop_frames = 5
 

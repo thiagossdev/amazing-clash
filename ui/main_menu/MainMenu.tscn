@@ -1,20 +1,24 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://cdbqs5c8b6h4n"]
 
-[ext_resource type="Script" path="res://ui/main_menu/main_menu.gd" id="1_menu"]
+[ext_resource type="Script" uid="uid://yfncx8k0s0q8" path="res://ui/main_menu/main_menu.gd" id="1_menu"]
 
-[node name="MainMenu" type="Control"]
+[node name="MainMenu" type="Control" unique_id=1537258124]
+layout_mode = 3
+anchors_preset = 0
 script = ExtResource("1_menu")
 
-[node name="TitleLabel" type="Label" parent="."]
+[node name="TitleLabel" type="Label" parent="." unique_id=2024041975]
+layout_mode = 0
 offset_left = 450.0
 offset_top = 250.0
 offset_right = 750.0
 offset_bottom = 300.0
 theme_override_font_sizes/font_size = 32
-horizontal_alignment = 1
 text = "AMAZING//CLASH"
+horizontal_alignment = 1
 
-[node name="PlayButton" type="Button" parent="."]
+[node name="PlayButton" type="Button" parent="." unique_id=1233254650]
+layout_mode = 0
 offset_left = 550.0
 offset_top = 400.0
 offset_right = 650.0

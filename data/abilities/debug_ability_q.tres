@@ -1,11 +1,10 @@
-[gd_resource type="Resource" script_class="AbilityResource" load_steps=3 format=3]
+[gd_resource type="Resource" script_class="AbilityResource" format=3 uid="uid://braayvfk33kml"]
 
-[ext_resource type="Script" path="res://gameplay/abilities/ability_resource.gd" id="1_abty"]
-[ext_resource type="Resource" path="res://data/moves/debug_ability_q.tres" id="2_move"]
+[ext_resource type="Script" uid="uid://b4blmuhgqbum" path="res://gameplay/abilities/ability_resource.gd" id="1_abty"]
+[ext_resource type="Resource" uid="uid://mtb62kce3r7n" path="res://data/moves/debug_ability_q.tres" id="2_move"]
 
 [resource]
 script = ExtResource("1_abty")
 ability_name = "Power Strike"
 move = ExtResource("2_move")
 cooldown_frames = 90
-is_projectile = false

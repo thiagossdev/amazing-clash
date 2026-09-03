@@ -1,34 +1,40 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://doclj88if7mb"]
 
-[ext_resource type="Script" path="res://ui/character_select/character_select.gd" id="1_cselect"]
+[ext_resource type="Script" uid="uid://ctqxgxdq8k5ee" path="res://ui/character_select/character_select.gd" id="1_cselect"]
 
-[node name="CharacterSelect" type="Control"]
+[node name="CharacterSelect" type="Control" unique_id=1909328203]
+layout_mode = 3
+anchors_preset = 0
 script = ExtResource("1_cselect")
 
-[node name="TitleLabel" type="Label" parent="."]
+[node name="TitleLabel" type="Label" parent="." unique_id=1531666604]
+layout_mode = 0
 offset_left = 450.0
 offset_top = 150.0
 offset_right = 750.0
 offset_bottom = 190.0
 theme_override_font_sizes/font_size = 24
-horizontal_alignment = 1
 text = "Choose your class"
+horizontal_alignment = 1
 
-[node name="VanguardButton" type="Button" parent="."]
+[node name="VanguardButton" type="Button" parent="." unique_id=2054875244]
+layout_mode = 0
 offset_left = 450.0
 offset_top = 250.0
 offset_right = 650.0
 offset_bottom = 290.0
 text = "Vanguard"
 
-[node name="RangedMageButton" type="Button" parent="."]
+[node name="RangedMageButton" type="Button" parent="." unique_id=736159807]
+layout_mode = 0
 offset_left = 450.0
 offset_top = 300.0
 offset_right = 650.0
 offset_bottom = 340.0
 text = "Ranged Mage"
 
-[node name="WardenButton" type="Button" parent="."]
+[node name="WardenButton" type="Button" parent="." unique_id=125681144]
+layout_mode = 0
 offset_left = 450.0
 offset_top = 350.0
 offset_right = 650.0

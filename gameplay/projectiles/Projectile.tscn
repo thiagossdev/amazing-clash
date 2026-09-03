@@ -1,10 +1,10 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://bo1dgbshws42m"]
 
-[ext_resource type="Script" path="res://gameplay/projectiles/projectile.gd" id="1_prjsc"]
+[ext_resource type="Script" uid="uid://bwfa47tskf3fu" path="res://gameplay/projectiles/projectile.gd" id="1_prjsc"]
 
-[node name="Projectile" type="Node2D"]
+[node name="Projectile" type="Node2D" unique_id=1455667710]
 script = ExtResource("1_prjsc")
 
-[node name="Visual" type="Polygon2D" parent="."]
+[node name="Visual" type="Polygon2D" parent="." unique_id=875756537]
 color = Color(1, 0.8, 0.2, 1)
 polygon = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)

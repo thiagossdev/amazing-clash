@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://dj1qj2m8u4qig"]
 
-[ext_resource type="Script" path="res://ui/debug/hitbox_viewer.gd" id="1_hbxvw"]
+[ext_resource type="Script" uid="uid://d1iwbutpkyqpu" path="res://ui/debug/hitbox_viewer.gd" id="1_hbxvw"]
 
-[node name="HitboxViewer" type="Node2D"]
+[node name="HitboxViewer" type="Node2D" unique_id=445471962]
 script = ExtResource("1_hbxvw")

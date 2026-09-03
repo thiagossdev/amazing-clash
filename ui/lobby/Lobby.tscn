@@ -1,49 +1,57 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://btxgcxv4537bg"]
 
-[ext_resource type="Script" path="res://ui/lobby/lobby.gd" id="1_lobby"]
+[ext_resource type="Script" uid="uid://boxpxjgbdpf42" path="res://ui/lobby/lobby.gd" id="1_lobby"]
 
-[node name="Lobby" type="Control"]
+[node name="Lobby" type="Control" unique_id=1220575214]
+layout_mode = 3
+anchors_preset = 0
 script = ExtResource("1_lobby")
 
-[node name="TitleLabel" type="Label" parent="."]
+[node name="TitleLabel" type="Label" parent="." unique_id=1807594807]
+layout_mode = 0
 offset_left = 450.0
 offset_top = 60.0
 offset_right = 830.0
 offset_bottom = 100.0
 theme_override_font_sizes/font_size = 24
-horizontal_alignment = 1
 text = "Room Config"
+horizontal_alignment = 1
 
-[node name="ModeOptionButton" type="OptionButton" parent="."]
+[node name="ModeOptionButton" type="OptionButton" parent="." unique_id=717731086]
+layout_mode = 0
 offset_left = 450.0
 offset_top = 110.0
 offset_right = 630.0
 offset_bottom = 140.0
 
-[node name="FriendlyFireCheckBox" type="CheckBox" parent="."]
+[node name="FriendlyFireCheckBox" type="CheckBox" parent="." unique_id=1163863126]
+layout_mode = 0
 offset_left = 650.0
 offset_top = 110.0
 offset_right = 830.0
 offset_bottom = 140.0
 text = "Friendly Fire"
 
-[node name="PlayerListContainer" type="VBoxContainer" parent="."]
+[node name="PlayerListContainer" type="VBoxContainer" parent="." unique_id=149143543]
+layout_mode = 0
 offset_left = 450.0
 offset_top = 160.0
 offset_right = 830.0
 offset_bottom = 460.0
 
-[node name="StartButton" type="Button" parent="."]
+[node name="StartButton" type="Button" parent="." unique_id=2054886002]
+layout_mode = 0
 offset_left = 550.0
 offset_top = 500.0
 offset_right = 650.0
 offset_bottom = 540.0
 text = "Start"
 
-[node name="WaitingLabel" type="Label" parent="."]
+[node name="WaitingLabel" type="Label" parent="." unique_id=1896039166]
+layout_mode = 0
 offset_left = 450.0
 offset_top = 500.0
 offset_right = 830.0
 offset_bottom = 540.0
-horizontal_alignment = 1
 text = "Waiting for host..."
+horizontal_alignment = 1
