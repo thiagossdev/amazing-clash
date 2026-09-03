@@ -145,6 +145,10 @@ func _rpc_spawn_projectile(
 	if not move or move.hit_definitions.is_empty():
 		return
 	var projectile: Projectile = PROJECTILE_SCENE.instantiate()
+	# Named by network_id (same "look it up by a replicated identifier"
+	# convention PlayerSpawner uses for characters, keyed by peer_id) so
+	# _rpc_despawn_projectile can find this exact instance on every peer.
+	projectile.name = str(network_id)
 	projectiles.add_child(projectile)
 	projectile.configure(
 		network_id,
@@ -176,11 +180,11 @@ func _get_move_for_slot(caster: CharacterController, slot_name: String) -> MoveD
 
 ## Advances every live projectile's position (every peer, deterministic
 ## -- see Projectile.advance_frame()), then resolves hits server-only.
-## A confirmed hit ends the (non-piercing) instance immediately on the
-## server; other peers' own decorative copies keep flying until their
-## own lifetime_frames runs out -- a deliberate, minor visual-polish
-## gap for this first pass (the hit itself is already server-authority-
-## only and unaffected by it), not a correctness one.
+## A confirmed hit broadcasts a despawn RPC so every peer's own copy
+## (not just the server's) disappears immediately, instead of the
+## decorative remote copies flying on until their own lifetime_frames
+## runs out. Natural lifetime expiry needs no RPC -- it's already
+## identical on every peer without one.
 func _advance_projectiles(roster: Array) -> void:
 	var projectiles := get_node_or_null(projectiles_path)
 	if not projectiles:
@@ -190,10 +194,26 @@ func _advance_projectiles(roster: Array) -> void:
 			continue
 		var projectile := node as Projectile
 		var alive := projectile.advance_frame(get_physics_process_delta_time())
-		if alive and NetworkManager.is_server():
-			alive = not _resolve_projectile_hit(projectile, roster)
+		if alive and NetworkManager.is_server() and _resolve_projectile_hit(projectile, roster):
+			_rpc_despawn_projectile.rpc(projectile.network_id)
+			continue
 		if not alive:
 			projectile.queue_free()
+
+
+## Server-only broadcast (see _advance_projectiles) so a hit despawns
+## the projectile on every peer, not just the one that resolved it.
+## A no-op if the node is already gone -- e.g. this peer's own copy
+## expired by lifetime the same tick the hit was confirmed elsewhere,
+## a benign race between 2 independent despawn causes, not a bug.
+@rpc("authority", "reliable", "call_local")
+func _rpc_despawn_projectile(network_id: int) -> void:
+	var projectiles := get_node_or_null(projectiles_path)
+	if not projectiles:
+		return
+	var projectile := projectiles.get_node_or_null(str(network_id))
+	if projectile:
+		projectile.queue_free()
 
 
 func _resolve_projectile_hit(projectile: Projectile, roster: Array) -> bool:
