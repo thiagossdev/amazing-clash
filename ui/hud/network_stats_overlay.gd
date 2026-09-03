@@ -1,11 +1,10 @@
 extends CanvasLayer
-## Phase 1's debug overlay: this client's ping to the server (ENet's own
-## per-peer round-trip-time stat), how often this client's own predicted
-## character receives an authoritative snapshot, and a minimal typed
-## command console (`/help`, `/latency <ms>`, `/collision`). Scoped to
-## what Phase 1 actually has -- a real Hitbox/Projectile Viewer and
-## richer console commands (slowmo, godmode, spawn, replay) arrive with
-## later phases, once there's a system for them to act on.
+## This client's ping to the server (ENet's own per-peer round-trip-time
+## stat), how often this client's own predicted character receives an
+## authoritative snapshot, and a minimal typed command console (`/help`,
+## `/latency <ms>`, `/hitbox`). Richer console commands (slowmo,
+## godmode, spawn, replay) arrive with later phases, once there's a
+## system for them to act on.
 ## Pattern inherited from amazing-nauts' ui/hud/network_stats_overlay.gd.
 
 @export var characters_path: NodePath = ^"../Characters"
@@ -114,20 +113,20 @@ func _execute_command(text: String) -> void:
 		"":
 			pass
 		"help":
-			_console_output.text = "Commands: /help | /latency <ms> | /collision"
+			_console_output.text = "Commands: /help | /latency <ms> | /hitbox"
 		"latency":
 			if parsed["args"].size() >= 1 and (parsed["args"][0] as String).is_valid_int():
 				NetworkManager.artificial_latency_ms = int(parsed["args"][0])
 				_console_output.text = "latency set to %s ms" % parsed["args"][0]
 			else:
 				_console_output.text = "usage: /latency <ms>"
-		"collision":
-			var viewer := get_tree().get_first_node_in_group(&"collision_viewer")
+		"hitbox":
+			var viewer := get_tree().get_first_node_in_group(&"hitbox_viewer")
 			if viewer:
 				viewer.visible = not viewer.visible
-				_console_output.text = "collision viewer toggled"
+				_console_output.text = "hitbox viewer toggled"
 			else:
-				_console_output.text = "no collision viewer in this scene"
+				_console_output.text = "no hitbox viewer in this scene"
 		_:
 			_console_output.text = "unknown command: /%s" % parsed["command"]
 
