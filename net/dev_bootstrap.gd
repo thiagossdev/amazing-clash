@@ -9,7 +9,8 @@ extends Node
 ## the delay gives this peer's own character time to actually spawn and
 ## start sampling input first; dash is a one-shot edge trigger
 ## (is_action_just_pressed), so firing it before the character exists to
-## observe the edge would silently waste the press. No flags leaves this
+## observe the edge would silently waste the press. `-- --simulate-attack`
+## fires one attack press ~1.2s in, same reasoning. No flags leaves this
 ## a no-op. Pattern inherited from amazing-nauts' net/dev_bootstrap.gd.
 ##
 ## host()/join() run first and synchronously, before anything that
@@ -44,3 +45,7 @@ func _ready() -> void:
 		Input.action_press(&"move_right")
 		await get_tree().create_timer(1.0).timeout
 		Input.action_press(&"dash")
+
+	if "--simulate-attack" in args:
+		await get_tree().create_timer(1.2).timeout
+		Input.action_press(&"attack")

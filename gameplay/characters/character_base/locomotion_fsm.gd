@@ -25,6 +25,12 @@ var velocity: Vector2 = Vector2.ZERO
 var dash_timer: float = 0.0
 var dash_cooldown_timer: float = 0.0
 var dash_direction: Vector2 = Vector2.ZERO
+## Last non-zero move direction, held while stationary -- the melee
+## attack's aim direction (gameplay/combat/hit_detection.gd) for Phase
+## 2a. Skillshots use real mouse-aim instead (Phase 2b); this is
+## deliberately the simpler of the two, matching how most top-down
+## action games aim an unaimed melee swing.
+var facing_direction: Vector2 = Vector2.RIGHT
 
 
 ## dash_pressed is a one-shot edge trigger, never held. Mutates state/
@@ -42,6 +48,8 @@ var dash_direction: Vector2 = Vector2.ZERO
 func advance(raw_move_vector: Vector2, dash_pressed: bool, delta: float) -> void:
 	var move_vector := raw_move_vector.limit_length(1.0)
 	dash_cooldown_timer = maxf(dash_cooldown_timer - delta, 0.0)
+	if not move_vector.is_zero_approx():
+		facing_direction = move_vector.normalized()
 
 	if state == State.DASHING:
 		dash_timer -= delta

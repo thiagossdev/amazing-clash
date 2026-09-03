@@ -19,7 +19,14 @@ class Checkpoint:
 	var dash_timer: float = 0.0
 	var dash_cooldown_timer: float = 0.0
 	var dash_direction: Vector2 = Vector2.ZERO
+	var facing_direction: Vector2 = Vector2.RIGHT
 	var fsm_state: int = 0
+	## Phase 2a's action layer is exactly as reconciliation-sensitive as
+	## the locomotion fields above -- move activation is a one-shot,
+	## state-gated trigger like dash.
+	var action_state: int = 0
+	var action_move: MoveDefinition
+	var action_move_frame: int = 0
 
 
 var _buffer := InputBuffer.new()
