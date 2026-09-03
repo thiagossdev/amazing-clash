@@ -9,15 +9,32 @@ extends Node
 ## defeat; a real reconnect/grace-period system is out of scope for
 ## Phase 5.
 ##
-## Phase 7: dropped CHARACTER_SELECT and LOADING from Phase, the enum
-## originally had -- neither was ever implemented (TestArena entered
-## IN_PROGRESS directly, per docs/blueprint/03-networking-and-match-
-## modes.md's now-outdated original ordering). Character selection
-## turned out to belong entirely outside networked match state (it
-## happens locally, before ever connecting -- see ui/character_select/
-## and memory/plan.md's "Slices 7-10" section), so there was never a
-## real use for a networked CHARACTER_SELECT phase. LOBBY now means
-## "connected, in the Room Config waiting screen" (ui/lobby/).
+## Phase 7: dropped CHARACTER_SELECT from Phase -- it was never
+## implemented (TestArena entered IN_PROGRESS directly), and character
+## selection turned out to belong entirely outside networked match
+## state (it happens locally, before ever connecting -- see
+## ui/character_select/ and memory/plan.md's "Slices 7-10" section), so
+## there was never a real use for a networked CHARACTER_SELECT phase.
+## LOBBY now means "connected, in the Room Config waiting screen"
+## (ui/lobby/). LOADING is now real, not dropped: Room Config's Start
+## triggers enter_loading(), every peer scene-changes to TestArena.tscn
+## locally, and only once every currently-connected peer's own
+## TestArena tree has actually finished building (reported via
+## report_loaded(), called from net/loading_reporter.gd -- the last
+## child of TestArena.tscn, guaranteed to _ready() after every sibling
+## including PlayerSpawner, the same ordering guarantee MatchRules
+## already relies on) does the server call enter_in_progress(). This
+## closes the same race net/dev_bootstrap.gd already hit once
+## (memory/gotchas.md: PlayerSpawner._ready() running before host()/
+## join() finished produced an "authority RPC not allowed" engine
+## error) -- now a real risk here too, since Room Config -> TestArena
+## is an actual scene change instead of the previous fixed main scene.
+## Known narrow gap, not handled: a peer connecting mid-LOADING (rather
+## than already being in the Lobby when Start is pressed) has no
+## explicit catch-up RPC for LOADING itself, unlike IN_PROGRESS/
+## POST_GAME below -- unlikely in this project's direct-connect,
+## small-player-count flow, not worth the extra bookkeeping until it's
+## a real problem.
 ##
 ## Phase 5: this file's phase is now client-visible for the first time
 ## (nothing before this phase read current_phase client-side), which
@@ -35,7 +52,7 @@ extends Node
 ## grew from a fixed 2-element array to a variable-length one indexed by
 ## team id, so it reads correctly under either mode.
 
-enum Phase { LOBBY, IN_PROGRESS, POST_GAME }
+enum Phase { LOBBY, LOADING, IN_PROGRESS, POST_GAME }
 enum MatchMode { TEAM, FREE_FOR_ALL }
 
 var current_phase: Phase = Phase.LOBBY
@@ -71,9 +88,15 @@ var team_alive_counts: Array[int] = []
 ## does).
 var winning_team: int = -1
 
+## Server-only bookkeeping for the LOADING handshake: which currently-
+## connected peers have reported their own TestArena tree is actually
+## ready. Cleared on every enter_loading() call.
+var _loaded_peer_ids: Dictionary = {}
+
 
 func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)
+	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 
 
 ## Server-only: brings a newly-connected peer's own MatchState copy up
@@ -88,6 +111,69 @@ func _on_peer_connected(peer_id: int) -> void:
 		_rpc_enter_post_game.rpc_id(peer_id, winning_team)
 	if current_phase != Phase.LOBBY:
 		_rpc_receive_team_status.rpc_id(peer_id, team_alive_counts)
+
+
+## Server-only: a peer leaving mid-LOADING must not permanently block
+## enter_in_progress() from ever firing -- re-check without them.
+func _on_peer_disconnected(peer_id: int) -> void:
+	if not NetworkManager.is_server():
+		return
+	if current_phase != Phase.LOADING:
+		return
+	_loaded_peer_ids.erase(peer_id)
+	if _all_connected_peers_loaded():
+		enter_in_progress()
+
+
+## Server-only: called by ui/lobby/lobby.gd's host-only Start button.
+## Every peer reacts by scene-changing to TestArena.tscn; the actual
+## match doesn't start until every one of them reports back ready, see
+## report_loaded() below.
+func enter_loading() -> void:
+	current_phase = Phase.LOADING
+	_loaded_peer_ids.clear()
+	_rpc_enter_loading.rpc()
+
+
+@rpc("authority", "reliable", "call_local")
+func _rpc_enter_loading() -> void:
+	current_phase = Phase.LOADING
+	EventBus.match_state_changed.emit(current_phase)
+
+
+## Called locally by each peer once its own TestArena tree has finished
+## building (net/loading_reporter.gd, TestArena.tscn's last child).
+func report_loaded() -> void:
+	if NetworkManager.is_server():
+		_mark_loaded(multiplayer.get_unique_id())
+	else:
+		_rpc_report_loaded.rpc_id(1)
+
+
+## any_peer, but trusts multiplayer.get_remote_sender_id() instead of
+## a client-supplied id, same reasoning as LobbyState._rpc_register.
+@rpc("any_peer", "reliable")
+func _rpc_report_loaded() -> void:
+	if not NetworkManager.is_server():
+		return
+	_mark_loaded(multiplayer.get_remote_sender_id())
+
+
+func _mark_loaded(peer_id: int) -> void:
+	if current_phase != Phase.LOADING:
+		return
+	_loaded_peer_ids[peer_id] = true
+	if _all_connected_peers_loaded():
+		enter_in_progress()
+
+
+func _all_connected_peers_loaded() -> bool:
+	if not _loaded_peer_ids.has(multiplayer.get_unique_id()):
+		return false
+	for peer_id in multiplayer.get_peers():
+		if not _loaded_peer_ids.has(peer_id):
+			return false
+	return true
 
 
 func enter_in_progress() -> void:

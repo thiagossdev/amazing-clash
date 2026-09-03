@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://net/dev_bootstrap.gd" id="1_boot"]
 [ext_resource type="Script" path="res://net/player_spawner.gd" id="2_spwn"]
@@ -8,6 +8,7 @@
 [ext_resource type="Script" path="res://gameplay/combat/combat_resolver.gd" id="6_cmbtr"]
 [ext_resource type="Script" path="res://ui/hud/match_hud.gd" id="7_mhud"]
 [ext_resource type="Script" path="res://gameplay/match/match_rules.gd" id="8_mrule"]
+[ext_resource type="Script" path="res://net/loading_reporter.gd" id="9_ldrep"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_horiz"]
 size = Vector2(1200, 32)
@@ -100,3 +101,6 @@ script = ExtResource("6_cmbtr")
 
 [node name="MatchRules" type="Node" parent="."]
 script = ExtResource("8_mrule")
+
+[node name="LoadingReporter" type="Node" parent="."]
+script = ExtResource("9_ldrep")

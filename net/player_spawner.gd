@@ -70,15 +70,38 @@ const SPAWN_POSITIONS: Array[Vector2] = [
 var _next_spawn_index: int = 0
 
 
+## Phase 7: no longer spawns unconditionally at _ready() -- doing so
+## raced the LOADING handshake (core/match_state.gd): the server's own
+## TestArena tree (and this node) can finish _ready() before a remote
+## peer's own TestArena/MultiplayerSpawner has finished building on
+## their machine, so an immediate spawn here replicated to a node path
+## that didn't exist there yet ("Node not found: TestArena/
+## MultiplayerSpawner", confirmed live). Spawning now waits for
+## MatchState to actually reach IN_PROGRESS -- which only happens once
+## every connected peer's own LoadingReporter has reported ready --
+## except when it's already IN_PROGRESS at _ready() time (net/
+## dev_bootstrap.gd's direct-connect flow, which skips LOADING
+## entirely and calls enter_in_progress() immediately: unaffected).
 func _ready() -> void:
 	if not NetworkManager.is_server():
 		return
 	var characters := get_node(characters_path)
+	multiplayer.peer_connected.connect(func(peer_id): _spawn_for_peer(peer_id, characters))
+	multiplayer.peer_disconnected.connect(func(peer_id): _despawn_for_peer(peer_id, characters))
+	if MatchState.current_phase == MatchState.Phase.IN_PROGRESS:
+		_spawn_all_connected(characters)
+	else:
+		EventBus.match_state_changed.connect(
+			func(new_phase):
+				if new_phase == MatchState.Phase.IN_PROGRESS:
+					_spawn_all_connected(characters)
+		)
+
+
+func _spawn_all_connected(characters: Node) -> void:
 	_spawn_for_peer(multiplayer.get_unique_id(), characters)
 	for peer_id in multiplayer.get_peers():
 		_spawn_for_peer(peer_id, characters)
-	multiplayer.peer_connected.connect(func(peer_id): _spawn_for_peer(peer_id, characters))
-	multiplayer.peer_disconnected.connect(func(peer_id): _despawn_for_peer(peer_id, characters))
 
 
 func _spawn_for_peer(peer_id: int, characters: Node) -> void:
@@ -95,6 +118,12 @@ func _spawn_for_peer(peer_id: int, characters: Node) -> void:
 	)
 	_next_spawn_index += 1
 	characters.add_child(character)
+	print(
+		(
+			"PlayerSpawner: peer %d spawned as %s (team %d)"
+			% [peer_id, class_scene.resource_path, character.team]
+		)
+	)
 
 
 ## Uses LobbyState's registered choice for peer_id if one exists (the
