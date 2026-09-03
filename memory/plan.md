@@ -103,14 +103,21 @@ phase independently playable/demoable even if the next never lands):
     layout, so a real 5v5 (or any confirmed team-size combination)
     gets a sane arrangement instead of cycling through 4 points.
     **Done** — see Slice 12 below.
-13. Reconnect/grace-period system: a mid-match disconnect freezes the
-    character in place (vulnerable, not invulnerable -- disconnecting
-    has a real cost) for 30s instead of an immediate forfeit; a
-    reconnect within that window is authenticated by a per-player
-    secret token (issued once, held in the client's own memory, not
-    IP-matched) and resumes the same character under the new peer_id.
-    Expiring the window falls back to today's behavior (forfeit via
-    despawn). **Not started** — scope below.
+13. Reconnect/grace-period system, split into 13a/13b (2026-09-03,
+    same reasoning Slice 2 split into 2a/2b -- 13b carries real
+    identity/networking risk 13a doesn't):
+    a. Grace-period freeze: a mid-match disconnect freezes the
+       character in place (vulnerable, not invulnerable -- disconnecting
+       has a real cost) for 30s instead of an immediate forfeit, no
+       new freeze mechanism needed (`ServerSim`'s existing stale-input
+       fallback already does it). **Not started** — scope below.
+    b. Token-based reconnect: a reconnect within the grace window,
+       authenticated by a per-player secret token (issued once, held
+       in the client's own memory, not IP-matched), resumes the same
+       character under the new peer_id via a `controlling_peer_id`
+       indirection rather than a node rename. Expiring the window
+       without one falls back to 13a's own forfeit. **Not started** —
+       scope below.
 
 Post-MVP backlog: `docs/blueprint/06-post-mvp-backlog.md`, not started
 until Phase 6 ships (still true for the backlog itself; Phases 7-10
@@ -838,39 +845,79 @@ to scoped roadmap phases, not new post-MVP scope).
   stacking) and free-for-all (`--free-for-all`), both zero engine
   errors on every process.
 
-### Slice 13 (Reconnect / Grace-Period) — NOT STARTED
+### Slice 13a (Grace-Period Freeze, no reconnect yet) — NOT STARTED
 
-Confirmed by the human owner 2026-09-03 (3 real forks resolved):
+Confirmed by the human owner 2026-09-03. Split from the original single
+Slice 13 (2026-09-03, this session) the same way Slice 2 was split into
+2a/2b -- this half is small, low-risk, and independently valuable even
+if 13b never lands: a disconnect no longer instantly forfeits.
 
-- **Identity across a peer_id change**: a per-player secret token,
-  issued once (at `LobbyState` registration / Room Config time) and
-  held only in that client's own memory (lost on a full quit, not
-  IP-matched) -- not a persistent account system, scoped to "the same
-  running client instance reconnecting after a network drop."
 - **Vulnerability during the grace period**: the disconnected
   character freezes in place but stays **vulnerable** -- disconnecting
-  has a real cost, it is not a safe refuge. Same freeze mechanism
-  `apply_lock()`-adjacent code already uses for hitstop/elimination.
-- **Grace period**: 30 seconds. Expiring it without a matching
-  reconnect falls back to today's behavior exactly (`PlayerSpawner.
-  _despawn_for_peer()`, read by `MatchRules` as that team's alive
-  count dropping, per its own already-correct `_ever_present_teams`
-  logic -- unchanged).
-- `core/match_state.gd` gains the `Reconnect` sub-state the original
-  blueprint (`docs/blueprint/03-networking-and-match-modes.md`)
-  described but never built, now finally motivated by a real
-  mechanism instead of a placeholder enum value.
+  has a real cost, it is not a safe refuge.
+- **Grace period**: 30 seconds.
 - `PlayerSpawner` no longer despawns immediately on `peer_disconnected`
   -- it starts a 30s grace timer for that peer's character instead,
-  despawning only if it elapses unclaimed. A reconnecting peer
-  presents its token via a new RPC before/during Host-Join; if it
-  matches an active grace-period slot, that character is rebound to
-  the new peer_id (name change + control handoff) instead of a fresh
-  spawn through the normal Room Config flow.
+  despawning only if it elapses unclaimed (falls back to exactly
+  today's behavior: `MatchRules` reads the despawn as that team's
+  alive count dropping, per its own already-correct
+  `_ever_present_teams` logic -- unchanged).
+- The character freezing in place needs **no new freeze mechanism**:
+  `ServerSim.next_input()` already degrades a starved input buffer to
+  a neutral (no-movement) sample after `STALE_INPUT_TIMEOUT_TICKS`
+  (~0.2s) with no fresh input arriving -- which a disconnected peer's
+  character already is, permanently, once its owner is gone. The only
+  new work is *not despawning* and tracking the 30s window.
 - `MatchHud`/Room Config need some minimal "player X disconnected,
-  reconnecting..." indicator -- exact presentation not specified
-  further than that it must exist, implementation detail for the
-  phase itself to decide.
+  Ns to reconnect" indicator -- exact presentation not specified
+  further than that it must exist.
+- **Deliberately not built here** (Slice 13b's job): a way for the
+  original player to actually reclaim the frozen character. Without
+  13b, the grace period is pure delay -- it still always ends in the
+  same forfeit 13a alone doesn't change that outcome, only when it
+  happens and whether the character was killable in the meantime.
+
+### Slice 13b (Token-Based Reconnect) — NOT STARTED
+
+Confirmed by the human owner 2026-09-03 (3 real forks resolved).
+Builds on 13a's grace-period tracking; the genuinely hard part of the
+original combined ask, split out on its own because of real identity/
+networking risk 13a doesn't carry.
+
+- **Identity across a peer_id change**: a per-player secret token,
+  issued once (when a peer's character is spawned) and held only in
+  that client's own memory (lost on a full quit, not IP-matched) --
+  not a persistent account system, scoped to "the same running client
+  instance reconnecting after a network drop." Presented by the
+  reconnecting client during Host-Join.
+- **Recommended identity mechanism, to de-risk the hardest part**:
+  do NOT rename the Godot node on reconnect (renaming an already-
+  `MultiplayerSpawner`-replicated node mid-match is untested and risky
+  in this engine). Instead, give `CharacterController` a
+  `controlling_peer_id: int` field, separate from the node's own name
+  (which stays `str(original_peer_id)` forever). `is_owned_by_me()`
+  and `_rpc_send_input`'s sender-trust check both move from comparing
+  `str(name)` to comparing `controlling_peer_id`. A successful
+  reconnect updates `controlling_peer_id` to the new peer's id
+  (server-authoritative, broadcast so every peer's own `control_mode`
+  can be re-resolved -- the reconnecting peer's own copy becomes
+  PREDICTED, everyone else's stays INTERPOLATED, unchanged). This is
+  this session's own analysis, not settled by the human owner in
+  detail -- the phase's own `/think` should confirm or revise it
+  before implementing, per `ship-phase`'s own step 1.
+- `LobbyState`'s registrations do NOT need to move to the new peer_id
+  -- by the time a mid-match reconnect happens, `LobbyState`'s data
+  (class/team/perk) has already been consumed once at original spawn
+  time; nothing reads it again after that.
+- **Reconnect flow bypasses Character Select and Room Config
+  entirely**: a token-matched reconnect goes straight from Host-Join
+  to `IN_PROGRESS` (the match is already running; picking a class/perk
+  again makes no sense for a character that already exists). This is
+  an implied consequence of the decisions above, not a 4th separate
+  fork -- implement it this way rather than re-opening the question.
+- Expiring the grace window without a matching token reconnect falls
+  back to 13a's own behavior (forfeit via despawn) -- unchanged by
+  13b.
 
 ## MVP Status
 
