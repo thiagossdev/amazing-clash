@@ -125,3 +125,33 @@ func test_ability_q_can_be_cast_again_once_cooldown_elapses() -> void:
 	character.apply_input(_sample(false, true))
 	assert_eq(character.ability_q_fsm.current_move, character.ability_q.move)
 	assert_ne(character.ability_q_fsm.state, ActionFsm.State.NEUTRAL)
+
+
+func test_cooldown_multiplier_shortens_ability_cooldown() -> void:
+	var character := _spawn_character()
+	character.cooldown_multiplier = 0.5
+	character.apply_input(_sample(false, true))
+	var halved_cooldown := int(character.ability_q.cooldown_frames * 0.5)
+	for _i in range(halved_cooldown):
+		character.apply_input(_sample())
+	character.apply_input(_sample(false, true))
+	assert_eq(
+		character.ability_q_fsm.current_move,
+		character.ability_q.move,
+		"a 0.5 cooldown_multiplier (e.g. the Adept perk) should let Q recast after half its normal cooldown"
+	)
+	assert_ne(character.ability_q_fsm.state, ActionFsm.State.NEUTRAL)
+
+
+func test_default_cooldown_multiplier_is_a_no_op() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, true))
+	var halved_cooldown := int(character.ability_q.cooldown_frames * 0.5)
+	for _i in range(halved_cooldown):
+		character.apply_input(_sample())
+	character.apply_input(_sample(false, true))
+	assert_eq(
+		character.ability_q_fsm.state,
+		ActionFsm.State.NEUTRAL,
+		"without a perk (multiplier 1.0), half the normal cooldown must still be on cooldown"
+	)

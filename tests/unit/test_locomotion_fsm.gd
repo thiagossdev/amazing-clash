@@ -76,6 +76,30 @@ func test_cannot_dash_again_during_cooldown() -> void:
 	)
 
 
+func test_move_speed_multiplier_scales_walk_velocity() -> void:
+	var fsm := LocomotionFsm.new()
+	fsm.move_speed_multiplier = 1.1
+	fsm.advance(Vector2.RIGHT, false, 1.0 / 60.0)
+	assert_eq(fsm.velocity, Vector2.RIGHT * LocomotionFsm.MOVE_SPEED * 1.1)
+
+
+func test_default_move_speed_multiplier_is_a_no_op() -> void:
+	var fsm := LocomotionFsm.new()
+	fsm.advance(Vector2.RIGHT, false, 1.0 / 60.0)
+	assert_eq(fsm.velocity, Vector2.RIGHT * LocomotionFsm.MOVE_SPEED)
+
+
+func test_move_speed_multiplier_does_not_affect_dash_speed() -> void:
+	var fsm := LocomotionFsm.new()
+	fsm.move_speed_multiplier = 1.1
+	fsm.advance(Vector2.RIGHT, true, 1.0 / 60.0)
+	assert_eq(
+		fsm.velocity,
+		Vector2.RIGHT * LocomotionFsm.DASH_SPEED,
+		"a perk's move-speed multiplier is scoped to walk speed, not dash"
+	)
+
+
 func test_can_dash_again_once_cooldown_elapses() -> void:
 	var fsm := LocomotionFsm.new()
 	fsm.advance(Vector2.RIGHT, true, 1.0 / 60.0)

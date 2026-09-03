@@ -93,6 +93,13 @@ var pending_ability_e_direction: Vector2 = Vector2.RIGHT
 ## minimal HUD's own scope), so this stays a plain, unsynced var like
 ## action_fsm.already_hit.
 var team: int = 0
+## Set once at spawn (net/player_spawner.gd) from the peer's chosen
+## Room Config perk (Phase 9) -- 1.0 (no-op) for anyone without one.
+## Scales the cooldown a Q/E ability slot re-arms at in
+## _advance_ability_slot() below; attack_move/skillshot_move have no
+## explicit cooldown field to scale (their recovery frames already act
+## as one via action_fsm's own state machine).
+var cooldown_multiplier: float = 1.0
 
 var _local_sequence: int = 0
 var _server_sim: ServerSim
@@ -449,7 +456,7 @@ func _advance_ability_slot(
 	var started := false
 	if pressed and slot_fsm.state == ActionFsm.State.NEUTRAL and resource and remaining <= 0:
 		slot_fsm.start_move(resource.move)
-		remaining = resource.cooldown_frames
+		remaining = int(resource.cooldown_frames * cooldown_multiplier)
 		started = true
 	else:
 		slot_fsm.advance_frame()
