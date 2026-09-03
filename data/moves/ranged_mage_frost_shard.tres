@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="MoveDefinition" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://gameplay/combat/hit_definition.gd" id="1_hit"]
+[ext_resource type="Script" path="res://gameplay/combat/move_resource.gd" id="2_move"]
+
+[sub_resource type="Resource" id="Resource_hit1"]
+script = ExtResource("1_hit")
+damage = 10.0
+hitstun_frames = 10
+hitbox_offset = Vector2(0, 0)
+hitbox_size = Vector2(20, 20)
+hitstop_frames = 3
+
+[resource]
+script = ExtResource("2_move")
+move_name = "Frost Shard"
+startup_frames = 6
+active_frames = 1
+recovery_frames = 10
+hit_definitions = Array[ExtResource("1_hit")]([SubResource("Resource_hit1")])
