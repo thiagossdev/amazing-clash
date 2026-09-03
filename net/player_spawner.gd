@@ -15,8 +15,17 @@ extends Node
 ## Phase 4: alternates the real classes by connection order (same
 ## array-cycling pattern SPAWN_POSITIONS already uses below) -- no
 ## lobby/character-select exists yet, so this is the simplest thing
-## that lets every class fight in a live match. Phase 5: also assigns
-## team = index % 2 for 2v2 team mode, same connection-order auto-
+## that lets every class fight in a live match.
+##
+## Phase 7: a peer registered in LobbyState (CharacterSelect's real
+## pick) gets that class instead; an unregistered peer
+## (net/dev_bootstrap.gd's headless test peers, which never go through
+## CharacterSelect) still falls back to the original index-cycling
+## behavior unchanged, so every prior phase's headless verification
+## keeps working.
+##
+## Phase 5: also assigns team = index % 2 for 2v2 team mode, same
+## connection-order auto-
 ## assignment, no lobby/character-select UI exists yet to pick team or
 ## class explicitly (deferred, see memory/plan.md). Phase 6: 3rd entry
 ## (Warden) added -- the 2-vs-3 modulus mismatch with team assignment's
@@ -75,7 +84,7 @@ func _ready() -> void:
 func _spawn_for_peer(peer_id: int, characters: Node) -> void:
 	if characters.has_node(str(peer_id)):
 		return
-	var class_scene := CLASS_SCENES[_next_spawn_index % CLASS_SCENES.size()]
+	var class_scene := _resolve_class_scene(peer_id)
 	var character := class_scene.instantiate()
 	character.name = str(peer_id)
 	character.position = SPAWN_POSITIONS[_next_spawn_index % SPAWN_POSITIONS.size()]
@@ -86,6 +95,19 @@ func _spawn_for_peer(peer_id: int, characters: Node) -> void:
 	)
 	_next_spawn_index += 1
 	characters.add_child(character)
+
+
+## Uses LobbyState's registered choice for peer_id if one exists (the
+## real CharacterSelect flow, Phase 7+); otherwise falls back to the
+## original index-cycling default (net/dev_bootstrap.gd's headless
+## test peers, which never register).
+func _resolve_class_scene(peer_id: int) -> PackedScene:
+	var class_id := LobbyState.get_class_id(peer_id, "")
+	var registered_index := LobbyState.CLASS_IDS.find(class_id)
+	var scene_index := (
+		registered_index if registered_index != -1 else _next_spawn_index % CLASS_SCENES.size()
+	)
+	return CLASS_SCENES[scene_index]
 
 
 func _despawn_for_peer(peer_id: int, characters: Node) -> void:

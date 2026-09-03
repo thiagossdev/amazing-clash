@@ -2,13 +2,22 @@ extends Node
 ## Orchestrator autoload -- source of truth for the match phase.
 ## See docs/blueprint/03-networking-and-match-modes.md.
 ##
-## Phase 1 has no Lobby/CharacterSelect UI yet: TestArena is the main
-## scene and enters IN_PROGRESS directly once networking is up. RECONNECT
-## is a sub-state of IN_PROGRESS conceptually, not its own Phase value
-## here -- a disconnect just despawns that character (PlayerSpawner) and
-## MatchRules' elimination check treats a team dropping to 0 current
-## members the same whether by disconnect or defeat; a real
-## reconnect/grace-period system is out of scope for Phase 5.
+## RECONNECT is a sub-state of IN_PROGRESS conceptually, not its own
+## Phase value here -- a disconnect just despawns that character
+## (PlayerSpawner) and MatchRules' elimination check treats a team
+## dropping to 0 current members the same whether by disconnect or
+## defeat; a real reconnect/grace-period system is out of scope for
+## Phase 5.
+##
+## Phase 7: dropped CHARACTER_SELECT and LOADING from Phase, the enum
+## originally had -- neither was ever implemented (TestArena entered
+## IN_PROGRESS directly, per docs/blueprint/03-networking-and-match-
+## modes.md's now-outdated original ordering). Character selection
+## turned out to belong entirely outside networked match state (it
+## happens locally, before ever connecting -- see ui/character_select/
+## and memory/plan.md's "Slices 7-10" section), so there was never a
+## real use for a networked CHARACTER_SELECT phase. LOBBY now means
+## "connected, in the Room Config waiting screen" (ui/lobby/).
 ##
 ## Phase 5: this file's phase is now client-visible for the first time
 ## (nothing before this phase read current_phase client-side), which
@@ -26,7 +35,7 @@ extends Node
 ## grew from a fixed 2-element array to a variable-length one indexed by
 ## team id, so it reads correctly under either mode.
 
-enum Phase { LOBBY, CHARACTER_SELECT, LOADING, IN_PROGRESS, POST_GAME }
+enum Phase { LOBBY, IN_PROGRESS, POST_GAME }
 enum MatchMode { TEAM, FREE_FOR_ALL }
 
 var current_phase: Phase = Phase.LOBBY
