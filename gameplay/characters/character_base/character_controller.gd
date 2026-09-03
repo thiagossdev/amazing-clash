@@ -1,11 +1,12 @@
 class_name CharacterController
 extends CharacterBody2D
-## Phase 2a: adds a melee test move (ActionFsm + MoveDefinition/
-## HitDefinition) and health on top of Phase 1's locomotion. All input
-## goes through InputManager, never Input directly. Networking pattern
-## (control modes, prediction/reconciliation, interpolation) adapted
-## from amazing-nauts' character_controller.gd, scoped down: no
-## ranged/skillshot yet (Phase 2b), no ability framework yet (Phase 3).
+## Phase 2b: adds a melee test move and a mouse-aimed skillshot
+## (ActionFsm + MoveDefinition/HitDefinition) and health on top of
+## Phase 1's locomotion. All input goes through InputManager, never
+## Input directly. Networking pattern (control modes, prediction/
+## reconciliation, interpolation) adapted from amazing-nauts'
+## character_controller.gd, scoped down: no ability framework yet
+## (Phase 3), no full hero roster (Phase 4).
 ##
 ## Networked in one of 3 roles decided by _resolve_control_mode():
 ## AUTHORITATIVE (server, every character, fed by ServerSim's per-client
@@ -34,6 +35,10 @@ const MAX_VISUAL_POSITION_ERROR := 48.0
 ## moveset yet (Phase 4). Named debug_*: CharacterBody2D already has
 ## test_move().
 @export var debug_attack_move: MoveDefinition
+## Single generic test skillshot for Phase 2b -- fires a Projectile in
+## pending_skillshot_direction (real mouse-aim, captured at cast time)
+## rather than an unaimed melee swing.
+@export var debug_skillshot_move: MoveDefinition
 ## Own hurtbox for combat, decoupled from the CharacterBody2D collision
 ## shape used for world collision.
 @export var hurtbox_size: Vector2 = Vector2(40.0, 40.0)
@@ -51,6 +56,13 @@ var control_mode: ControlMode = ControlMode.PREDICTED
 ## set directly from CharacterSnapshot.health on receipt, same category
 ## as current_health.
 var current_health: float = 100.0
+## Server-only: the mouse-aim direction captured at the exact tick the
+## skillshot cast started, read by CombatResolver when the cast reaches
+## ACTIVE to launch the Projectile. Not part of ClientPredictor.
+## Checkpoint: it only ever matters on the AUTHORITATIVE instance (only
+## the server spawns the real projectile), same category as
+## action_fsm.already_hit.
+var pending_skillshot_direction: Vector2 = Vector2.RIGHT
 
 var _local_sequence: int = 0
 var _server_sim: ServerSim
@@ -129,6 +141,8 @@ func _physics_step_predicted(delta: float) -> void:
 					sample.move_vector,
 					sample.dash_pressed,
 					sample.attack_pressed,
+					sample.aim_direction,
+					sample.skillshot_pressed,
 					sample.delta
 				)
 		)
@@ -167,13 +181,21 @@ func _sample_local_input(delta: float) -> InputBuffer.Sample:
 	sample.move_vector = InputManager.get_move_vector()
 	sample.dash_pressed = InputManager.is_action_just_pressed(&"dash")
 	sample.attack_pressed = InputManager.is_action_just_pressed(&"attack")
+	sample.aim_direction = InputManager.get_aim_direction(global_position)
+	sample.skillshot_pressed = InputManager.is_action_just_pressed(&"skillshot")
 	sample.delta = delta
 	return sample
 
 
 @rpc("any_peer", "unreliable_ordered", "call_remote")
 func _rpc_send_input(
-	sequence: int, move_vector: Vector2, dash_pressed: bool, attack_pressed: bool, delta: float
+	sequence: int,
+	move_vector: Vector2,
+	dash_pressed: bool,
+	attack_pressed: bool,
+	aim_direction: Vector2,
+	skillshot_pressed: bool,
+	delta: float
 ) -> void:
 	if not NetworkManager.is_server():
 		return
@@ -184,6 +206,8 @@ func _rpc_send_input(
 	sample.move_vector = move_vector
 	sample.dash_pressed = dash_pressed
 	sample.attack_pressed = attack_pressed
+	sample.aim_direction = aim_direction
+	sample.skillshot_pressed = skillshot_pressed
 	sample.delta = delta
 	_server_sim.record_input(sample)
 
@@ -320,14 +344,28 @@ func _render_interpolated_position() -> void:
 	)
 
 
-## Starts the test attack if one was pressed and the action layer is
-## free, otherwise just advances whatever move is already in progress
-## (a no-op while NEUTRAL with nothing active).
+## Starts the test attack or skillshot if one was pressed and the
+## action layer is free (attack takes priority if both are somehow
+## pressed the same tick), otherwise just advances whatever move is
+## already in progress (a no-op while NEUTRAL with nothing active).
 func apply_input(sample: InputBuffer.Sample) -> void:
 	fsm.advance(sample.move_vector, sample.dash_pressed, sample.delta)
 	velocity = fsm.velocity
-	if sample.attack_pressed and action_fsm.state == ActionFsm.State.NEUTRAL and debug_attack_move:
+	var can_start_move := action_fsm.state == ActionFsm.State.NEUTRAL
+	if sample.attack_pressed and can_start_move and debug_attack_move:
 		action_fsm.start_move(debug_attack_move)
+	elif sample.skillshot_pressed and can_start_move and debug_skillshot_move:
+		# Not trusted verbatim from the network -- see locomotion_fsm.gd's
+		# move_vector clamp for the same class of concern; a raw or
+		# oversized vector here can't cause harm on its own (Projectile.
+		# configure() normalizes again before use), but normalizing at
+		# the point of capture keeps every stored direction well-formed.
+		pending_skillshot_direction = (
+			sample.aim_direction.normalized()
+			if not sample.aim_direction.is_zero_approx()
+			else Vector2.RIGHT
+		)
+		action_fsm.start_move(debug_skillshot_move)
 	else:
 		action_fsm.advance_frame()
 

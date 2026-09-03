@@ -38,6 +38,8 @@ shape = SubResource("RectangleShape2D_vert")
 
 [node name="Characters" type="Node2D" parent="."]
 
+[node name="Projectiles" type="Node2D" parent="."]
+
 [node name="ArenaCamera" parent="." instance=ExtResource("4_cam")]
 
 [node name="HitboxViewer" parent="." instance=ExtResource("5_cshv")]

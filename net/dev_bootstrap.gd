@@ -10,8 +10,13 @@ extends Node
 ## start sampling input first; dash is a one-shot edge trigger
 ## (is_action_just_pressed), so firing it before the character exists to
 ## observe the edge would silently waste the press. `-- --simulate-attack`
-## fires one attack press ~1.2s in, same reasoning. No flags leaves this
-## a no-op. Pattern inherited from amazing-nauts' net/dev_bootstrap.gd.
+## fires one attack press ~1.2s in, same reasoning; `-- --simulate-
+## skillshot` fires one skillshot press ~1.4s in (headless has no real
+## mouse either, so InputManager.get_aim_direction() resolves off
+## whatever the headless viewport's mouse position defaults to -- fine
+## for proving the projectile spawns/travels/expires, not for testing a
+## specific aim). No flags leaves this a no-op. Pattern inherited from
+## amazing-nauts' net/dev_bootstrap.gd.
 ##
 ## host()/join() run first and synchronously, before anything that
 ## awaits: PlayerSpawner._ready() (a sibling node under the same
@@ -49,3 +54,7 @@ func _ready() -> void:
 	if "--simulate-attack" in args:
 		await get_tree().create_timer(1.2).timeout
 		Input.action_press(&"attack")
+
+	if "--simulate-skillshot" in args:
+		await get_tree().create_timer(1.4).timeout
+		Input.action_press(&"skillshot")
