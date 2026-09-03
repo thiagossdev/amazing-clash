@@ -13,7 +13,9 @@ skeleton — done and tactically verified 2026-09-02** (see
 2026-09-02** (see `memory/verify.md`'s Phase 2a section).
 **Phase 2b (aimed skillshot/projectile) — done and tactically verified
 2026-09-02** (see `memory/verify.md`'s Phase 2b section). **Phase 3
-(Ability Framework) is next.** Full design is in
+(Ability Framework) — done and tactically verified 2026-09-03** (see
+`memory/verify.md`'s Phase 3 section). **Phase 4 (first 2 real classes)
+is next.** Full design is in
 `docs/blueprint/` (start at
 `docs/blueprint/README.md`), grounded in
 `docs/research/eslabong-inspiration/` and
@@ -52,9 +54,9 @@ phase independently playable/demoable even if the next never lands):
 3. Ability Framework: 2-3 abilities on the placeholder character,
    100% data-driven via Resource; schema leaves room for Eslabong-style
    Evolution/Specialization branches and a minimal loadout-slot model
-   without implementing either yet. **Next.**
+   without implementing either yet. **Done** — see Slice 3 below.
 4. First 2 real classes (melee + ranged skillshot archetypes) replace
-   the placeholder character.
+   the placeholder character. **Next.**
 5. Match modes: team mode (2v2 default), friendly-fire toggle, win
    condition, minimal lobby/HUD/match flow.
 6. 3rd class (support/control archetype) + free-for-all mode —
@@ -147,6 +149,71 @@ until Phase 6 ships.
   and fixed (`memory/gotchas.md` 2026-09-02: `is Type` doesn't narrow a
   loop variable's static type).
 
+### Slice 3 (Phase 3): Two independent, cooldown-gated ability slots (Q/E) on the placeholder character — DONE
+
+- **Data**: new `AbilityResource` (`gameplay/abilities/ability_resource.gd`
+  — `ability_name`, `move: MoveDefinition`, `cooldown_frames`,
+  `is_projectile`), a thin wrapper reusing Phase 2's
+  `MoveDefinition`/`HitDefinition` unchanged. Two test abilities:
+  `data/abilities/debug_ability_q.tres` ("Power Strike", melee-style,
+  90-frame cooldown, 25 damage) and `debug_ability_e.tres` ("Fireball",
+  projectile-style, 150-frame cooldown, 20 damage).
+- **Input**: `attack` rebound from J to the **left mouse button**;
+  `ability_q`/`ability_e`/`ability_r`/`ability_f`/`ability_t` added on
+  Q/E/R/F/T (Path of Exile 2's convention) — **R/F/T are bound in the
+  InputMap but not wired to any ability yet**, intentionally (2-3
+  abilities was this phase's scope, not 5). `InputBuffer.Sample` grew
+  `ability_q_pressed`/`ability_e_pressed`; the 4 press flags (attack,
+  skillshot, ability_q, ability_e) now travel over `_rpc_send_input` as
+  one packed bitmask int (`InputBuffer.pack_ability_flags`/
+  `unpack_ability_flags`) instead of separate bool params, to stay
+  under gdlint's function-argument-count cap as slots were added.
+- **Behavior**: `CharacterController` gained `ability_q_fsm`/
+  `ability_e_fsm` — each its **own** `ActionFsm` instance and **own**
+  frame-counted cooldown counter, fully decoupled from the shared
+  melee/skillshot `action_fsm` and from each other (pressing Q doesn't
+  lock out melee, E, or vice versa; only that slot's own cooldown gates
+  it). `_advance_ability_slot()` is the shared cooldown-gating helper
+  both slots call through `apply_input()`. Aim direction for a
+  projectile-style ability slot (Fireball/E) is captured at the exact
+  cast tick via `pending_ability_q_direction`/
+  `pending_ability_e_direction`, mirroring `pending_skillshot_direction`'s
+  existing anti-retarget-during-windup design.
+- **Combat resolution**: `CombatResolver._resolve_attacker` now
+  dispatches both ability slots through `_resolve_ability_slot()`,
+  which routes to the existing `_resolve_melee()` path (generalized to
+  take any `ActionFsm`+`MoveDefinition` pair, not just the base attack)
+  or the existing skillshot-launch path (generalized to
+  `_maybe_launch_projectile()`, parameterized by a `slot_name` string
+  round-tripped through `_rpc_spawn_projectile` so every peer can look
+  the caster's own move back up via `_get_move_for_slot()`). No new
+  per-slot projectile speed/lifetime — both projectile-capable slots
+  (skillshot, and Fireball/E) share `CombatResolver`'s existing
+  `PROJECTILE_SPEED`/`PROJECTILE_LIFETIME_FRAMES` constants.
+- **Networking**: `ClientPredictor.Checkpoint` grew 6 fields
+  (`ability_q_state`/`ability_q_move_frame`/`ability_q_cooldown_frames`,
+  same 3 for `ability_e`), captured/restored by
+  `_capture_predicted_state`/`_restore_predicted_state` exactly like
+  the existing `action_state`/`action_move`/`action_move_frame` fields.
+  **Deferred, documented gap**: a remote `INTERPOLATED` peer's Q/E
+  `ActionFsm` state is **not** replicated via the snapshot RPC (its
+  param count is already at a practical limit) — a remote player's Q/E
+  cast won't visually animate on other clients yet. Hit resolution is
+  unaffected (already server-only); this is a visual-only gap for a
+  later phase to close if/when the snapshot RPC is restructured (e.g.
+  a single packed action-state int instead of 3 separate params per
+  slot).
+- **Tests**: 6 new tests in `test_character_controller_combat.gd`
+  (independent-slot activation, no-restart-mid-move, cooldown gating,
+  cooldown-elapsed re-cast) — 58 total (was 52).
+- **Verify**: live 2-process headless test — server casts melee attack
+  (10 dmg), ability_q/Power Strike (25 dmg melee), and ability_e/
+  Fireball (projectile spawn), all server-authoritative; the Fireball
+  spawn RPC replicated identically to the client (confirming the
+  generalized `slot_name`-keyed spawn/lookup mechanism works the same
+  way the original hardcoded skillshot path did). See
+  `memory/verify.md`'s Phase 3 section for full evidence.
+
 ## Deferred / Out of Scope
 
 - Matchmaking/dedicated-server infrastructure — Phase 1 targets direct
@@ -155,8 +222,22 @@ until Phase 6 ships.
   respec economy) — Phase 3 only seeds the data schema.
 - Rollback netcode reconsideration — deferred until Phase 2's real
   entity counts exist to evaluate against.
-- Any class/ability content — Phases 1-3 use one placeholder character
-  only; real classes start at Phase 4.
+- Any class/ability content — Phases 1-2 use one placeholder character
+  only; Phase 3 adds 2 generic test abilities (Q/E) to that same
+  placeholder; real classes with real kits start at Phase 4.
+- R/F/T keybindings exist in the InputMap (Phase 3) but are not wired
+  to any ability — deferred to whichever later phase adds a 3rd+
+  ability slot (needs the human owner's decision on how many slots a
+  real class kit should have; not decided this session).
+- Remote (`INTERPOLATED`) peer visual replication of ability_q/e
+  `ActionFsm` state — see Slice 3's networking note above. Needs a
+  decision on how to restructure the snapshot RPC (packed state int
+  vs. a different sync strategy) before more ability slots make this
+  worse.
+- Per-ability projectile speed/lifetime — both projectile-capable
+  slots currently share one hardcoded speed/lifetime in
+  `CombatResolver`; revisit once a real ranged class (Phase 4) needs
+  differentiated projectile feel.
 
 ## Open Questions
 

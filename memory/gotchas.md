@@ -76,6 +76,18 @@ Format:
   type-specific methods on it — don't rely on the `is` check itself to
   narrow the type for later statements.
 
+- **2026-09-03** — Added `pack_ability_flags`/`unpack_ability_flags`
+  static functions to `input/input_buffer.gd` between the `Sample`
+  inner class and the `_samples` var declaration; `gdlint` failed with
+  `Error: Definition out of order in global scope
+  (class-definitions-order)`. → **Rule**: gdlint enforces a strict
+  top-level ordering (inner classes, then var declarations, then
+  functions/static functions) — a static helper function can't appear
+  before a class-level `var`, even one unrelated to it. When adding a
+  new static function to a script that already has top-level `var`s,
+  place it after all of them, not next to the class/data it logically
+  operates on.
+
 <!--
 Examples:
 
