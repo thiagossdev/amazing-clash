@@ -1,8 +1,8 @@
 extends GutTest
-## Phase 2a combat additions on CharacterController: starting the test
-## attack move via apply_input(), health/lock bookkeeping. Calls the
-## public methods directly rather than simulating a live network
-## round-trip -- simpler and just as exact for this logic.
+## Phase 2a's test attack move and Phase 3's 2 independent ability slots
+## (Q/E) on CharacterController: starting via apply_input(), health/lock
+## bookkeeping. Calls the public methods directly rather than simulating
+## a live network round-trip -- simpler and just as exact for this logic.
 
 const CHARACTER_SCENE := preload("res://gameplay/characters/character_base/Character.tscn")
 
@@ -11,9 +11,13 @@ func _spawn_character() -> CharacterController:
 	return add_child_autofree(CHARACTER_SCENE.instantiate())
 
 
-func _sample(attack_pressed: bool = false) -> InputBuffer.Sample:
+func _sample(
+	attack_pressed: bool = false, ability_q_pressed: bool = false, ability_e_pressed: bool = false
+) -> InputBuffer.Sample:
 	var sample := InputBuffer.Sample.new()
 	sample.attack_pressed = attack_pressed
+	sample.ability_q_pressed = ability_q_pressed
+	sample.ability_e_pressed = ability_e_pressed
 	sample.delta = 1.0 / 60.0
 	return sample
 
@@ -61,3 +65,63 @@ func test_apply_lock_never_shortens_a_longer_existing_lock() -> void:
 	character.apply_lock(20)
 	character.apply_lock(5)
 	assert_eq(character._lock_frames, 20)
+
+
+func test_ability_q_pressed_starts_its_own_move() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, true))
+	assert_ne(character.ability_q_fsm.state, ActionFsm.State.NEUTRAL)
+	assert_eq(character.ability_q_fsm.current_move, character.ability_q.move)
+
+
+func test_ability_e_pressed_starts_its_own_move() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, false, true))
+	assert_ne(character.ability_e_fsm.state, ActionFsm.State.NEUTRAL)
+	assert_eq(character.ability_e_fsm.current_move, character.ability_e.move)
+
+
+func test_ability_q_and_melee_attack_can_be_active_at_the_same_time() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(true, true))
+	assert_ne(character.action_fsm.state, ActionFsm.State.NEUTRAL)
+	assert_ne(character.ability_q_fsm.state, ActionFsm.State.NEUTRAL)
+
+
+func test_ability_q_pressed_again_mid_move_does_not_restart_it() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, true))
+	character.apply_input(_sample())
+	var move_frame_before := character.ability_q_fsm.move_frame
+	character.apply_input(_sample(false, true))
+	assert_eq(
+		character.ability_q_fsm.move_frame,
+		move_frame_before + 1,
+		"a second Q press mid-move should just advance the frame, not restart it"
+	)
+
+
+func test_ability_q_stays_on_cooldown_after_its_move_ends() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, true))
+	var move := character.ability_q.move
+	var total_frames := move.startup_frames + move.active_frames + move.recovery_frames
+	for _i in range(total_frames):
+		character.apply_input(_sample())
+	assert_eq(character.ability_q_fsm.state, ActionFsm.State.NEUTRAL)
+	character.apply_input(_sample(false, true))
+	assert_eq(
+		character.ability_q_fsm.state,
+		ActionFsm.State.NEUTRAL,
+		"pressing Q again immediately after its move ends should be blocked by cooldown"
+	)
+
+
+func test_ability_q_can_be_cast_again_once_cooldown_elapses() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, true))
+	for _i in range(character.ability_q.cooldown_frames):
+		character.apply_input(_sample())
+	character.apply_input(_sample(false, true))
+	assert_eq(character.ability_q_fsm.current_move, character.ability_q.move)
+	assert_ne(character.ability_q_fsm.state, ActionFsm.State.NEUTRAL)
