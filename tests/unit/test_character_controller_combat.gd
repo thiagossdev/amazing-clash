@@ -56,6 +56,24 @@ func test_attack_pressed_again_mid_move_does_not_restart_it() -> void:
 	)
 
 
+## attack_pressed reflects the HELD state at this layer (edge-vs-level
+## detection happens one layer up, in _sample_local_input -- see its
+## own doc comment); holding it across a full move (20 frames: 6
+## startup + 4 active + 10 recovery for the debug attack move) should
+## auto-restart a fresh cast the instant NEUTRAL is reached again,
+## instead of idling until a brand-new press.
+func test_holding_attack_auto_repeats_once_the_move_ends() -> void:
+	var character := _spawn_character()
+	for _tick in range(25):
+		character.apply_input(_sample(true))
+	assert_ne(
+		character.action_fsm.state,
+		ActionFsm.State.NEUTRAL,
+		"holding attack through a full move+recovery cycle should auto-restart it, not stall in NEUTRAL"
+	)
+	assert_eq(character.action_fsm.current_move, character.attack_move)
+
+
 func test_get_aim_direction_is_independent_of_movement() -> void:
 	var character := _spawn_character()
 	var sample := _sample()

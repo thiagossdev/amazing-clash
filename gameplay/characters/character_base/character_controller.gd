@@ -268,17 +268,25 @@ func _physics_step_authoritative(delta: float) -> void:
 		)
 
 
+## attack/skillshot/ability_q/ability_e use the HELD state
+## (is_action_pressed), not just the press edge, so holding the button
+## auto-repeats the moment that slot's own cooldown/recovery allows it
+## again (apply_input()'s existing can_start_move/cooldown-remaining
+## checks are what actually gate the repeat -- unaffected by this,
+## still correct for "does not restart mid-move"). dash stays edge-
+## triggered (is_action_just_pressed): auto-repeating an evasive burst
+## on hold is a separate balance question, not asked for here.
 func _sample_local_input(delta: float) -> InputBuffer.Sample:
 	var sample := InputBuffer.Sample.new()
 	_local_sequence += 1
 	sample.sequence = _local_sequence
 	sample.move_vector = InputManager.get_move_vector()
 	sample.dash_pressed = InputManager.is_action_just_pressed(&"dash")
-	sample.attack_pressed = InputManager.is_action_just_pressed(&"attack")
+	sample.attack_pressed = InputManager.is_action_pressed(&"attack")
 	sample.aim_direction = InputManager.get_aim_direction(global_position)
-	sample.skillshot_pressed = InputManager.is_action_just_pressed(&"skillshot")
-	sample.ability_q_pressed = InputManager.is_action_just_pressed(&"ability_q")
-	sample.ability_e_pressed = InputManager.is_action_just_pressed(&"ability_e")
+	sample.skillshot_pressed = InputManager.is_action_pressed(&"skillshot")
+	sample.ability_q_pressed = InputManager.is_action_pressed(&"ability_q")
+	sample.ability_e_pressed = InputManager.is_action_pressed(&"ability_e")
 	sample.delta = delta
 	return sample
 
