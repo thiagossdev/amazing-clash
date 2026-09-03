@@ -59,6 +59,7 @@ func _on_friendly_fire_toggled(value: bool) -> void:
 
 
 func _on_start_pressed() -> void:
+	LanDiscovery.stop_advertising()
 	MatchState.friendly_fire_enabled = LobbyState.room_friendly_fire
 	MatchState.enter_loading(LobbyState.room_match_mode as MatchState.MatchMode)
 
