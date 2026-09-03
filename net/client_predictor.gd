@@ -27,6 +27,16 @@ class Checkpoint:
 	var action_state: int = 0
 	var action_move: MoveDefinition
 	var action_move_frame: int = 0
+	## Phase 3's independent ability slots -- each has its own ActionFsm
+	## and cooldown, exactly as reconciliation-sensitive as the shared
+	## action layer above for the same reason (activation is a one-shot,
+	## cooldown-gated trigger).
+	var ability_q_state: int = 0
+	var ability_q_move_frame: int = 0
+	var ability_q_cooldown_frames: int = 0
+	var ability_e_state: int = 0
+	var ability_e_move_frame: int = 0
+	var ability_e_cooldown_frames: int = 0
 
 
 var _buffer := InputBuffer.new()
