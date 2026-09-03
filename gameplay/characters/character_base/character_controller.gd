@@ -85,6 +85,22 @@ var pending_skillshot_direction: Vector2 = Vector2.RIGHT
 ## get_aim_direction() instead, same as the base melee move).
 var pending_ability_q_direction: Vector2 = Vector2.RIGHT
 var pending_ability_e_direction: Vector2 = Vector2.RIGHT
+## Real mouse-aim, refreshed every tick from the current input sample --
+## what get_aim_direction() (melee's hitbox rotation) reads. Corrected
+## from LocomotionFsm.facing_direction (last movement direction) after
+## the human owner caught that coupling during play-testing: aim and
+## movement must be independent, even for melee, not just for the
+## skillshot/ability slots above. Fully redetermined by the current
+## sample alone (unlike facing_direction, which persists across ticks
+## with no movement input), so it needs no ClientPredictor.Checkpoint
+## entry -- replaying a sample during reconciliation recomputes the
+## same value deterministically. Network-safe the same way pending_
+## skillshot_direction already is: sample.aim_direction always carries
+## the submitting peer's own real aim (local InputManager read when
+## predicting locally, the value received over _rpc_send_input when the
+## server processes a remote peer's input), never a live local
+## InputManager read on the server for someone else's character.
+var current_aim_direction: Vector2 = Vector2.RIGHT
 ## Server-only: set by PlayerSpawner right after instantiate, before
 ## add_child (same pattern as `position`) -- 0 or 1, read by
 ## CombatResolver's friendly-fire check and MatchRules' alive-per-team
@@ -446,6 +462,7 @@ func _render_interpolated_position() -> void:
 ## already in progress. Then independently advances each ability slot
 ## (Q, E), which don't share the action layer or each other's cooldown.
 func apply_input(sample: InputBuffer.Sample) -> void:
+	current_aim_direction = _normalized_aim(sample.aim_direction)
 	fsm.advance(sample.move_vector, sample.dash_pressed, sample.delta)
 	velocity = fsm.velocity
 	var can_start_move := action_fsm.state == ActionFsm.State.NEUTRAL
@@ -501,11 +518,13 @@ func _normalized_aim(aim_direction: Vector2) -> Vector2:
 	return aim_direction.normalized() if not aim_direction.is_zero_approx() else Vector2.RIGHT
 
 
-## Current aim direction for this character's melee hitbox -- Phase 2a
-## uses last movement direction (LocomotionFsm.facing_direction); real
-## mouse-aim arrives with Phase 2b's skillshot.
+## Current aim direction for this character's melee hitbox -- real
+## mouse-aim (current_aim_direction), fully independent of movement.
+## Was LocomotionFsm.facing_direction (last movement direction) through
+## Fases 1-10; corrected after the human owner caught that coupling
+## during play-testing.
 func get_aim_direction() -> Vector2:
-	return fsm.facing_direction
+	return current_aim_direction
 
 
 ## Server-only: freezes this character's own simulation step (movement

@@ -391,6 +391,39 @@ changed but this file wasn't updated.
   and structural review -- the new RPC mirrors `_rpc_spawn_projectile`
   exactly, which live testing has already proven correct across every
   phase that's used it. `gdformat`/`gdlint` clean.
+- [x] Decoupled melee aim from movement, per the human owner's own
+  play-testing feedback ("mirar e andar deveriam ser independentes,
+  mesmo para melee"). Melee's hitbox aim (`CharacterController.
+  get_aim_direction()`) read `LocomotionFsm.facing_direction` (last
+  movement direction) since Phase 2a -- a real coupling bug, not a
+  cosmetic one: a player standing still after moving left, then trying
+  to melee-attack something to their right, would swing left instead.
+  Fixed with a new `current_aim_direction` field, refreshed every tick
+  in `apply_input()` from `sample.aim_direction` -- the same real
+  mouse-aim value already sampled every tick for the skillshot/ability
+  slots (`InputManager.get_aim_direction()`, network-safe the same way
+  `pending_skillshot_direction` already is: the server reads the
+  submitting peer's own transmitted sample, never a live local mouse
+  read for someone else's character). `LocomotionFsm.facing_direction`
+  itself is untouched -- still tracks movement for whatever eventually
+  needs it (a future sprite-facing system), just no longer feeds
+  combat aim. Replaced the one existing test that asserted the old
+  (coincidental-at-zero-input) coupling with
+  `test_get_aim_direction_is_independent_of_movement`, which moves one
+  way and aims another and asserts the hitbox follows the aim. 111
+  total GUT tests (unchanged count, one replaced). **Known follow-up,
+  not a regression**: `net/player_spawner.gd`'s spawn-position comment
+  documented a live-verified guarantee that an un-aimed headless
+  `--simulate-attack` lands a hit, which depended on melee's old
+  default-facing-right behavior -- no longer holds now that melee
+  inherits the same "no real mouse in headless" caveat
+  `--simulate-skillshot` already had (confirmed empirically: the
+  default headless aim direction points away from where a teammate
+  spawns, not toward it). A real player's mouse-aimed swing is
+  unaffected -- this is the fix actually working, not a gap in it.
+  Comment corrected in place; a future headless melee-hit test would
+  need an explicit fake-aim dev flag, not a coincidental default,
+  mirroring how class/perk already get one.
 
 ## Backlog (next up)
 

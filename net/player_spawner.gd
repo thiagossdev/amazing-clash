@@ -47,16 +47,23 @@ const CLASS_SCENES: Array[PackedScene] = [
 ## team 1 clusters on the right -- index parity matches
 ## _spawn_for_peer's own `team = index % 2`, so index 0/2 (team 0) land
 ## near x=300 and index 1/3 (team 1) near x=900. Teammates are placed
-## side by side, 60 units apart on the same y (the same spacing and
-## axis Phase 2a already verified live puts a melee hitbox in reach of
-## the other, since LocomotionFsm's default facing_direction is
-## Vector2.RIGHT -- a vertical offset wouldn't be in a default-facing
-## melee swing's path). The 2nd-spawned member of each team (index 2/3)
-## is placed at a LOWER x than the 1st (index 0/1) -- with no move
-## input yet, a fresh spawn faces right by default, so this is what
-## puts the 1st member within the 2nd's default-facing melee reach
-## (confirmed live: a 3rd peer's un-aimed --simulate-attack lands on
-## peer 1 exactly when this ordering holds, misses when it doesn't).
+## side by side, 60 units apart on the same y -- close enough for a
+## real, mouse-aimed melee swing to reach a teammate/nearby enemy
+## without either character needing to move first.
+##
+## Stale note, corrected: this spacing (and which of the 2 spawn points
+## in a pair gets the lower x) used to be tuned around melee's old
+## default aim -- LocomotionFsm.facing_direction (Vector2.RIGHT with no
+## move input yet), confirmed live via an un-aimed --simulate-attack.
+## Melee's aim source moved to real mouse-aim (see CharacterController.
+## current_aim_direction/get_aim_direction()) after the human owner
+## caught aim being coupled to movement, so an *un-aimed* headless
+## --simulate-attack can no longer be relied on to land deterministically
+## the way it once did (same "no real mouse in headless" caveat
+## --simulate-skillshot already had) -- a real player's mouse-aimed
+## swing is unaffected and this is the actual fix's point. A future
+## headless melee-hit test needs an explicit fake-aim dev flag, the
+## same way class/perk already get one, not a coincidental default.
 ## Clear of the 4 wall colliders in TestArena.tscn, and never spawn
 ## exactly overlapping (a degenerate case where a melee hitbox and
 ## hurtbox can share an exact boundary with no true intersection --

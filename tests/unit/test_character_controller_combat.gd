@@ -56,10 +56,22 @@ func test_attack_pressed_again_mid_move_does_not_restart_it() -> void:
 	)
 
 
-func test_get_aim_direction_matches_facing_direction() -> void:
+func test_get_aim_direction_is_independent_of_movement() -> void:
 	var character := _spawn_character()
-	character.apply_input(_sample())
-	assert_eq(character.get_aim_direction(), character.fsm.facing_direction)
+	var sample := _sample()
+	sample.move_vector = Vector2.UP
+	sample.aim_direction = Vector2.DOWN
+	character.apply_input(sample)
+	assert_eq(
+		character.get_aim_direction(),
+		Vector2.DOWN,
+		"melee's aim should follow the input sample's aim_direction, not movement"
+	)
+	assert_ne(
+		character.get_aim_direction(),
+		character.fsm.facing_direction,
+		"moving one way while aiming another must not collapse aim into movement direction"
+	)
 
 
 func test_take_damage_reduces_health() -> void:

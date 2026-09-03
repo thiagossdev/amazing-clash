@@ -21,9 +21,12 @@ func get_move_vector() -> Vector2:
 
 
 ## Direction from `character_position` to the mouse cursor's current
-## world position, normalized. This is the skillshot's real mouse-aim
-## (Phase 2b) -- unlike melee's LocomotionFsm.facing_direction (last
-## movement direction), which is Phase 2a's simpler, unaimed swing.
+## world position, normalized. Sampled every tick into every
+## InputBuffer.Sample regardless of action (see
+## CharacterController._sample_local_input()), so it's the shared real-
+## mouse-aim source for the skillshot, both ability slots, and melee
+## alike (CharacterController.current_aim_direction) -- aim is always
+## independent of movement, never derived from it.
 ## InputManager is a plain Node autoload, not a Node2D/CanvasItem, so it
 ## can't call get_global_mouse_position() directly -- the viewport's own
 ## canvas_transform (which already accounts for the active Camera2D) is
