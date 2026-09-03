@@ -720,3 +720,50 @@ in `progress.md`. No exceptions.
   real high-latency player. Documented as an honest gap, not claimed.
 - [ ] **Visual verification not applicable** -- this phase changes no
   UI, only server-side hit resolution.
+
+### Phase 13a: grace-period delay before disconnect forfeit
+
+- [x] `tests/unit/test_player_spawner.gd` (4 new grace-period tests):
+  `_begin_grace_period()` tracks the disconnecting peer when its
+  character exists; is a no-op if the character is already gone;
+  `_expire_grace_period()` despawns and clears tracking when called;
+  is a no-op when the peer isn't tracked.
+- [x] `gdformat`/`gdlint` clean across every changed file
+  (`core/event_bus.gd`, `core/match_state.gd`, `gameplay/match/
+  match_rules.gd`, `net/player_spawner.gd`, `ui/hud/match_hud.gd`,
+  `maps/test_arena/TestArena.tscn`, the test file). 131/131 GUT tests
+  total project-wide (was 127).
+- [x] TDD confirmed: ran the new tests before implementing
+  `_begin_grace_period()`/`_expire_grace_period()` -- real GDScript
+  parse errors (the functions didn't exist yet), then implemented
+  until green.
+- [x] Live 2-process test (`--dev-grace-period=3`, a real 30s being
+  impractical to wait out in an automated run): a temporary `print()`
+  trace (removed before the final commit) confirmed the grace period
+  begins the instant the client disconnects and expires ~3s later as
+  configured, zero engine errors on the server throughout.
+- [x] Live-confirmed the malformed-flag fix: `--dev-grace-period=abc`
+  produces the expected `push_error` and keeps the 30.0 production
+  default, instead of silently becoming a 0-second grace period.
+- [x] `/check` (high severity) run on the full branch diff before
+  merge; found 5 real issues, all fixed or explicitly documented as
+  out of scope -- see `memory/plan.md`'s Slice 13a block and
+  `memory/gotchas.md` 2026-09-03 for the specifics.
+- [ ] **Vulnerability during the grace period was not forced live** --
+  landing a real aimed hit in headless mode is unreliable (the same
+  limitation this project has had since the melee-aim-independence
+  fix). Verified instead by code-path reading: `CombatResolver`'s hit-
+  resolution loops (`_resolve_melee`, `_resolve_projectile_hit`) have
+  no exclusion for a grace-period character anywhere -- it's iterated
+  and hit-tested exactly like any other `CharacterController` in the
+  roster.
+- [ ] **Visual verification not done** -- same unsolved gap as every
+  prior UI-adjacent phase (no way to screenshot Godot's actual
+  renderer in this environment). `GraceLabel` is a real UI control
+  with no visual confirmation beyond live functional testing and code
+  reading.
+- [ ] The mid-grace-period-join edge case (`/check` finding, see
+  `memory/plan.md`'s Slice 13a block and `memory/progress.md`'s
+  Backlog) was reasoned about, not live-reproduced -- reproducing it
+  needs 3 real processes timed precisely around a disconnect, not
+  attempted here.

@@ -260,6 +260,34 @@ Format:
   only limitation -- 2 real players are always on separate machines
   with separate network stacks and can never hit this.
 
+- **2026-09-03** — `/check` on the Phase 13a diff found `gameplay/
+  match/match_rules.gd`'s own header comment still claimed a
+  disconnect drops a team's alive count to 0 *immediately*, even
+  though the diff it was reviewing changed exactly that -- Phase 13a
+  touched `net/player_spawner.gd` and `core/match_state.gd` but never
+  re-read `match_rules.gd`'s own doc comment, which described the
+  *old* behavior it depended on, not the code it lived next to. →
+  **Rule**: when a change alters a documented behavioral guarantee
+  (here: "a disconnect resolves instantly"), grep for every comment
+  elsewhere in the codebase that describes or depends on that
+  guarantee -- not just the file being edited -- before considering
+  the change complete. A comment describing someone else's code is
+  still a claim that needs to stay true.
+
+- **2026-09-03** — Also from `/check`: `net/player_spawner.gd`'s new
+  `--dev-grace-period=<seconds>` flag parsed the value with plain
+  `String.to_float()`, which returns `0.0` on any parse failure with
+  no error -- a typo like `--dev-grace-period=abc` would have silently
+  set the grace period to 0 seconds (every disconnect despawning
+  instantly, the *opposite* of the flag's purpose) with nothing in the
+  logs to explain why. → **Rule**: `to_float()`/`to_int()` on
+  string input from outside the program (CLI args, RPC payloads, file
+  contents) needs an explicit `is_valid_float()`/`is_valid_int()`
+  check first, or a parse failure silently becomes a plausible-looking
+  wrong value instead of a loud error -- this project's own "no silent
+  fallbacks" rule (`CLAUDE.md`) applies just as much to a dev-only
+  debug flag as to production input.
+
 <!--
 Examples:
 

@@ -87,6 +87,12 @@ var team_alive_counts: Array[int] = []
 ## first, exactly like winning_team's only reader, MatchHud, already
 ## does).
 var winning_team: int = -1
+## Phase 13a: client-visible count of currently-disconnected-and-
+## mid-grace-period players, kept in sync via
+## broadcast_grace_period_count()'s RPC -- aggregate only, no
+## per-player identity, same convention team_alive_counts above
+## already uses.
+var players_in_grace_period: int = 0
 
 ## Server-only bookkeeping for the LOADING handshake: which currently-
 ## connected peers have reported their own TestArena tree is actually
@@ -111,6 +117,7 @@ func _on_peer_connected(peer_id: int) -> void:
 		_rpc_enter_post_game.rpc_id(peer_id, winning_team, match_mode)
 	if current_phase != Phase.LOBBY:
 		_rpc_receive_team_status.rpc_id(peer_id, team_alive_counts)
+		_rpc_receive_grace_period_count.rpc_id(peer_id, players_in_grace_period)
 
 
 ## Server-only: a peer leaving mid-LOADING must not permanently block
@@ -238,3 +245,19 @@ func broadcast_team_status(alive_counts: Array[int]) -> void:
 func _rpc_receive_team_status(alive_counts: Array[int]) -> void:
 	team_alive_counts = alive_counts
 	EventBus.team_status_changed.emit(alive_counts)
+
+
+## Server-only: called by net/player_spawner.gd whenever a grace period
+## starts or ends. reliable, unlike broadcast_team_status()'s own
+## unreliable_ordered -- a missed "count went up" update here would
+## leave a stale "N players disconnected" indicator on-screen instead
+## of just a stale number, worth the (rare, low-frequency) extra
+## guarantee.
+func broadcast_grace_period_count(count: int) -> void:
+	_rpc_receive_grace_period_count.rpc(count)
+
+
+@rpc("authority", "reliable", "call_local")
+func _rpc_receive_grace_period_count(count: int) -> void:
+	players_in_grace_period = count
+	EventBus.grace_period_count_changed.emit(count)

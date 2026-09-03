@@ -4,12 +4,24 @@ extends Node
 ## a MultiplayerSpawner-watched container, so every peer sees the same
 ## characters replicated automatically. The server also spawns a
 ## character for itself (peer_connected never fires for your own id).
-## A disconnect despawns the character; PlayerSpawner does not track
-## which peer_id previously held which team/class, so a (re)connecting
-## peer (a new peer id -- Godot never reuses one) is assigned fresh,
-## not restored to a prior slot -- a real reconnect system is out of
-## scope, see memory/plan.md. Pattern inherited from amazing-nauts'
-## net/player_spawner.gd, scoped down. See
+## PlayerSpawner does not track which peer_id previously held which
+## team/class, so a (re)connecting peer (a new peer id -- Godot never
+## reuses one) is assigned fresh, not restored to a prior slot -- a
+## real reconnect system (Slice 13b) is a separate, not-yet-built
+## phase; see memory/plan.md.
+##
+## Phase 13a: a disconnect no longer despawns immediately -- it starts
+## a grace-period timer instead (_begin_grace_period()), despawning
+## only once it expires unclaimed (_expire_grace_period()). No new
+## "freeze in place" mechanism was needed: net/server_sim.gd's
+## next_input() already degrades a starved input buffer to a neutral
+## (no-movement) sample once STALE_INPUT_TIMEOUT_TICKS passes with no
+## fresh input -- which a disconnected peer's character already never
+## receives again, permanently. The character stays fully vulnerable
+## during the grace period (can be damaged/eliminated normally) --
+## disconnecting has a real cost, it is not a safe refuge, per the
+## human owner's own confirmed decision. Pattern inherited from
+## amazing-nauts' net/player_spawner.gd, scoped down. See
 ## docs/blueprint/03-networking-and-match-modes.md.
 ##
 ## Phase 4: alternates the real classes by connection order -- no
@@ -68,10 +80,23 @@ const TEAM_MEMBER_SPACING := 60.0
 const FFA_SPAWN_RADIUS := 300.0
 const FFA_SPAWN_SLOTS := 8
 
+## Phase 13a: default grace period before a disconnected peer's
+## character is despawned as a forfeit. Overridable via
+## --dev-grace-period=<seconds> (a real 30s is impractical to wait out
+## in an automated live test) -- production default stays 30.0 with no
+## flag, same "read OS.get_cmdline_user_args() directly, don't touch
+## net/dev_bootstrap.gd" convention ui/lobby/lobby.gd's own dev flags
+## already use.
+const GRACE_PERIOD_SECONDS := 30.0
+
 @export var characters_path: NodePath = ^"../Characters"
 
 var _next_spawn_index: int = 0
 var _next_index_for_team: Dictionary = {}
+## peer_id -> SceneTreeTimer, one entry per currently-disconnected
+## peer still inside its grace period. Server-only.
+var _grace_timers: Dictionary = {}
+var _grace_period_seconds: float = GRACE_PERIOD_SECONDS
 
 
 ## Phase 7: no longer spawns unconditionally at _ready() -- doing so
@@ -89,9 +114,21 @@ var _next_index_for_team: Dictionary = {}
 func _ready() -> void:
 	if not NetworkManager.is_server():
 		return
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--dev-grace-period="):
+			var raw_value := arg.trim_prefix("--dev-grace-period=")
+			if raw_value.is_valid_float():
+				_grace_period_seconds = raw_value.to_float()
+			else:
+				push_error(
+					(
+						"--dev-grace-period=%s is not a valid number -- ignoring, keeping the %s default"
+						% [raw_value, GRACE_PERIOD_SECONDS]
+					)
+				)
 	var characters := get_node(characters_path)
 	multiplayer.peer_connected.connect(func(peer_id): _spawn_for_peer(peer_id, characters))
-	multiplayer.peer_disconnected.connect(func(peer_id): _despawn_for_peer(peer_id, characters))
+	multiplayer.peer_disconnected.connect(func(peer_id): _begin_grace_period(peer_id, characters))
 	if MatchState.current_phase == MatchState.Phase.IN_PROGRESS:
 		_spawn_all_connected(characters)
 	else:
@@ -189,6 +226,38 @@ func _ffa_spawn_position(team_id: int) -> Vector2:
 	var slot := team_id % FFA_SPAWN_SLOTS
 	var angle := TAU * float(slot) / float(FFA_SPAWN_SLOTS)
 	return ARENA_CENTER + Vector2(FFA_SPAWN_RADIUS, 0.0).rotated(angle)
+
+
+## A no-op if this peer's character is already gone (defensive -- in
+## practice PlayerSpawner always spawned one). Otherwise starts a
+## _grace_period_seconds timer; the character itself needs no explicit
+## freezing (see this file's own header comment), it simply stops
+## receiving input forever, which ServerSim already turns into
+## standing still. broadcast_grace_period_count() tells every client
+## how many players are currently mid-grace-period, for a minimal HUD
+## indicator -- no per-player identity, matching this project's
+## existing "aggregate only" client-visible-state convention
+## (MatchState.team_alive_counts).
+func _begin_grace_period(peer_id: int, characters: Node) -> void:
+	if not characters.has_node(str(peer_id)):
+		return
+	var timer := get_tree().create_timer(_grace_period_seconds)
+	_grace_timers[peer_id] = timer
+	timer.timeout.connect(func(): _expire_grace_period(peer_id, characters))
+	MatchState.broadcast_grace_period_count(_grace_timers.size())
+
+
+## Called once the grace-period timer actually elapses. A no-op if
+## peer_id isn't tracked (Slice 13b will make this reachable via a
+## successful reconnect canceling the grace period early; today it can
+## only happen if this is somehow called twice for the same peer_id,
+## which _grace_timers.erase() below already guards against).
+func _expire_grace_period(peer_id: int, characters: Node) -> void:
+	if not _grace_timers.has(peer_id):
+		return
+	_grace_timers.erase(peer_id)
+	_despawn_for_peer(peer_id, characters)
+	MatchState.broadcast_grace_period_count(_grace_timers.size())
 
 
 func _despawn_for_peer(peer_id: int, characters: Node) -> void:

@@ -16,15 +16,34 @@ extends Node
 ##
 ## _ever_present_teams latches every team id ever observed with >=1
 ## character and never forgets one. This is what lets a mid-match
-## disconnect of a team's last member resolve as a loss for that team
-## -- PlayerSpawner.queue_free()s a disconnecting peer's character,
-## dropping that team's *current* alive count to 0 exactly like an
-## elimination would -- while still correctly not declaring a winner
-## during the brief startup window before at least 2 teams' first
-## players have even connected yet (WinCondition needs >=2 teams ever
-## present, which would otherwise look identical to a loss/draw). A
-## real reconnect/grace-period system is out of scope here; see
-## memory/plan.md.
+## disconnect of a team's last member eventually resolve as a loss for
+## that team -- while still correctly not declaring a winner during the
+## brief startup window before at least 2 teams' first players have
+## even connected yet (WinCondition needs >=2 teams ever present, which
+## would otherwise look identical to a loss/draw).
+##
+## Phase 13a, corrected: a disconnect no longer drops a team's alive
+## count to 0 immediately. net/player_spawner.gd now starts a 30s
+## grace-period timer instead of despawning right away -- the
+## disconnected character stays in the tree, current_health > 0, still
+## fully vulnerable (this node's own alive-counting treats it exactly
+## like any other living character, on purpose: no exclusion was added
+## here). A 1v1 disconnect now only resolves once the grace period
+## expires unclaimed (net/player_spawner.gd's own despawn) or the
+## opponent kills the now-defenseless character directly -- not
+## instantly, as this comment used to (incorrectly, after 13a) claim.
+## Token-based reconnect (Slice 13b) is a separate, not-yet-built
+## phase; see memory/plan.md.
+##
+## Known edge case, not solved here: a NEW peer can join mid-match
+## (PlayerSpawner._spawn_for_peer() has no phase gating) while another
+## peer's character is still mid-grace-period -- briefly, more
+## "currently alive" characters can exist than actually-connected
+## peers. This doesn't corrupt the win condition (every character here
+## is counted the same, honestly, whether fresh or grace-period-frozen)
+## or crash anything; it's just an unusual transient team-size state
+## this phase didn't design for. Flagged in memory/progress.md's
+## Backlog, not fixed here -- out of Phase 13a's own scope.
 
 @export var characters_path: NodePath = ^"../Characters"
 
