@@ -29,6 +29,13 @@ static func hurtbox_rect(defender_position: Vector2, hurtbox_size: Vector2) -> R
 	return Rect2(defender_position - hurtbox_size / 2.0, hurtbox_size)
 
 
+## A projectile's own hitbox rect, centered on its current position --
+## unlike hitbox_rect() above, there's no attacker to offset from: the
+## projectile already IS the traveling hit source.
+static func projectile_hitbox_rect(projectile_position: Vector2, hitbox_size: Vector2) -> Rect2:
+	return Rect2(projectile_position - hitbox_size / 2.0, hitbox_size)
+
+
 ## Deterministic per-tick query: does this hitbox connect with this
 ## hurtbox right now?
 static func query(hitbox: Rect2, hurtbox: Rect2) -> bool:
