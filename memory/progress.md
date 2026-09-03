@@ -335,6 +335,36 @@ changed but this file wasn't updated.
   per-peer fix holds across a real network boundary. See
   `memory/verify.md`'s Phase 9 section and `memory/plan.md`'s Slice 9
   block for full evidence.
+- [x] **Phase 10 (LAN room discovery) implemented and tactically
+  verified -- the roadmap's original Slices 7-10 "lobby" ask is now
+  fully complete**: new autoload `net/lan_discovery.gd` (`LanDiscovery`),
+  a UDP broadcast beacon/listener entirely separate from
+  `net/network_manager.gd`'s ENet gameplay connection (its own fixed
+  port, 7778, never gameplay data). Host broadcasts
+  `{player_count, max_players}` every 1s; client listens, tracks
+  discovered rooms keyed by the sender's real IP
+  (`PacketPeerUDP.get_packet_ip()`, never trusted from the payload),
+  prunes anything not re-announced within 3s. `ui/host_join/`'s
+  `HostJoin.tscn` gained a double-click-to-join room list; manual IP
+  entry is unchanged and always available as the guaranteed fallback.
+  `/check` found and fixed 3 real issues before merge (see
+  `memory/gotchas.md` 2026-09-03): a same-machine socket-bind race
+  between 2 headless test processes (Godot's `PacketPeerUDP` has no
+  `SO_REUSEPORT`, mitigated by releasing the host's own listen-bind
+  first, documented as a narrow test-only limitation -- never affects
+  2 real players on separate machines); a silent timeout in the
+  headless discovery-join dev hook (now sets a status label, per
+  `CLAUDE.md`'s no-silent-fallbacks rule); and an inconsistent
+  socket-close pattern. 8 new GUT tests (111 total project-wide); live
+  2-process test confirmed the full discovery pipeline twice (before
+  and after the `/check` fixes) -- host broadcasts, client discovers
+  and joins via the *discovered* IP, zero engine errors. The one real
+  environment risk flagged going in (whether broadcast crosses this
+  dev environment's WSL2 network path at all) did not materialize --
+  it worked -- though a real multi-machine LAN (physical router,
+  actual Wi-Fi) was never tested, out of this environment's reach. See
+  `memory/verify.md`'s Phase 10 section and `memory/plan.md`'s Slice 10
+  block for full evidence.
 
 ## Backlog (next up)
 
@@ -373,11 +403,15 @@ changed but this file wasn't updated.
   state to remote `INTERPOLATED` peers — the snapshot RPC is at a
   practical parameter-count limit; likely needs a packed-int
   restructure before a 4th+ ability slot makes this worse.
-- [ ] Phase 10 (LAN room discovery) — scope already designed via
-  `/think` 2026-09-03, see `memory/plan.md`'s "Slice 10" section.
-  Phases 7-9 (Main
-  Menu/Character Select/Host-Join/Lobby/Room Config) are done; this is
-  what's left of the original combined "lobby" ask.
+- [x] ~~Phase 10 (LAN room discovery)~~ — done, see the Phase 10 entry
+  above. The roadmap's original Slices 7-10 "lobby" ask is fully
+  complete.
+- [ ] Broadcast reliability across a real multi-machine LAN (a
+  physical router, actual Wi-Fi with possible AP isolation) was never
+  tested — out of this dev environment's reach; only same-machine
+  2-process headless testing was possible. Manual IP entry
+  (`ui/host_join/`) is the guaranteed fallback if it doesn't work on
+  the human owner's actual network.
 - [ ] Give the Room Config Start button an explanation of why it's
   disabled (not-ready vs. invalid team split) — a small UX follow-up
   from Phase 8, not done there since it wasn't asked for and doesn't

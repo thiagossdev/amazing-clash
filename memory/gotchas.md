@@ -236,6 +236,30 @@ Format:
   on every peer, no new RPC needed since the source data was already
   replicated.
 
+- **2026-09-03** — Phase 10's `LanDiscovery.start_listening()` binds a
+  fixed UDP port (`DISCOVERY_PORT`) so a client can receive room
+  broadcasts. `HostJoin._ready()` called this unconditionally for
+  *every* peer landing on the Host/Join screen -- including one about
+  to become the host, since a real player should get to browse rooms
+  before deciding to host or join. This project's own local-
+  verification convention (`memory/plan.md`: "2+ headless processes
+  for local verification") runs host and joiner as 2 separate OS
+  processes on the *same machine*, so both processes' `_ready()` tried
+  to bind the identical port -- a real race, not just a theoretical
+  one. Godot's `PacketPeerUDP.bind()` has no `SO_REUSEPORT`/address-
+  reuse option exposed in the GDScript API, so there's no clean way to
+  let 2 sockets share the port the way some other engines' networking
+  APIs allow. → **Rule**: when a headless dev-test convention runs
+  multiple processes on one machine to simulate multiple players, any
+  new fixed-port `bind()` (not `connect()`/outbound-only) needs to be
+  released as early and deterministically as possible on the path that
+  doesn't need it anymore -- here, `_on_host_pressed()` now calls
+  `LanDiscovery.stop_listening()` as its very first line, before
+  `NetworkManager.host()` even runs, minimizing the bind-hold window
+  to effectively zero. This is a genuine, if narrow, test-environment-
+  only limitation -- 2 real players are always on separate machines
+  with separate network stacks and can never hit this.
+
 <!--
 Examples:
 

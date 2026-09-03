@@ -89,8 +89,8 @@ phase independently playable/demoable even if the next never lands):
     (client), surfaced as a live room list on Slice 7's Join screen,
     manual-IP fallback always available. Isolated as its own slice
     because of real environment risk (WSL2 → LAN broadcast reliability
-    is unverified). **Not started** — scope designed via `/think`
-    2026-09-03, see Slice 10 below.
+    was unverified going in). **Done** — see Slice 10 below. The
+    roadmap's original Slices 7-10 ("lobby") ask is now fully complete.
 
 Post-MVP backlog: `docs/blueprint/06-post-mvp-backlog.md`, not started
 until Phase 6 ships (still true for the backlog itself; Phases 7-10
@@ -662,37 +662,109 @@ to scoped roadmap phases, not new post-MVP scope).
   every prior UI-adjacent phase (still no way to screenshot Godot's
   real renderer in this environment).
 
-### Slice 10 (LAN Discovery) — designed via `/think` 2026-09-03, NOT STARTED
+### Slice 10 (Phase 10): LAN room discovery — DONE
 
-Confirmed by the human owner (unchanged from the original design pass):
-
-- UDP broadcast beacon (host) + listener (client), isolated from the
-  ENet gameplay connection entirely, surfaced as a live room list on
-  Slice 7's Join screen with manual-IP fallback always available.
-  Flagged, not resolved: broadcast reliability inside this dev
-  environment's WSL2→LAN path is unverified; Slice 10 must degrade to
-  manual-IP join if it doesn't work, not block anything else.
+- **Scope built exactly as designed**: new autoload `net/lan_discovery.gd`
+  (`LanDiscovery`), entirely separate from `net/network_manager.gd`'s
+  ENet gameplay connection (port 7777) -- its own fixed UDP broadcast
+  port (7778), never carrying gameplay data. Host side
+  (`start_advertising()`) sends `{player_count, max_players}` every 1s
+  via `PacketPeerUDP.set_broadcast_enabled(true)`/
+  `set_dest_address("255.255.255.255", 7778)`; client side
+  (`start_listening()`) binds 7778, tracks `discovered_rooms` keyed by
+  the sender's actual IP (`PacketPeerUDP.get_packet_ip()`, never
+  trusted from the payload), prunes any room not re-announced within
+  3s. `ui/host_join/`'s `HostJoin.tscn` gained a `LanRoomsList`
+  (double-click to join, real IP stored as item metadata); listening
+  starts on `_ready()`, stops once the player commits to hosting or
+  joining; advertising starts right after a successful `host()`, stops
+  the moment Room Config's host presses Start
+  (`ui/lobby/lobby.gd`'s `_on_start_pressed()`) -- a room nobody can
+  join anymore has no reason to keep broadcasting. Manual IP entry is
+  completely unchanged and always available.
+- **The real environment risk flagged going in did not materialize**:
+  UDP broadcast reliability inside this dev environment's WSL2 network
+  path was the one unverified assumption in the original design pass.
+  Live testing confirmed broadcast traffic *does* cross between 2
+  separate OS processes here -- not guaranteed to hold on every real
+  router/Wi-Fi configuration a player might actually be on (AP
+  isolation, some other WSL2↔Windows-host setups), which is exactly
+  why manual IP entry was never removed as the guaranteed fallback.
+- **3 real issues found by `/check` and fixed before merge** (see
+  `memory/gotchas.md` 2026-09-03 for the first):
+  1. `PacketPeerUDP.bind()` has no `SO_REUSEPORT` option in Godot's
+     GDScript API, so 2 processes on the *same machine* (this
+     project's own local-verification convention, see
+     `memory/verify.md`) both calling `start_listening()` could
+     genuinely race for `DISCOVERY_PORT` -- never a concern for 2 real
+     players, always on separate machines with separate network
+     stacks. Mitigated (not eliminated -- the API has no clean fix) by
+     releasing the host's own listen-bind as the very first action in
+     `_on_host_pressed()`, before anything else, minimizing the window
+     to effectively zero for realistic test timing. Documented as a
+     known, narrow, test-environment-only limitation rather than
+     engineered away.
+  2. `_await_and_join_discovered_room()` (the headless dev-test hook)
+     silently returned on timeout with no status update, unlike every
+     other failure path in the same file -- fixed with a status label
+     message, per `CLAUDE.md`'s "no silent fallbacks" rule.
+  3. `stop_advertising()` nulled its socket without calling `.close()`
+     first, inconsistent with `stop_listening()`'s already-explicit
+     close -- fixed for deterministic release.
+- **Tests**: `test_lan_discovery.gd` (8 new GUT tests) covers
+  `parse_announcement()` (well-formed payload, non-Dictionary, missing
+  fields, wrong field types, garbage bytes -- untrusted network input,
+  not just a malformed edge case) and `prune_stale_rooms()` (keeps
+  recent, drops expired, mixed) purely, with no real socket needed --
+  111 total project-wide (was 103).
+- **Verify**: live 2-process test (`--dev-autoplay --dev-class=<id>
+  --dev-host --dev-autostart` / `--dev-autoplay --dev-class=<id>
+  --dev-join-discovered --dev-ready`, temporary `print()` trace
+  removed before the final commit) confirmed the full pipeline twice
+  (once before the `/check` fixes, once after, to prove they didn't
+  regress it): host broadcasts, client receives and parses a
+  well-formed announcement, client joins via the *discovered* IP (not
+  a hardcoded one), zero engine errors either run. `--dev-join=<ip>`
+  (direct IP, unaffected by this phase) continues to work exactly as
+  Phase 7 left it. See `memory/verify.md`'s Phase 10 section for the
+  full trace.
+- **Known gaps, deferred on purpose**: same visual-verification gap as
+  every prior UI-adjacent phase. Broadcast reliability across a real
+  multi-machine LAN (a physical router, real Wi-Fi) was never tested
+  -- out of reach of this environment; only same-machine 2-process
+  headless testing was possible, which is a real but narrower proof
+  than "works on the human owner's actual network." No room name/
+  naming UI exists (not asked for) -- rooms are listed by IP and
+  player count only.
 - Same visual-verification gap as Slices 7-9 above.
 
 ## MVP Status
 
-All 6 roadmap phases (`memory/plan.md`'s own roadmap above, confirmed
-with the human owner this session) are complete: networking skeleton,
+All 10 roadmap phases are complete. Phases 1-6 (networking skeleton,
 melee + skillshot combat core, the ability framework, 2 real classes,
 2v2 team mode with a friendly-fire toggle and an elimination win
-condition, and a 3rd class + free-for-all mode. Two players (or 2+
-headless processes for local verification) can connect, get assigned a
-class and a side automatically, fight with server-authoritative hit
-resolution in either team or free-for-all mode, and reach a clear win/
-draw result reflected in a minimal HUD.
+condition, and a 3rd class + free-for-all mode) shipped 2026-09-03
+morning. Phases 7-10 (Main Menu, offline character select, direct-IP
+and LAN-discovered host/join, a full Room Config screen with manual
+team assignment/friendly-fire/mode select/ready-check, 1 self-service
+perk per player, and LAN room discovery) shipped the same day,
+designed via `/think` and executed via the `ship-phase` skill
+(`.claude/skills/ship-phase/SKILL.md`). A real player (or 2+ headless
+processes for local verification) now goes Main Menu → pick a
+character → host or discover-and-join a room → configure team/mode/
+friendly-fire/perk in Room Config → fight, with server-authoritative
+hit resolution in either team or free-for-all mode, reaching a clear
+win/draw result reflected in a minimal HUD.
 
-This satisfies the roadmap's own phase-by-phase criteria, but is
-narrower than the fuller MVP proposal in `docs/blueprint/04-mvp-scope.md`,
-which additionally describes a minimal pre-match loadout/build-depth
-system and a real lobby/character-select flow -- neither exists yet
-(see Deferred below); `docs/blueprint/05-open-questions.md`'s
-build-depth split remains the single highest-priority item for the
-human owner to confirm before that gap is closed.
+This satisfies the roadmap's own phase-by-phase criteria in full,
+including the lobby/character-select flow the original 6-phase MVP
+status note above used to flag as missing. What's still narrower than
+the fuller MVP proposal in `docs/blueprint/04-mvp-scope.md`: the
+persistent, respec-able build-investment layer (Phase 3 only seeded
+the data schema) and the bounded pre-match loadout draft it would
+feed -- confirmed in scope (small, per-character, currency-gated, see
+`docs/blueprint/05-open-questions.md`) but not built. This is now the
+single biggest gap between "roadmap done" and the fuller MVP proposal.
 
 ## Deferred / Out of Scope
 
@@ -702,13 +774,6 @@ human owner to confirm before that gap is closed.
   respec economy) — Phase 3 only seeds the data schema. This is the
   single biggest gap between "roadmap done" and the fuller MVP
   proposal in `docs/blueprint/04-mvp-scope.md` (see MVP Status above).
-- Rollback netcode reconsideration — deferred until Phase 2's real
-  entity counts exist to evaluate against.
-- Character-select UI / lobby, and a mode-select UI (team vs.
-  free-for-all) — class, team, and match mode are all still assigned
-  by connection order or a server-startup flag (Phases 4-6); a real
-  pick screen (and the network handshake to support a connect-then-
-  select flow) needs its own design pass, not decided this session.
 - Per-team-of-one HUD breakdown for free-for-all — `MatchHud` shows a
   single "N players alive" line instead; a per-player list (names,
   individual health bars) needs a display-name system that doesn't

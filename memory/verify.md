@@ -597,3 +597,48 @@ in `progress.md`. No exceptions.
   reading.
 - [ ] LAN discovery remains explicitly deferred -- see
   `memory/plan.md`'s "Slice 10" section.
+
+### Phase 10: LAN room discovery
+
+- [x] `test_lan_discovery.gd` (8/8 GUT tests, all new):
+  `parse_announcement()` accepts a well-formed payload, rejects a
+  non-Dictionary, rejects missing fields, rejects wrong field types,
+  rejects garbage bytes; `prune_stale_rooms()` keeps a recent entry,
+  drops an expired one, and correctly keeps-one-drops-another in a
+  mixed set. All pure, no real socket needed.
+- [x] `gdformat`/`gdlint` clean across every new/changed file
+  (`net/lan_discovery.gd`, `ui/host_join/host_join.gd`,
+  `ui/host_join/HostJoin.tscn`, `ui/lobby/lobby.gd`, `project.godot`).
+  111/111 GUT tests total project-wide (was 103).
+- [x] Live 2-process test (`--dev-autoplay --dev-class=vanguard
+  --dev-host --dev-autostart` / `--dev-autoplay
+  --dev-class=ranged_mage --dev-join-discovered --dev-ready`,
+  temporary `print()` trace in `net/lan_discovery.gd`/
+  `ui/host_join/host_join.gd`, removed before the final commit): host
+  process broadcast `{player_count: 1, max_players: 8}` on port 7778
+  every ~1s; client process received and correctly parsed the
+  announcement, then joined via the *discovered* IP address (not a
+  hardcoded/manually-entered one) -- proving the full pipeline, not
+  just the underlying direct-connect path. Zero engine errors on
+  either process.
+- [x] Re-ran the same live test after the `/check` fixes below to
+  confirm they didn't regress the pipeline -- identical result
+  (discover, receive, parse, join, zero errors).
+- [x] `/check` (high severity) run on the full branch diff before
+  merge; found 3 real issues, all fixed -- see `memory/plan.md`'s
+  Slice 10 block and `memory/gotchas.md` 2026-09-03 for the specifics
+  (a same-machine socket-bind race between 2 headless test processes,
+  mitigated by reordering; a silent timeout in the headless
+  discovery-join dev hook; an inconsistent socket-close pattern).
+- [ ] **Real multi-machine LAN broadcast was not tested** -- a
+  physical router, actual Wi-Fi (with its own AP-isolation risk), or
+  any 2 genuinely separate machines are all out of this dev
+  environment's reach. Only same-machine 2-process headless testing
+  was possible; it proves the mechanism works, not that it survives
+  every real network configuration a human owner might be on. Manual
+  IP entry is the documented, always-available fallback.
+- [ ] **Visual verification not done** -- same unsolved gap as every
+  prior UI-adjacent phase (no way to screenshot Godot's actual
+  renderer in this environment). The LAN rooms list is a real UI
+  control with no visual confirmation beyond live functional testing
+  and code reading.
