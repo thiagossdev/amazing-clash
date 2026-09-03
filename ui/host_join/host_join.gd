@@ -76,11 +76,31 @@ func _on_lan_room_activated(index: int) -> void:
 
 
 ## Headless dev testing hook, same reasoning as CharacterSelect's own.
+## --dev-join-discovered proves the LanDiscovery pipeline specifically
+## (not just direct-IP join, which --dev-join=<ip> already covers) --
+## there is no real mouse to double-click a LanRoomsList row in this
+## environment.
 func _maybe_dev_autoconnect() -> void:
 	var args := OS.get_cmdline_user_args()
 	if "--dev-host" in args:
 		_on_host_pressed()
 		return
+	if "--dev-join-discovered" in args:
+		_await_and_join_discovered_room()
+		return
 	for arg in args:
 		if arg.begins_with("--dev-join="):
 			_on_join_pressed(arg.trim_prefix("--dev-join="))
+
+
+## Polls LanDiscovery.discovered_rooms (rather than a fixed delay --
+## proved unreliable across independent OS processes in Phase 7's own
+## live testing) for the host's beacon to arrive, up to a bounded wait.
+func _await_and_join_discovered_room() -> void:
+	var max_wait_ticks := 40
+	for _i in max_wait_ticks:
+		if not LanDiscovery.discovered_rooms.is_empty():
+			var ip: String = LanDiscovery.discovered_rooms.keys()[0]
+			_on_join_pressed(ip)
+			return
+		await get_tree().create_timer(0.5).timeout
