@@ -7,19 +7,31 @@ extends Node
 ##
 ## Real, documented risk (not resolved here, not this project's to
 ## solve): UDP broadcast doesn't reliably cross every real-world LAN
-## setup (Wi-Fi AP isolation, some WSL2-to-Windows-host network
-## configurations). ui/host_join/'s manual IP field stays available at
-## all times as the guaranteed fallback if a room never shows up here.
+## setup (Wi-Fi AP isolation, some VPN/virtual-adapter configurations).
+## ui/host_join/'s manual IP field stays available at all times as the
+## guaranteed fallback if a room never shows up here.
 ##
-## 2026-09-03 (`/waza:hunt`) -- corrected: an earlier version of this
-## comment blamed WSL2 NAT for an asymmetric-discovery + hung-join
-## report. That was wrong -- it conflated this dev session's own
-## environment (which does run under WSL2) with the human owner's
-## actual test rig, 2 real separate physical machines (one Linux, one
-## Windows) on the same real Wi-Fi, running an exported build carried
-## over by hand. No WSL2/NAT boundary exists in that setup at all. Real
-## root cause not yet found -- see `memory/gotchas.md` for the live
-## investigation and what's been ruled out so far.
+## Confirmed root cause of a real asymmetric-discovery + hung-join
+## report (2026-09-03, `/waza:hunt`, 2 real physical machines -- one
+## Linux, one Windows -- on the same real Wi-Fi): the Linux machine had
+## `ufw` active with its default "deny incoming" policy and no rule for
+## either port used here. That silently drops (not rejects -- no RST/
+## ICMP, so the other side just hangs waiting) any inbound packet on a
+## port nobody explicitly allowed, which explains every symptom at
+## once: a Windows-hosted room's broadcast never reached the Linux
+## client (inbound UDP 7778 blocked); joining a Linux-hosted room via
+## discovery hung forever (inbound UDP 7777, the real ENet gameplay
+## port, also blocked); and a Linux-hosted room's OWN broadcast still
+## reached Windows fine (outbound is unaffected by ufw's default
+## policy), matching the "one direction works" report exactly. A
+## direct-IP test that "worked instantly" turned out to have Windows
+## hosting and Linux joining -- Linux only needed outbound access in
+## that specific test, so it never exercised the blocked inbound rules
+## at all (a real trap: two tests that look like they contradict each
+## other because their host/client roles quietly differ). Fix, on the
+## Linux machine that will host: `sudo ufw allow 7777/udp` and
+## `sudo ufw allow 7778/udp` -- an environment/firewall configuration
+## step, not a code change.
 
 ## Fired whenever discovered_rooms changes (a new/updated room, or one
 ## expiring) -- ui/host_join/host_join.gd listens to redraw its list.

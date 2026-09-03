@@ -339,6 +339,25 @@ Format:
   "Reporter reproduces, local machine is fine" gotcha: verify the
   reporter's actual configuration, don't substitute the agent's own.
 
+- **2026-09-03** — Real root cause of the LAN-discovery report above,
+  confirmed (not guessed) via the human owner's own `sudo ufw status
+  verbose`: `ufw` active on the Linux machine, default incoming policy
+  `deny`, no rule for either 7777 (ENet gameplay) or 7778 (discovery
+  beacon). `ufw`'s default drop is silent (no RST/ICMP), which is
+  exactly why a blocked join hangs forever instead of failing cleanly
+  -- explains every symptom in the original report at once (see
+  `net/lan_discovery.gd`'s own updated comment for the full mapping).
+  One extra trap along the way: a "direct IP connects instantly" test
+  looked like it contradicted a "connecting hangs forever" test on the
+  same machine, until it came out that the 2 tests had opposite host/
+  client roles -- the working one only ever needed the Linux machine's
+  *outbound* access, never touching the blocked inbound rules at all.
+  → **Rule**: when 2 tests against the same machine give conflicting
+  results, check whether they actually exercised the same direction of
+  connection (who dialed whom) before treating the contradiction as
+  evidence against a firewall/NAT/inbound-blocking hypothesis --
+  outbound-only tests can't rule out an inbound-only block.
+
 <!--
 Examples:
 
