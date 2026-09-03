@@ -81,11 +81,12 @@ in `progress.md`. No exceptions.
   ordering silently broke `PlayerSpawner`'s server-detection — see
   `memory/gotchas.md`, 2026-09-02) that code review alone had missed.
 
-### Debug instrumentation (F1 collision viewer, "/" console)
+### Debug instrumentation (F1 hitbox viewer, "/" console)
 
-- [x] `CollisionShapeViewer` starts hidden, F1 toggles it, joins the
-  `collision_viewer` group — 3/3 GUT tests
-  (`test_collision_shape_viewer.gd`).
+- [x] The debug overlay (originally `CollisionShapeViewer`, renamed to
+  `HitboxViewer` during Phase 2a once it actually drew combat hitboxes
+  — see that section below) starts hidden, F1 toggles it, joins the
+  `hitbox_viewer` group — 3/3 GUT tests (`test_hitbox_viewer.gd`).
 - [x] Debug console: "/" opens it, an OS key-repeat echo doesn't
   re-toggle it, a second "/" while open doesn't close it, Escape closes
   without executing, `/latency <ms>` updates
@@ -102,3 +103,39 @@ in `progress.md`. No exceptions.
   snapshot-rate overlay above. The behavioral GUT tests confirm the
   toggle *logic*; nobody has looked at the actual drawn shapes or
   console UI with eyes yet.
+
+### Phase 2a: melee combat core
+
+- [x] `ActionFsm` (NEUTRAL/STARTUP/ACTIVE/RECOVERY, frame-counted,
+  `is_hitbox_active()` only true during ACTIVE) — 7/7 GUT tests
+  (`test_action_fsm.gd`).
+- [x] `HitDetection` pure geometry (hitbox rect rotated by aim
+  direction, hurtbox rect, AABB query) — 5/5 GUT tests
+  (`test_hit_detection.gd`).
+- [x] `DamagePipeline.compute` (base × combo scaling × buff modifier)
+  — 4/4 GUT tests (`test_damage_pipeline.gd`).
+- [x] `CharacterController`'s combat additions (attack-pressed starts
+  the test move, a second press mid-move doesn't restart it,
+  `get_aim_direction()` matches `LocomotionFsm.facing_direction`,
+  `take_damage`/`apply_lock` bookkeeping) — 6/6 GUT tests
+  (`test_character_controller_combat.gd`).
+- [x] Live 2-process test: a melee attack thrown by one peer's
+  character lands on the other's, server-authoritatively — confirmed
+  via temporary instrumentation (removed after verifying, per this
+  project's own established practice): damage applied (100 → 90),
+  hitstop/hitstun locks applied to attacker and defender respectively,
+  and the health drop correctly replicated to the *other* peer's own
+  view of the hit character. Zero errors, including with `--simulate-
+  move` and `--simulate-attack` combined in the same run.
+- [x] Found and fixed a real product bug this way, not just a test
+  artifact: `PlayerSpawner` spawned every peer at the identical
+  position, so a melee attack silently never landed (hitbox and
+  hurtbox touched at an exact shared boundary, not a true overlap) —
+  see `memory/gotchas.md`, 2026-09-02. Fixed with distinct
+  `SPAWN_POSITIONS`, cycled per connecting peer.
+- [x] `gdformat --check` / `gdlint` / `godot4 --headless --import` /
+  `markdownlint-cli2` all clean. 44/44 GUT tests total project-wide.
+- [ ] Knockback and a true rotated (non-axis-aligned) hitbox are
+  explicitly deferred, not silently dropped — see
+  `gameplay/combat/hit_definition.gd` and `hit_detection.gd`'s own doc
+  comments for why.

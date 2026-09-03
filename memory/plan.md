@@ -8,8 +8,11 @@ only — build full-stack features end-to-end, not horizontal layers
 
 **Phase 1: Core + Input + 2D Character Controller + Camera + Networking
 skeleton — done and tactically verified 2026-09-02** (see
-`memory/verify.md` Slice 1 criteria and `memory/progress.md`). **Phase 2
-(Combat core) is next.** Full design is in `docs/blueprint/` (start at
+`memory/verify.md` Slice 1 criteria and `memory/progress.md`).
+**Phase 2a (melee combat core) — done and tactically verified
+2026-09-02** (see `memory/verify.md`'s Phase 2a section). **Phase 2b
+(aimed skillshot/projectile) is next.** Full design is in
+`docs/blueprint/` (start at
 `docs/blueprint/README.md`), grounded in
 `docs/research/eslabong-inspiration/` and
 `docs/research/poe2-build-depth-inspiration/`.
@@ -41,8 +44,9 @@ phase independently playable/demoable even if the next never lands):
    skeleton — **done**, detailed in Slice 1 below.
 2. Combat core (hit detection — melee **and** aimed skillshot/
    projectile queries — damage pipeline, frame data as Resource, state
-   machine) + Hitbox/Projectile Viewer + Debug Overlay pulled forward —
-   **next**.
+   machine) + Hitbox/Projectile Viewer + Debug Overlay pulled forward.
+   Split into two independently-mergeable slices: **2a (melee) — done**,
+   **2b (aimed skillshot/projectile) — next**.
 3. Ability Framework: 2-3 abilities on the placeholder character,
    100% data-driven via Resource; schema leaves room for Eslabong-style
    Evolution/Specialization branches and a minimal loadout-slot model
@@ -88,8 +92,35 @@ until Phase 6 ships.
   match. All met — see `memory/verify.md` Task-Specific Criteria,
   Slice 1, for the specific evidence per criterion.
 
+### Slice 2a (Phase 2a): One character lands a melee hit on another — DONE
+
+- **Data**: `data/moves/debug_attack.tres` (`MoveDefinition` +
+  `HitDefinition`: startup 6 / active 4 / recovery 10 frames, 10
+  damage, 12 hitstun frames, 4 hitstop frames).
+- **Behavior**: `ActionFsm` (NEUTRAL/STARTUP/ACTIVE/RECOVERY,
+  frame-counted); `HitDetection` (pure hitbox/hurtbox rect geometry,
+  outside Godot physics); `DamagePipeline.compute`; `CombatResolver`
+  (server-only, per-tick, wired as `TestArena`'s last child so it runs
+  after every character's own `_physics_process`); melee aim comes
+  from `LocomotionFsm.facing_direction` (last movement direction, not
+  mouse-aim — that's Phase 2b's skillshot).
+- **Networking**: `ClientPredictor.Checkpoint` and the snapshot
+  RPC/`_apply_snapshot` grew to carry action-layer state and health,
+  same fields `amazing-nauts`' own Checkpoint/Snapshot grew at this
+  exact point in their history.
+- **Tests**: `test_action_fsm.gd`, `test_hit_detection.gd`,
+  `test_damage_pipeline.gd`, `test_character_controller_combat.gd` —
+  22 new GUT tests (44 total).
+- **Verify**: a melee attack thrown by one peer lands on the other's
+  character, server-authoritatively, applies damage/hitstop/hitstun,
+  and replicates the health change to the other peer. All met — see
+  `memory/verify.md`'s Phase 2a section for the specific evidence,
+  including one real product bug found and fixed this way
+  (`PlayerSpawner` spawn-position overlap, `memory/gotchas.md`
+  2026-09-02).
+
 <!--
-### Slice 2 (Phase 2): plan this next, against the roadmap above, once
+### Slice 2b (Phase 2b): plan this next, against the roadmap above, once
 work on it actually starts. Do not pre-detail it here in advance, per
 this project's own execution-limits guidance (one bounded slice at a
 time).

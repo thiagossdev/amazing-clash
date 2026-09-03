@@ -88,14 +88,35 @@ changed but this file wasn't updated.
   an explicit `ui_cancel` binding matching nauts' own. 22/22 GUT tests
   pass; live 2-process network smoke test still clean after all of the
   above.
+- [x] **Phase 2a (melee combat core) implemented and tactically
+  verified**: `gameplay/combat/` (`MoveDefinition`, `HitDefinition`,
+  `HitDetection`, `DamagePipeline`, `state_machine/ActionFsm`,
+  `CombatResolver`), `data/moves/debug_attack.tres` (one test move),
+  `LocomotionFsm.facing_direction` (melee's aim source — real mouse-aim
+  is Phase 2b's skillshot, not this). `CharacterController` gained
+  `action_fsm`, health, `take_damage`/`apply_lock`; `ClientPredictor.
+  Checkpoint` and the snapshot RPC grew to carry action-layer state and
+  health, mirroring exactly where `amazing-nauts`' own Checkpoint/
+  Snapshot grew at this same point in their history. Renamed
+  `CollisionShapeViewer` → `HitboxViewer` now that it draws real
+  combat hitboxes/hurtboxes, not just movement-collision shapes.
+  22 new GUT tests (44 total project-wide), all passing; live
+  2-process test confirmed a melee hit lands, applies damage/hitstop/
+  hitstun, and replicates correctly to the other peer — see
+  `memory/verify.md`'s Phase 2a section for the full evidence,
+  including one real product bug found and fixed this way
+  (`PlayerSpawner` spawning every peer at an identical position, see
+  `memory/gotchas.md` 2026-09-02).
 
 ## Backlog (next up)
 
-- [ ] Phase 2: combat core (melee **and** aimed-skillshot/projectile
-  hit detection, damage pipeline, frame data as a `Resource`, state
-  machine) + Hitbox/Projectile Viewer + Debug Overlay additions, pulled
-  forward per `memory/plan.md`'s roadmap — see that file for the full
-  6-phase sequence.
+- [ ] Phase 2b: aimed skillshot/projectile combat, on top of 2a —
+  `gameplay/projectiles/` (`Projectile`, deterministic one-spawn-RPC
+  replication), `InputManager.get_aim_direction()` (real mouse-aim,
+  unlike melee's movement-direction facing), a `skillshot` input
+  action (right mouse button), `CombatResolver` extended to resolve
+  projectile hits, `HitboxViewer` extended to draw projectile shapes.
+  Per `memory/plan.md`'s roadmap for the full 6-phase sequence.
 - [ ] Review `docs/blueprint/05-open-questions.md` with the human owner
   — most items are still genuinely open (friendly-fire toggle scope,
   team size, persistent-tree size/gating, loadout cadence, rollback

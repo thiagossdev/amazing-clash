@@ -46,6 +46,23 @@ Format:
   `parse_command` one) is what caught this; a copy-and-trust-it pass
   would have shipped it silently broken.
 
+- **2026-09-02** — `PlayerSpawner` spawned every connecting peer at the
+  exact same `SPAWN_POSITION` constant. Live-tested a melee attack
+  between two characters spawned on top of each other and it silently
+  never landed: with both at the identical position, the attacker's
+  hitbox rect and the defender's hurtbox rect met at an EXACT shared
+  boundary (not a real overlap), and `Rect2.intersects()` doesn't treat
+  edge-touching as intersecting. No error, no crash -- just a hit that
+  never registers, easy to misdiagnose as a combat-resolver bug rather
+  than a spawn-placement one. → **Rule**: never spawn two players (or
+  any two things meant to interact via AABB overlap) at an identical
+  coordinate, even for a throwaway test setup -- it's also a real
+  product bug (two players should never start a match stacked on each
+  other) and it produces exactly this class of silent, boundary-exact
+  non-intersection. Fixed with `PlayerSpawner.SPAWN_POSITIONS` (plural,
+  distinct points, cycled per connecting peer) instead of one shared
+  constant.
+
 <!--
 Examples:
 
