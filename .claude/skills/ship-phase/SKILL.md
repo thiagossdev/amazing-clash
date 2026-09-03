@@ -93,7 +93,16 @@ at all yet (not even a roadmap-list one-liner), stop and ask for one
    `CLAUDE.md` Section 3 and the system-level git safety rules. Do not
    delete the phase branch; leave it as history, matching this
    project's existing branches (`feature/phase1-*` through
-   `feature/phase6-*` are all still present).
+   `feature/phase6-*` are all still present). If this merge happened
+   in a different worktree than the one step 4's GUT run used (e.g.
+   the branch was built in an isolated `.claude/worktrees/` checkout
+   and merged from the primary tree), re-run `godot4 --headless
+   --import` before trusting any post-merge GUT run: a worktree's own
+   `.godot/` class cache doesn't transfer, so a brand-new `class_name`
+   added on the branch (confirmed with Phase 9's `PerkResource`) reads
+   as ~40 cascading "Could not find type" failures in the primary
+   tree until an import pass registers it -- not a real regression,
+   but easy to mistake for one if you don't already know this.
 7. **Document.** Every phase gets all of:
    - `memory/plan.md`: mark the phase's roadmap-list entry **Done**,
      replace/complete its `### Slice N` block with what was actually
