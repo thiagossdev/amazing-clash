@@ -13,10 +13,17 @@ extends Node
 
 const CHARACTER_SCENE := preload("res://gameplay/characters/character_base/Character.tscn")
 
-## Room center, clear of the 4 wall colliders in TestArena.tscn.
-const SPAWN_POSITION := Vector2(600, 400)
+## Distinct points, clear of the 4 wall colliders in TestArena.tscn and
+## far enough apart that two characters never spawn overlapping (a
+## degenerate case where a melee hitbox and hurtbox can share an exact
+## boundary with no true intersection -- found live, see
+## memory/gotchas.md). Cycles for a 3rd+ peer rather than erroring; a
+## real spawn-point system per match mode is a later phase's concern.
+const SPAWN_POSITIONS: Array[Vector2] = [Vector2(570, 400), Vector2(630, 400)]
 
 @export var characters_path: NodePath = ^"../Characters"
+
+var _next_spawn_index: int = 0
 
 
 func _ready() -> void:
@@ -35,7 +42,8 @@ func _spawn_for_peer(peer_id: int, characters: Node) -> void:
 		return
 	var character := CHARACTER_SCENE.instantiate()
 	character.name = str(peer_id)
-	character.position = SPAWN_POSITION
+	character.position = SPAWN_POSITIONS[_next_spawn_index % SPAWN_POSITIONS.size()]
+	_next_spawn_index += 1
 	characters.add_child(character)
 
 

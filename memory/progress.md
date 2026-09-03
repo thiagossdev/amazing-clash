@@ -88,14 +88,57 @@ changed but this file wasn't updated.
   an explicit `ui_cancel` binding matching nauts' own. 22/22 GUT tests
   pass; live 2-process network smoke test still clean after all of the
   above.
+- [x] **Phase 2a (melee combat core) implemented and tactically
+  verified**: `gameplay/combat/` (`MoveDefinition`, `HitDefinition`,
+  `HitDetection`, `DamagePipeline`, `state_machine/ActionFsm`,
+  `CombatResolver`), `data/moves/debug_attack.tres` (one test move),
+  `LocomotionFsm.facing_direction` (melee's aim source — real mouse-aim
+  is Phase 2b's skillshot, not this). `CharacterController` gained
+  `action_fsm`, health, `take_damage`/`apply_lock`; `ClientPredictor.
+  Checkpoint` and the snapshot RPC grew to carry action-layer state and
+  health, mirroring exactly where `amazing-nauts`' own Checkpoint/
+  Snapshot grew at this same point in their history. Renamed
+  `CollisionShapeViewer` → `HitboxViewer` now that it draws real
+  combat hitboxes/hurtboxes, not just movement-collision shapes.
+  22 new GUT tests (44 total project-wide), all passing; live
+  2-process test confirmed a melee hit lands, applies damage/hitstop/
+  hitstun, and replicates correctly to the other peer — see
+  `memory/verify.md`'s Phase 2a section for the full evidence,
+  including one real product bug found and fixed this way
+  (`PlayerSpawner` spawning every peer at an identical position, see
+  `memory/gotchas.md` 2026-09-02).
+- [x] **Phase 2b (aimed skillshot/projectile combat) implemented and
+  tactically verified**: `gameplay/projectiles/` (`Projectile`,
+  deterministic `position += direction*speed*delta`, one spawn RPC, no
+  per-tick sync), `HitDetection.projectile_hitbox_rect`,
+  `InputManager.get_aim_direction()` (real mouse-aim via the viewport's
+  canvas transform, since `InputManager` is a plain Node autoload, not
+  a CanvasItem), `data/moves/debug_skillshot.tres`, a `skillshot` input
+  action (right mouse button), `CombatResolver` extended to launch a
+  projectile exactly once (the tick a skillshot cast reaches ACTIVE)
+  and resolve projectile-vs-character hits server-only, `HitboxViewer`
+  extended to draw projectile hitboxes. 8 new GUT tests (52 total
+  project-wide), all passing. Live 2-process test's key finding: the
+  server's and the client's own local Projectile instances tracked
+  byte-for-byte identical positions at every checkpoint for the whole
+  flight, with zero per-tick network sync — the deterministic-
+  replication design holds. Did not force a live coincidental hit
+  (headless has no real mouse to aim with); hit *application* is
+  already proven live via Phase 2a's shared `_apply_hit` path, and hit
+  *geometry* is proven by GUT — see `memory/verify.md`'s Phase 2b
+  section for the full reasoning. One GDScript gotcha found and fixed:
+  an `is Projectile` check doesn't narrow a loop variable's static
+  type, so `var alive := node.advance_frame(...)` failed to import
+  until an explicit `as Projectile` cast was added (`memory/gotchas.md`
+  2026-09-02).
 
 ## Backlog (next up)
 
-- [ ] Phase 2: combat core (melee **and** aimed-skillshot/projectile
-  hit detection, damage pipeline, frame data as a `Resource`, state
-  machine) + Hitbox/Projectile Viewer + Debug Overlay additions, pulled
-  forward per `memory/plan.md`'s roadmap — see that file for the full
-  6-phase sequence.
+- [ ] Phase 3: Ability Framework — 2-3 abilities on the placeholder
+  character, 100% data-driven via Resource; schema leaves room for
+  Eslabong-style Evolution/Specialization branches and a minimal
+  loadout-slot model without implementing either yet. Per
+  `memory/plan.md`'s roadmap for the full 6-phase sequence.
 - [ ] Review `docs/blueprint/05-open-questions.md` with the human owner
   — most items are still genuinely open (friendly-fire toggle scope,
   team size, persistent-tree size/gating, loadout cadence, rollback

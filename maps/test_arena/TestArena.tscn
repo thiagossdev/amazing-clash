@@ -4,7 +4,8 @@
 [ext_resource type="Script" path="res://net/player_spawner.gd" id="2_spwn"]
 [ext_resource type="Script" path="res://ui/hud/network_stats_overlay.gd" id="3_stats"]
 [ext_resource type="PackedScene" path="res://camera/ArenaCamera.tscn" id="4_cam"]
-[ext_resource type="PackedScene" path="res://ui/debug/CollisionShapeViewer.tscn" id="5_cshv"]
+[ext_resource type="PackedScene" path="res://ui/debug/HitboxViewer.tscn" id="5_cshv"]
+[ext_resource type="Script" path="res://gameplay/combat/combat_resolver.gd" id="6_cmbtr"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_horiz"]
 size = Vector2(1200, 32)
@@ -37,9 +38,11 @@ shape = SubResource("RectangleShape2D_vert")
 
 [node name="Characters" type="Node2D" parent="."]
 
+[node name="Projectiles" type="Node2D" parent="."]
+
 [node name="ArenaCamera" parent="." instance=ExtResource("4_cam")]
 
-[node name="CollisionShapeViewer" parent="." instance=ExtResource("5_cshv")]
+[node name="HitboxViewer" parent="." instance=ExtResource("5_cshv")]
 
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
 _spawnable_scenes = PackedStringArray("res://gameplay/characters/character_base/Character.tscn")
@@ -69,4 +72,7 @@ offset_left = 16.0
 offset_top = 68.0
 offset_right = 416.0
 offset_bottom = 92.0
-placeholder_text = "/help | /latency <ms> | /collision"
+placeholder_text = "/help | /latency <ms> | /hitbox"
+
+[node name="CombatResolver" type="Node" parent="."]
+script = ExtResource("6_cmbtr")

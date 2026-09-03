@@ -4,14 +4,22 @@ extends RefCounted
 ## per-character jitter buffer (drained via pop_next) and the client's own
 ## unacked-prediction buffer (trimmed via discard_acked, replayed via
 ## pending). Pattern inherited from amazing-nauts'
-## input/input_buffer.gd, scoped down to Phase 1's locomotion-only sample
-## (no attack/block/ability fields yet -- those arrive with Phase 2/3).
+## input/input_buffer.gd, scoped down to Phase 2b (no block/ability
+## fields yet -- those arrive with later phases).
 
 
 class Sample:
 	var sequence: int = 0
 	var move_vector: Vector2 = Vector2.ZERO
 	var dash_pressed: bool = false
+	var attack_pressed: bool = false
+	## Skillshot's real mouse-aim direction, sampled every tick regardless
+	## of whether skillshot_pressed is true this tick -- captured at the
+	## exact tick the cast starts (see character_controller.gd), not
+	## read live later, so a moved mouse during windup doesn't retarget
+	## an already-cast skillshot.
+	var aim_direction: Vector2 = Vector2.RIGHT
+	var skillshot_pressed: bool = false
 	var delta: float = 0.0
 
 

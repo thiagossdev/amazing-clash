@@ -1,8 +1,8 @@
 extends GutTest
-## F1 toggle behavior for CollisionShapeViewer. Pattern inherited from
+## F1 toggle behavior for HitboxViewer. Pattern inherited from
 ## amazing-nauts' tests/unit/test_hitbox_viewer.gd equivalent.
 
-const VIEWER_SCENE := preload("res://ui/debug/CollisionShapeViewer.tscn")
+const VIEWER_SCENE := preload("res://ui/debug/HitboxViewer.tscn")
 
 
 func _f1_press(echo: bool = false) -> InputEventKey:
@@ -27,6 +27,6 @@ func test_f1_toggles_visibility() -> void:
 	assert_false(viewer.visible)
 
 
-func test_joins_the_collision_viewer_group() -> void:
+func test_joins_the_hitbox_viewer_group() -> void:
 	var viewer: Node2D = add_child_autofree(VIEWER_SCENE.instantiate())
-	assert_true(viewer.is_in_group("collision_viewer"))
+	assert_true(viewer.is_in_group("hitbox_viewer"))
