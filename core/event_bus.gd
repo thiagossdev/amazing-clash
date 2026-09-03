@@ -4,3 +4,4 @@ extends Node
 ## that must be a direct signal or call. See docs/blueprint/03-networking-and-match-modes.md.
 
 signal match_state_changed(new_phase: int)
+signal team_status_changed(team0_alive: int, team1_alive: int)
