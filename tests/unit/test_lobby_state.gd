@@ -45,6 +45,27 @@ func test_get_team_id_returns_registered_team() -> void:
 	lobby.free()
 
 
+func test_resolve_team_id_passes_through_valid_values() -> void:
+	assert_eq(LobbyState.resolve_team_id(0), 0)
+	assert_eq(LobbyState.resolve_team_id(1), 1)
+
+
+func test_resolve_team_id_clamps_out_of_range_values() -> void:
+	assert_eq(
+		LobbyState.resolve_team_id(999),
+		1,
+		"an untrusted any_peer _rpc_set_team payload must not set an out-of-range team"
+	)
+	assert_eq(LobbyState.resolve_team_id(-5), 0)
+
+
+func test_apply_team_clamps_through_resolve_team_id() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby._apply_team(42, 999)
+	assert_eq(lobby.player_team_ids[42], 1)
+	lobby.free()
+
+
 func test_is_ready_defaults_false_for_unregistered_peer() -> void:
 	var lobby := LobbyStateScript.new()
 	assert_false(lobby.is_ready(42))

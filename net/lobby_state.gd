@@ -115,6 +115,17 @@ func get_team_id(peer_id: int, fallback: int = 0) -> int:
 	return player_team_ids.get(peer_id, fallback)
 
 
+## Pure: clamps to {0, 1} -- the Room Config UI only ever toggles between
+## the 2 teams it draws, but _rpc_set_team is any_peer over the network,
+## so an out-of-range value (a modified client, or simple caller error)
+## must not be trusted verbatim the way it briefly was (found via this
+## phase's own review pass, not by the human owner -- see
+## resolve_class_id()/resolve_perk_id() for the same validate-at-the-
+## boundary pattern already used for the other 2 self-service fields).
+func resolve_team_id(requested: int) -> int:
+	return clampi(requested, 0, 1)
+
+
 func get_perk_id(peer_id: int, fallback: String = "") -> String:
 	return player_perk_ids.get(peer_id, fallback)
 
@@ -300,7 +311,7 @@ func _apply_ready(peer_id: int, ready: bool) -> void:
 
 
 func _apply_team(peer_id: int, team_id: int) -> void:
-	player_team_ids[peer_id] = team_id
+	player_team_ids[peer_id] = resolve_team_id(team_id)
 
 
 func _apply_perk(peer_id: int, perk_id: String) -> void:
