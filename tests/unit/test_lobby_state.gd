@@ -114,3 +114,44 @@ func test_has_valid_team_split_true_when_2_teams_have_members() -> void:
 	lobby.player_team_ids[2] = 1
 	assert_true(lobby.has_valid_team_split())
 	lobby.free()
+
+
+func test_valid_perk_id_passes_through() -> void:
+	assert_eq(LobbyState.resolve_perk_id("adept"), "adept")
+
+
+func test_unknown_perk_id_falls_back_to_first_canonical_perk() -> void:
+	assert_eq(LobbyState.resolve_perk_id("not_a_perk"), LobbyState.PERK_IDS[0])
+
+
+func test_empty_perk_id_falls_back_to_first_canonical_perk() -> void:
+	assert_eq(LobbyState.resolve_perk_id(""), LobbyState.PERK_IDS[0])
+
+
+func test_get_perk_id_returns_fallback_for_unregistered_peer() -> void:
+	var lobby := LobbyStateScript.new()
+	assert_eq(lobby.get_perk_id(42, "vitality"), "vitality")
+	lobby.free()
+
+
+func test_get_perk_id_returns_registered_choice() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby.player_perk_ids[42] = "swift"
+	assert_eq(lobby.get_perk_id(42, "vitality"), "swift")
+	lobby.free()
+
+
+func test_registering_a_class_defaults_perk_to_first_canonical_perk() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby._apply_registration(42, "warden")
+	assert_eq(lobby.player_perk_ids[42], LobbyState.PERK_IDS[0])
+	lobby.free()
+
+
+func test_registering_again_does_not_reset_an_already_chosen_perk() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby._apply_registration(42, "warden")
+	lobby.player_perk_ids[42] = "adept"
+	lobby._apply_registration(42, "warden")
+	assert_eq(lobby.player_perk_ids[42], "adept")
+	lobby.free()

@@ -1,18 +1,21 @@
 extends Control
-## Room Config: mode select (Team/FFA), friendly-fire toggle, manual
-## per-player team assignment (Team mode only, host-only, a per-row
-## "Switch Team" button rather than 2 drag-target columns -- same
-## outcome, much less UI machinery), a ready checkbox per non-host
-## player, and a host-only Start button. Perks (Phase 9) and LAN
-## discovery (Phase 10) are not this screen's job yet, see
+## Room Config: mode select (Team/FFA), friendly-fire toggle, per-player
+## SELF-SERVICE team assignment (Team mode only -- a "Switch Team"
+## button on a peer's own row only, never another peer's; corrected
+## mid-Phase-9, was host-controlled-for-everyone, a real authority bug
+## the human owner caught, not a design choice), a ready checkbox per
+## non-host player, and a host-only Start button. Perks (Phase 9) and
+## LAN discovery (Phase 10) are not this screen's job yet, see
 ## memory/plan.md's "Slices 7-10".
 ##
 ## Mode/friendly-fire controls are host-only: NetworkManager.is_server()
 ## gates both interactivity (disabled for clients) and which peer's own
 ## script instance is allowed to actually call
 ## LobbyState.set_room_match_mode()/set_room_friendly_fire() -- both are
-## called directly (no RPC), since the host IS the server locally, the
-## same reasoning LobbyState.set_team()'s own doc comment gives.
+## called directly (no RPC), since the host IS the server locally.
+## Team, unlike those two, is a per-player choice, not a match-wide
+## setting -- LobbyState.set_local_team() is self-service (any peer,
+## own row only), same shape as set_local_ready().
 
 const MODE_LABELS: Array[String] = ["Team", "Free For All"]
 
@@ -107,11 +110,11 @@ func _build_player_row(peer_id: int, local_id: int, team_mode: bool) -> HBoxCont
 			ready_check.toggled.connect(LobbyState.set_local_ready)
 		row.add_child(ready_check)
 
-	if _is_host and team_mode:
+	if peer_id == local_id and team_mode:
 		var switch_button := Button.new()
 		switch_button.text = "Switch Team"
 		switch_button.pressed.connect(
-			func(): LobbyState.set_team(peer_id, 1 - LobbyState.get_team_id(peer_id))
+			func(): LobbyState.set_local_team(1 - LobbyState.get_team_id(local_id))
 		)
 		row.add_child(switch_button)
 
@@ -128,6 +131,8 @@ func _host_peer_id() -> int:
 ## memory/verify.md's Phase 8 section for how these are used in the
 ## live multi-process test. Host-only flags do nothing on a client, and
 ## vice versa, matching each control's own real interactivity gating.
+## --dev-switch-team is available to EITHER role -- team is a
+## self-service, per-player choice, not host-only (corrected mid-Phase-9).
 func _maybe_dev_hooks() -> void:
 	var args := OS.get_cmdline_user_args()
 	if _is_host:
@@ -135,28 +140,29 @@ func _maybe_dev_hooks() -> void:
 			_on_mode_selected(MatchState.MatchMode.FREE_FOR_ALL)
 		if "--dev-room-friendly-fire" in args:
 			_on_friendly_fire_toggled(true)
-		if "--dev-switch-team" in args:
-			_await_and_switch_first_client_team()
 	else:
 		if "--dev-ready" in args:
 			LobbyState.set_local_ready(true)
+	if "--dev-switch-team" in args:
+		_await_and_switch_local_team()
 	if _is_host and "--dev-autostart" in args:
 		_await_and_autostart()
 
 
-## Peer ids are ENet-assigned and not predictable ahead of time (not a
-## small sequential int -- confirmed live, see memory/gotchas.md), so
-## this can't take a literal target id the way --simulate-* flags
-## targeting the LOCAL peer's own input can. Polls for the first
-## currently-registered non-host peer instead, same bounded-wait
+## Waits for the LOCAL peer's own registration to land in LobbyState
+## before switching -- synchronous on the host (register_local_player()
+## applies directly), but a client's own registration only lands after
+## its _rpc_register round-trip completes, so a poll (not a fixed
+## delay -- proved unreliable across independent OS processes in Phase
+## 7's own live testing) is needed here too, same bounded-wait
 ## reasoning as _await_and_autostart().
-func _await_and_switch_first_client_team() -> void:
+func _await_and_switch_local_team() -> void:
+	var local_id := multiplayer.get_unique_id()
 	var max_wait_ticks := 40
 	for _i in max_wait_ticks:
-		for peer_id in LobbyState.player_class_ids:
-			if peer_id != _host_peer_id():
-				LobbyState.set_team(peer_id, 1 - LobbyState.get_team_id(peer_id))
-				return
+		if LobbyState.player_team_ids.has(local_id):
+			LobbyState.set_local_team(1 - LobbyState.get_team_id(local_id))
+			return
 		await get_tree().create_timer(0.5).timeout
 
 

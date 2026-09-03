@@ -1,25 +1,30 @@
 extends Node
 ## Server-authoritative room state: each connected peer's chosen
 ## character class (CharacterSelect, before ever connecting), team
-## (Team mode only, manually assigned by the host in Room Config), and
-## ready flag -- plus the room-level settings the host picks in Room
-## Config (match mode, friendly fire). Read by PlayerSpawner instead of
-## its old index-cycling default -- a peer with no registered choice
-## (e.g. a net/dev_bootstrap.gd headless test peer, which never goes
-## through CharacterSelect/Room Config) falls back to PlayerSpawner's
-## original cycling behavior unchanged, so every prior phase's headless
-## verification keeps working untouched. See memory/plan.md's "Slices
-## 7-10" section.
+## (Team mode only, self-service -- see set_local_team()), perk (Room
+## Config, self-service), and ready flag -- plus the room-level
+## settings the host picks in Room Config (match mode, friendly fire).
+## Read by PlayerSpawner instead of its old index-cycling default -- a
+## peer with no registered choice (e.g. a net/dev_bootstrap.gd headless
+## test peer, which never goes through CharacterSelect/Room Config)
+## falls back to PlayerSpawner's original cycling behavior unchanged
+## (or, for perks, no perk at all -- all multipliers 1.0), so every
+## prior phase's headless verification keeps working untouched. See
+## memory/plan.md's "Slices 7-10" section.
 ##
 ## Phase 8: grew from a class-only registry to full room state (team,
 ## ready, mode, friendly fire) rather than adding a second parallel
 ## registry -- this node already *is* "the room's shared state," not
 ## just a class picker, so generalizing its existing name/shape fit
-## better than inventing a sibling.
+## better than inventing a sibling. Phase 9: grew again with perk_id,
+## same reasoning; also corrected team assignment from host-controlled
+## to self-service (see set_local_team()'s own doc comment) -- a real
+## authority bug the human owner caught, not part of Phase 8's original
+## design.
 
 ## Fired on every peer whenever any room state changes (class, team,
-## ready, mode, or friendly fire) -- ui/lobby/lobby.gd's Room Config
-## screen listens to this to redraw itself.
+## perk, ready, mode, or friendly fire) -- ui/lobby/lobby.gd's Room
+## Config screen listens to this to redraw itself.
 signal room_state_changed
 
 ## Canonical class id strings, in the same order as
@@ -27,6 +32,13 @@ signal room_state_changed
 ## PlayerSpawner both key off these, never a raw index, so adding a
 ## 4th class later only touches this list plus CLASS_SCENES.
 const CLASS_IDS: Array[String] = ["vanguard", "ranged_mage", "warden"]
+
+## Canonical perk id strings, in the same order as
+## net/player_spawner.gd's PERK_RESOURCES -- one fixed pool, identical
+## for every class (confirmed by the human owner, see memory/plan.md's
+## "Slices 8-10" Perks block), so unlike CLASS_IDS this list never
+## varies per character.
+const PERK_IDS: Array[String] = ["vitality", "swift", "adept", "balanced"]
 
 ## Set locally by CharacterSelect before ever connecting; read once,
 ## right after a successful host()/join(), by register_local_player().
@@ -45,9 +57,16 @@ var player_class_ids: Dictionary = {}
 ## ignores this entirely, since PlayerSpawner already assigns a unique
 ## team per player in FFA with no manual input needed. Defaulted on
 ## registration by alternating connection order (the same formula
-## PlayerSpawner used before Phase 8), then the host can move any peer
-## with set_team().
+## PlayerSpawner used before Phase 8), then each peer can move their
+## OWN team with set_local_team() -- self-service, not host-assigned;
+## the host has no authority over another peer's team.
 var player_team_ids: Dictionary = {}
+
+## Server-authoritative peer_id -> perk id, self-service (any peer,
+## including the host, picks their OWN perk) -- same authority shape as
+## player_team_ids, never host-assigned. Defaulted to PERK_IDS[0] on
+## registration, same "always valid, never missing" treatment as team.
+var player_perk_ids: Dictionary = {}
 
 ## Server-authoritative peer_id -> ready flag, for every peer EXCEPT
 ## the host. The host's own id is never a meaningful key here --
@@ -82,12 +101,22 @@ func resolve_class_id(requested: String) -> String:
 	return requested if requested in CLASS_IDS else CLASS_IDS[0]
 
 
+## Pure, same shape as resolve_class_id() -- see that function's own
+## doc comment.
+func resolve_perk_id(requested: String) -> String:
+	return requested if requested in PERK_IDS else PERK_IDS[0]
+
+
 func get_class_id(peer_id: int, fallback: String = "") -> String:
 	return player_class_ids.get(peer_id, fallback)
 
 
 func get_team_id(peer_id: int, fallback: int = 0) -> int:
 	return player_team_ids.get(peer_id, fallback)
+
+
+func get_perk_id(peer_id: int, fallback: String = "") -> String:
+	return player_perk_ids.get(peer_id, fallback)
 
 
 func is_ready(peer_id: int) -> bool:
@@ -150,21 +179,38 @@ func set_local_ready(ready: bool) -> void:
 		_rpc_set_ready.rpc_id(1, ready)
 
 
-## Host-only: moves any connected peer (including the host itself)
-## between teams. Not RPC'd -- only ever called by the host's own Room
-## Config screen, which only draws team controls when
-## NetworkManager.is_server() is true, so there is no remote-caller
-## path to guard against here the way _rpc_register/_rpc_set_ready
-## must.
-func set_team(peer_id: int, team_id: int) -> void:
-	if not NetworkManager.is_server():
-		return
-	player_team_ids[peer_id] = team_id
-	_broadcast_room_state()
+## Called locally by any peer to move their OWN team -- self-service,
+## same shape as set_local_ready(). Corrected mid-Phase-9 (was
+## host-only, letting the host move ANY peer's team; the human owner
+## caught this as a real authority bug, not a design choice -- the host
+## keeps mode/friendly-fire/Start authority, but never another
+## player's team). ui/lobby/lobby.gd only ever draws this control on a
+## peer's own row now, matching set_local_ready()'s own row-gating.
+func set_local_team(team_id: int) -> void:
+	var peer_id := multiplayer.get_unique_id()
+	if NetworkManager.is_server():
+		_apply_team(peer_id, team_id)
+		_broadcast_room_state()
+	else:
+		_rpc_set_team.rpc_id(1, team_id)
 
 
-## Host-only, same reasoning as set_team() -- called directly by the
-## host's own Room Config controls, never over RPC.
+## Called locally by any peer to set their OWN perk -- self-service,
+## same shape as set_local_team()/set_local_ready(). Visible to every
+## peer via the same room-state broadcast, per memory/plan.md's
+## "Slices 8-10" Perks block ("visible live to the rest of the room").
+func set_local_perk(perk_id: String) -> void:
+	var peer_id := multiplayer.get_unique_id()
+	if NetworkManager.is_server():
+		_apply_perk(peer_id, perk_id)
+		_broadcast_room_state()
+	else:
+		_rpc_set_perk.rpc_id(1, perk_id)
+
+
+## Host-only -- called directly by the host's own Room Config controls,
+## never over RPC (unlike set_local_team(), this really is host-only:
+## mode/friendly-fire are match-wide settings, not a per-player choice).
 func set_room_match_mode(mode: MatchState.MatchMode) -> void:
 	if not NetworkManager.is_server():
 		return
@@ -184,6 +230,7 @@ func _on_peer_disconnected(peer_id: int) -> void:
 		return
 	var changed := player_class_ids.erase(peer_id)
 	player_team_ids.erase(peer_id)
+	player_perk_ids.erase(peer_id)
 	player_ready.erase(peer_id)
 	if changed:
 		_broadcast_room_state()
@@ -209,36 +256,80 @@ func _rpc_set_ready(ready: bool) -> void:
 	_broadcast_room_state()
 
 
+## any_peer, same trust reasoning as _rpc_register -- never receives a
+## target peer id, only ever applies to the caller's own
+## get_remote_sender_id(), which is what makes "each peer can only move
+## their OWN team" a structural guarantee rather than a UI-only rule a
+## modified client could bypass.
+@rpc("any_peer", "reliable")
+func _rpc_set_team(team_id: int) -> void:
+	if not NetworkManager.is_server():
+		return
+	_apply_team(multiplayer.get_remote_sender_id(), team_id)
+	_broadcast_room_state()
+
+
+## any_peer, same trust reasoning as _rpc_set_team.
+@rpc("any_peer", "reliable")
+func _rpc_set_perk(perk_id: String) -> void:
+	if not NetworkManager.is_server():
+		return
+	_apply_perk(multiplayer.get_remote_sender_id(), perk_id)
+	_broadcast_room_state()
+
+
 ## Pure Dictionary mutation, no RPC -- callers are responsible for
 ## broadcasting afterward. Kept separate so it stays testable without
 ## a multiplayer peer (see test_get_class_id_returns_registered_choice).
-## Also seeds a default alternating team assignment on first
-## registration, same formula PlayerSpawner used before Phase 8 --
-## re-registering an already-known peer (e.g. picking a class again)
-## never resets a team the host may have already manually moved.
+## Also seeds a default alternating team assignment AND a default perk
+## on first registration (same formula PlayerSpawner used before Phase
+## 8 for team; PERK_IDS[0] for perk) -- re-registering an already-known
+## peer (e.g. picking a class again) never resets either choice once
+## the peer has already made it.
 func _apply_registration(peer_id: int, class_id: String) -> void:
 	player_class_ids[peer_id] = resolve_class_id(class_id)
 	if not player_team_ids.has(peer_id):
 		player_team_ids[peer_id] = _next_team_index % 2
 		_next_team_index += 1
+	if not player_perk_ids.has(peer_id):
+		player_perk_ids[peer_id] = PERK_IDS[0]
 
 
 func _apply_ready(peer_id: int, ready: bool) -> void:
 	player_ready[peer_id] = ready
 
 
+func _apply_team(peer_id: int, team_id: int) -> void:
+	player_team_ids[peer_id] = team_id
+
+
+func _apply_perk(peer_id: int, perk_id: String) -> void:
+	player_perk_ids[peer_id] = resolve_perk_id(perk_id)
+
+
 func _broadcast_room_state() -> void:
 	_rpc_receive_room_state.rpc(
-		player_class_ids, player_team_ids, player_ready, room_match_mode, room_friendly_fire
+		player_class_ids,
+		player_team_ids,
+		player_perk_ids,
+		player_ready,
+		room_match_mode,
+		room_friendly_fire
 	)
 
 
 @rpc("authority", "reliable", "call_local")
 func _rpc_receive_room_state(
-	classes: Dictionary, teams: Dictionary, ready: Dictionary, mode: int, friendly_fire: bool
+	classes: Dictionary,
+	teams: Dictionary,
+	perks: Dictionary,
+	ready: Dictionary,
+	mode: int,
+	friendly_fire: bool
 ) -> void:
 	player_class_ids = classes
 	player_team_ids = teams
+	player_perk_ids = perks
 	player_ready = ready
 	room_match_mode = mode
 	room_friendly_fire = friendly_fire
