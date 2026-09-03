@@ -288,6 +288,38 @@ Format:
   fallbacks" rule (`CLAUDE.md`) applies just as much to a dev-only
   debug flag as to production input.
 
+- **2026-09-03** — Found via `/waza:hunt` during real cross-machine
+  play-testing (Linux host, Windows client): turning the client's WiFi
+  off then back on left it staring at a frozen `TestArena` forever,
+  spamming `ERROR: No multiplayer peer is assigned. Unable to get
+  unique ID.` (`modules/multiplayer/scene_multiplayer.cpp:531`, from
+  `ui/hud/network_stats_overlay.gd:140`'s `_ensure_tracking_own_
+  character()`). Root cause, confirmed by reproducing the exact error
+  in a GUT test (not just read from the backtrace): `net/
+  network_manager.gd`'s `close()` -- the handler for both `multiplayer.
+  server_disconnected` and `.connection_failed` -- only ever nulls
+  `multiplayer.multiplayer_peer`, it never changes scene. `TestArena`
+  (and `NetworkStatsOverlay` inside it) keeps running regardless, and
+  `_ensure_tracking_own_character()` calls `multiplayer.get_unique_id()`
+  unconditionally every `_process()` tick with no guard. → **Rule**:
+  Godot's `SceneTree.multiplayer` has an implicit default peer-like
+  state (`has_multiplayer_peer()` reads `true`) until something
+  *explicitly* nulls it -- confirmed directly (see the fix attempt's
+  own throwaway check), not assumed. A GUT test asserting "no peer" as
+  the default/never-touched state is wrong; the test must explicitly
+  set `multiplayer.multiplayer_peer = null` first to reproduce a real
+  post-disconnect condition (and restore the original value after, so
+  the shared singleton doesn't leak into other test files).
+  **Deliberately not fixed here** -- the human owner correctly pointed
+  out that just bouncing the player to `MainMenu` on disconnect isn't
+  a real fix without Slice 13b's token-based reconnect (not built
+  yet): today there is *no* way to resume the same character after a
+  disconnect regardless of which screen the player lands on, so
+  "return to menu" alone would just be a smaller trap, not a solution.
+  Folded into Slice 13b's own scope instead (`memory/plan.md`) --
+  fixing this crash properly is part of designing what a disconnected
+  client's own screen should actually do, not a standalone patch.
+
 <!--
 Examples:
 

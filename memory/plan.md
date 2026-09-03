@@ -945,6 +945,28 @@ networking risk 13a doesn't carry.
 - Expiring the grace window without a matching token reconnect falls
   back to 13a's own behavior (forfeit via despawn) -- unchanged by
   13b.
+- **New, found via `/waza:hunt` during real play-testing (2026-09-03,
+  see `memory/gotchas.md`)**: a disconnected client's own screen is
+  currently a real dead end, not just a missing feature. `net/
+  network_manager.gd`'s `close()` (fired on `multiplayer.
+  server_disconnected`/`.connection_failed`) only nulls the peer, it
+  never changes scene -- a client whose connection drops (WiFi off,
+  host closing, anything) is left staring at a frozen `TestArena`
+  forever, with `ui/hud/network_stats_overlay.gd:140`'s
+  `_ensure_tracking_own_character()` spamming a real engine error
+  every frame (`multiplayer.get_unique_id()` called with no guard).
+  Confirmed live and reproduced in a GUT test. **Deliberately not
+  patched with a standalone "just return to MainMenu" fix**: without
+  13b's actual reconnect mechanism, that would just trade one dead end
+  for a smaller one (the human owner caught this explicitly -- landing
+  on `MainMenu` with no way to resume the same character isn't a real
+  fix). 13b's own design needs to answer this properly as part of the
+  reconnect flow itself: what a disconnected client's screen shows,
+  whether it auto-attempts to reconnect with the held token, and only
+  then falls back to `MainMenu` if the grace window truly expires. The
+  `_ensure_tracking_own_character()` null-peer guard is a trivial,
+  uncontroversial part of that fix regardless of the rest of the UX
+  decision -- implement it as part of 13b, not deferred further.
 
 ## MVP Status
 

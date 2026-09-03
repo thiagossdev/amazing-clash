@@ -557,7 +557,15 @@ changed but this file wasn't updated.
   rename, `controlling_peer_id` indirection, reconnect flow bypasses
   Character Select/Room Config). Deliberately not started in the same
   session as 13a -- real identity/networking risk, needs its own
-  `/think` first.
+  `/think` first. **Now also carries a real bug found via `/waza:hunt`
+  during play-testing** (2026-09-03, see `memory/gotchas.md`): a
+  disconnected client's own screen is a dead end today -- frozen
+  `TestArena`, `network_stats_overlay.gd` spamming a real engine error
+  every frame (`multiplayer.get_unique_id()` with no peer guard).
+  Deliberately not patched standalone (a bare "return to MainMenu"
+  fix would just be a smaller dead end without 13b's actual reconnect)
+  -- 13b's own design must decide what a disconnected client's screen
+  does, the null-peer guard included.
 - [ ] A new peer joining mid-grace-period (Phase 13a) can transiently
   make more characters "alive" than there are connected peers --
   doesn't corrupt the win condition (every character is counted
