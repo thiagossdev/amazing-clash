@@ -11,24 +11,15 @@ extends Node
 ## configurations). ui/host_join/'s manual IP field stays available at
 ## all times as the guaranteed fallback if a room never shows up here.
 ##
-## Confirmed mechanism (2026-09-03, `/waza:hunt`, real Linux+WSL2 host
-## / Windows client play-test -- `wslinfo --networking-mode` reads
-## "nat" in this dev environment): WSL2 NAT mode puts the Linux side on
-## its own private virtual subnet behind a Hyper-V virtual switch, not
-## the real LAN. Inbound broadcast from the real LAN into that isolated
-## subnet is blocked by the NAT boundary by default -- standard NAT
-## behavior, nothing to configure here -- which is exactly why a
-## Windows-hosted room never appeared to the Linux/WSL2 client.
-## Outbound broadcast from WSL2 can inconsistently leak onto the real
-## LAN (a Linux-hosted room *did* appear to the Windows client), but
-## `PacketPeerUDP.get_packet_ip()`'s reported source address for that
-## leaked packet is the WSL2-internal NAT address, not the address a
-## real LAN peer can actually route back to -- so joining a discovered
-## room this way hung forever (no success, no clean failure) even
-## though the identical IP typed manually into the Join field connects
-## instantly. The actual fix, if ever wanted, is a WSL2 networking-mode
-## change (`[wsl2] networkingMode=mirrored` in `.wslconfig`, Windows
-## 11 22H2+), not a code change here.
+## 2026-09-03 (`/waza:hunt`) -- corrected: an earlier version of this
+## comment blamed WSL2 NAT for an asymmetric-discovery + hung-join
+## report. That was wrong -- it conflated this dev session's own
+## environment (which does run under WSL2) with the human owner's
+## actual test rig, 2 real separate physical machines (one Linux, one
+## Windows) on the same real Wi-Fi, running an exported build carried
+## over by hand. No WSL2/NAT boundary exists in that setup at all. Real
+## root cause not yet found -- see `memory/gotchas.md` for the live
+## investigation and what's been ruled out so far.
 
 ## Fired whenever discovered_rooms changes (a new/updated room, or one
 ## expiring) -- ui/host_join/host_join.gd listens to redraw its list.

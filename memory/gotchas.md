@@ -320,6 +320,25 @@ Format:
   fixing this crash properly is part of designing what a disconnected
   client's own screen should actually do, not a standalone patch.
 
+- **2026-09-03** — Diagnosed the LAN-discovery asymmetry/hung-join
+  report (see the entry above) as caused by WSL2 NAT, and wrote that
+  into `net/lan_discovery.gd`'s own doc comment as if confirmed --
+  based on running `wslinfo --networking-mode` in *this* Claude Code
+  session's own dev environment (which does run under WSL2) and
+  quietly assuming that was the human owner's test setup too. It
+  wasn't: the human owner tested on 2 real separate physical machines
+  (Linux + Windows) on real Wi-Fi, an exported build carried over by
+  hand -- no WSL2 involved at all. Caught only because the human owner
+  happened to mention the setup explicitly; nothing about the original
+  report itself contradicted the wrong assumption. → **Rule**: never
+  infer a bug reporter's environment from the agent's own dev
+  environment, even when a detail (Linux, WSL, a specific IP range)
+  coincidentally matches -- ask, or find explicit evidence of their
+  actual setup, before writing a root cause into permanent
+  documentation. This is a specific case of this project's own
+  "Reporter reproduces, local machine is fine" gotcha: verify the
+  reporter's actual configuration, don't substitute the agent's own.
+
 <!--
 Examples:
 
