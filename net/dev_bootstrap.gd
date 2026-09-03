@@ -25,8 +25,12 @@ extends Node
 ## zeroes this peer's own character's health ~1s in (bypassing hit
 ## geometry entirely) so Phase 5's elimination/win-condition/HUD chain
 ## can be exercised deterministically without depending on 2 characters
-## actually connecting a hit. No flags leaves this a no-op. Pattern
-## inherited from amazing-nauts' net/dev_bootstrap.gd.
+## actually connecting a hit. `-- --free-for-all` sets
+## MatchState.match_mode to FREE_FOR_ALL -- must be set before
+## PlayerSpawner._ready() reads it to decide team assignment, so this
+## is parsed alongside --friendly-fire, before host()/join(), same
+## ordering reasoning as the paragraph below. No flags leaves this a
+## no-op. Pattern inherited from amazing-nauts' net/dev_bootstrap.gd.
 ##
 ## host()/join() run first and synchronously, before anything that
 ## awaits: PlayerSpawner._ready() (a sibling node under the same
@@ -46,6 +50,8 @@ func _ready() -> void:
 			NetworkManager.artificial_latency_ms = arg.trim_prefix("--latency=").to_int()
 	if "--friendly-fire" in args:
 		MatchState.friendly_fire_enabled = true
+	if "--free-for-all" in args:
+		MatchState.match_mode = MatchState.MatchMode.FREE_FOR_ALL
 
 	if "--server" in args:
 		var err := NetworkManager.host()
