@@ -139,3 +139,50 @@ in `progress.md`. No exceptions.
   explicitly deferred, not silently dropped — see
   `gameplay/combat/hit_definition.gd` and `hit_detection.gd`'s own doc
   comments for why.
+
+### Phase 2b: aimed skillshot / projectile combat
+
+- [x] `Projectile` (deterministic `position += direction * speed *
+  delta`, direction normalized regardless of input magnitude, lifetime
+  countdown, `already_hit` reset on `configure()`) — 7/7 GUT tests
+  (`test_projectile.gd`).
+- [x] `HitDetection.projectile_hitbox_rect` (centers on the projectile,
+  not attacker-relative like melee's `hitbox_rect`) — 1 new GUT test
+  added to `test_hit_detection.gd` (6/6 in that file now).
+- [x] `InputManager.get_aim_direction()` (mouse-world-position-minus-
+  character-position via the viewport's own canvas transform, not
+  `LocomotionFsm.facing_direction`) and `CharacterController.apply_input()`
+  capturing it into `pending_skillshot_direction` at cast time, not
+  read live later — reviewed; no dedicated unit test (needs a live
+  viewport/mouse, same class of gap as the debug overlay's visual
+  confirmation below).
+- [x] Live 2-process test: both peers' skillshots spawn, and — this is
+  the core Phase 2b claim — **the server's and the client's own local
+  Projectile instances tracked byte-for-byte identical positions at
+  every checkpoint, for the entire flight, with zero per-tick network
+  sync**, confirming the deterministic-replication design actually
+  holds under real (if artificial-latency-free, in this run) network
+  conditions. Confirmed via temporary instrumentation, removed after
+  verifying. Zero errors, including with `--simulate-move
+  --simulate-attack --simulate-skillshot` combined in one run.
+- [x] Did not force a live-network hit confirmation for the skillshot
+  specifically: headless mode has no real mouse, so both peers' test
+  casts aimed toward the same deterministic (but not deliberately
+  aimed-at-each-other) point and didn't happen to collide in this run.
+  Not treated as a gap needing a workaround: hit *application* for a
+  projectile hit runs through the exact same `_apply_hit`/`take_damage`/
+  `DamagePipeline` path Phase 2a already proved live, and the
+  projectile-specific hit *geometry* (`projectile_hitbox_rect` +
+  `HitDetection.query`) is independently proven by GUT. Forcing a
+  coincidental live hit would be redundant, not more rigorous.
+- [x] `gdformat --check` / `gdlint` / `godot4 --headless --import` /
+  `markdownlint-cli2` all clean. 52/52 GUT tests total project-wide.
+- [ ] No piercing, no early "projectile ended on hit" broadcast to
+  other peers (the server despawns its own instance immediately on a
+  confirmed hit; a remote peer's purely-decorative copy keeps flying
+  until its own lifetime expires) — deliberate, documented scope cuts,
+  not silent gaps; see `gameplay/combat/combat_resolver.gd`'s own doc
+  comment.
+- [ ] Visual confirmation that a skillshot's hitbox/projectile actually
+  renders and looks right on screen — not done, same headless-has-no-
+  renderer gap as every other visual item in this file.

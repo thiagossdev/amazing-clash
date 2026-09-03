@@ -63,6 +63,19 @@ Format:
   distinct points, cycled per connecting peer) instead of one shared
   constant.
 
+- **2026-09-02** — `for node in projectiles.get_children(): if not node
+  is Projectile: continue; var alive := node.advance_frame(...)` failed
+  to import: "Cannot infer the type of 'alive' variable because the
+  value doesn't have a set type." An `is` check followed by `continue`
+  does not narrow the loop variable's static type in GDScript --
+  `node` (typed `Node` from `get_children()`) is still `Node` afterward,
+  so calling a `Projectile`-only method on it is a dynamic/duck-typed
+  call returning an untyped Variant, which `:=` can't infer. → **Rule**:
+  after an `is` type-check on a loop/generic variable, assign an
+  explicit `var typed_thing := node as Type` before calling
+  type-specific methods on it — don't rely on the `is` check itself to
+  narrow the type for later statements.
+
 <!--
 Examples:
 
