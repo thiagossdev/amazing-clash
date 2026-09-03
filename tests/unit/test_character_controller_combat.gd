@@ -22,11 +22,11 @@ func _sample(
 	return sample
 
 
-func test_attack_pressed_starts_the_debug_attack_move() -> void:
+func test_attack_pressed_starts_the_attack_move() -> void:
 	var character := _spawn_character()
 	character.apply_input(_sample(true))
 	assert_ne(character.action_fsm.state, ActionFsm.State.NEUTRAL)
-	assert_eq(character.action_fsm.current_move, character.debug_attack_move)
+	assert_eq(character.action_fsm.current_move, character.attack_move)
 
 
 func test_attack_pressed_again_mid_move_does_not_restart_it() -> void:

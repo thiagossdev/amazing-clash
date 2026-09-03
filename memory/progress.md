@@ -163,22 +163,45 @@ changed but this file wasn't updated.
   deferred items (remote ability-slot visual replication,
   per-ability projectile speed/lifetime, unwired R/F/T).
 
+- [x] **Phase 4 (first 2 real classes) implemented and tactically
+  verified**: 2 orthogonal classes, **Vanguard** (melee frontline, 120
+  HP: Quick Slash/Piercing Thrust/Heavy Slam/Bulwark Strike) and
+  **Ranged Mage** (ranged skillshot dealer, 80 HP: Arcane Jab/Arcane
+  Bolt/Frost Shard/Arcane Nova), each its own scene
+  (`gameplay/characters/vanguard/`, `gameplay/characters/ranged_mage/`)
+  reusing the unmodified `character_controller.gd`. `PlayerSpawner`
+  alternates the 2 classes by connection order (no lobby yet -- Phase
+  5's job); `TestArena.tscn`'s `MultiplayerSpawner` updated to the 2
+  real scenes. `Character.tscn` kept as the generic GUT test fixture,
+  no longer spawned in matches. Mechanical rename alongside this:
+  `debug_attack_move`/`debug_skillshot_move` → `attack_move`/
+  `skillshot_move` (7 files, no behavior change). 2 new GUT tests
+  (`test_character_classes.gd`, 60 total project-wide), all passing;
+  live 2-process test confirmed class alternation (server got
+  Vanguard, client got Ranged Mage) and all 3 of Vanguard's kit moves
+  landing with their exact authored damage values, server-
+  authoritatively — see `memory/verify.md`'s Phase 4 section for full
+  evidence, and `memory/plan.md`'s Slice 4 block for what's deferred
+  (character-select UI, a 3rd class).
+
 ## Backlog (next up)
 
-- [ ] Phase 4: first 2 real classes (melee + ranged skillshot
-  archetypes) replace the placeholder character. Per `memory/plan.md`'s
-  roadmap for the full 6-phase sequence.
+- [ ] Phase 5: match modes -- team mode (2v2 default), friendly-fire
+  toggle, win condition, minimal lobby/HUD/match flow (this is also
+  where a real character-select UI belongs, replacing Phase 4's
+  connection-order class alternation). Per `memory/plan.md`'s roadmap.
 - [ ] Review `docs/blueprint/05-open-questions.md` with the human owner
   — most items are still genuinely open (friendly-fire toggle scope,
   team size, persistent-tree size/gating, loadout cadence, rollback
   reconsideration, setting/tone). The build-depth split in
   `docs/research/poe2-build-depth-inspiration/05-synthesis-amazingclash.md`
-  is the single highest-priority item to confirm before real class
-  kits (Phase 4) need a concrete answer about how skills map to the
+  is the single highest-priority item to confirm before Phase 6's 3rd
+  class needs a concrete answer about how skills map to the
   persistent/loadout split.
 - [ ] Decide how many ability slots a real class kit should have (R/F/T
-  are reserved in the InputMap but unwired) — needed before Phase 4's
-  class design can be finalized.
+  are reserved in the InputMap but unwired on both Phase 4 classes) —
+  needed before Phase 6's 3rd class (support/control) is designed,
+  since a control archetype may need more than 4 active slots.
 - [ ] Decide how (or whether) to replicate ability_q/e `ActionFsm`
   state to remote `INTERPOLATED` peers — the snapshot RPC is at a
   practical parameter-count limit; likely needs a packed-int
