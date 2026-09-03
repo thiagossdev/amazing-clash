@@ -80,3 +80,25 @@ in `progress.md`. No exceptions.
   fixed this way (`net/dev_bootstrap.gd`'s `--simulate-move` await
   ordering silently broke `PlayerSpawner`'s server-detection — see
   `memory/gotchas.md`, 2026-09-02) that code review alone had missed.
+
+### Debug instrumentation (F1 collision viewer, "/" console)
+
+- [x] `CollisionShapeViewer` starts hidden, F1 toggles it, joins the
+  `collision_viewer` group — 3/3 GUT tests
+  (`test_collision_shape_viewer.gd`).
+- [x] Debug console: "/" opens it, an OS key-repeat echo doesn't
+  re-toggle it, a second "/" while open doesn't close it, Escape closes
+  without executing, `/latency <ms>` updates
+  `NetworkManager.artificial_latency_ms` — 8/8 GUT tests
+  (`test_network_stats_overlay_console.gd`), including the
+  behavioral (not just `parse_command`-logic) cases that caught the
+  missing `ui_cancel` InputMap entry (see `memory/gotchas.md`,
+  2026-09-02).
+- [x] `gdformat --check` / `gdlint` / `godot4 --headless --import` /
+  `markdownlint-cli2` all clean; live 2-process network smoke test
+  (walk+dash) still clean after every change in this slice.
+- [ ] Visual confirmation that F1/`/` actually render correctly on
+  screen — not done, same headless-has-no-renderer gap as the ping/
+  snapshot-rate overlay above. The behavioral GUT tests confirm the
+  toggle *logic*; nobody has looked at the actual drawn shapes or
+  console UI with eyes yet.
