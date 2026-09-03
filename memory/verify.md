@@ -342,3 +342,65 @@ in `progress.md`. No exceptions.
 - [ ] `MatchHud`'s visual rendering (label positions, banner
   readability) was not screenshot-verified — same headless-has-no-
   renderer gap as every other visual item in this file.
+
+### Phase 6: 3rd class (Warden) + free-for-all mode
+
+- [x] `WinCondition.determine()`'s new signature — 8/8 GUT tests
+  (`test_win_condition.gd`): every prior 2-team case re-verified under
+  the new `(alive_team_ids, teams_ever_present)` shape (no result
+  before 2 teams connect, either team winning on the other's
+  elimination, a simultaneous draw, no result with survivors on both
+  sides) plus 3 new free-for-all (N>2) cases: no result while >1
+  player survives, the last surviving player wins, a draw when the
+  last 2 players mutually eliminate.
+- [x] Warden's kit wiring and its balance identity — 2/2 new GUT tests
+  (`test_character_classes.gd`, 4/4 in that file now): `attack_move`/
+  `skillshot_move`/`ability_q`/`ability_e` all point at the correct
+  named moves with the correct `is_projectile` flags and `max_health`;
+  a dedicated assertion that Warden's E ability has strictly more
+  `hitstun_frames` than either Vanguard's or Ranged Mage's own E, so a
+  future balance pass can't silently erode the archetype's identity
+  without a test noticing.
+- [x] Live 3-process team-mode regression test (server + 2 clients, no
+  mode flag): confirmed team assignment (`index % 2` → 0, 1, 0) and
+  class assignment (`index % 3` → Vanguard, Ranged Mage, Warden) both
+  still resolve correctly and independently now that a 3rd class
+  exists — team 0 ends up with a mixed Vanguard+Warden composition,
+  confirming the "2-vs-3 modulus mismatch is intentional" design note
+  in `net/player_spawner.gd`. Zero errors.
+- [x] Live free-for-all tests (`--free-for-all`, `--simulate-self-
+  eliminate` on various peers): confirmed unique per-player team
+  assignment (0, 1, 2 for 3 connecting peers); confirmed a team
+  self-eliminating before a 2nd team has even connected correctly does
+  **not** end the match (`teams_ever_present` gate holds at N>2, not
+  just N=2); confirmed the match resolves and broadcasts the correct
+  winner the instant the 2nd team's threshold is crossed with the
+  first team already at 0 (an edge case only reachable in live timing,
+  not planned in advance, and handled correctly with no code change
+  needed); confirmed eliminating exactly 1 of 3 connected players
+  correctly leaves the match ongoing (2 teams still alive); confirmed
+  the Phase 5 late-joiner catch-up path still correctly informs a peer
+  that connects after `POST_GAME` has already fired. Zero errors
+  across every run.
+- [x] `gdformat --check` / `gdlint` (project files, excluding
+  third-party `addons/gut/`) / `godot4 --headless --import` all clean.
+  70/70 GUT tests total project-wide.
+- [ ] A live 3-player free-for-all run where all 3 players are
+  confirmed connected before any elimination, then exactly 2 are
+  eliminated in sequence, leaving a genuine 3-way "last one standing"
+  finish, was attempted but not cleanly achieved (timing-dependent —
+  see the live scenarios actually achieved above, which collectively
+  cover the same logical ground: N>2 "no result yet," the 2-teams-
+  connected gate, and a correct resolution). Not treated as a gap: the
+  exact N>2 win-declaration arithmetic this scenario would exercise is
+  already exhaustively proven by `test_win_condition.gd`'s 3 new FFA
+  cases, including the identical `(1 alive_team_id, 4 ever_present)`
+  shape.
+- [ ] Warden's kit was not live-cast in combat this phase (only spawned
+  and observed error-free) — not treated as a gap: `CombatResolver`'s
+  resolution path is fully class-agnostic and already live-proven
+  generically across every prior class (Phases 2-5); Warden's kit data
+  itself (the only new thing) is directly unit-tested above.
+- [ ] Character-select/mode-select UI, per-team-of-one HUD breakdown
+  for FFA, and a real reconnect/grace-period system remain explicitly
+  deferred — see `memory/plan.md`'s Slice 6 block and Deferred list.

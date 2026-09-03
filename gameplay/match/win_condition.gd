@@ -5,30 +5,35 @@ extends RefCounted
 ## same separation this project already applies to ActionFsm/
 ## HitDetection/DamagePipeline vs their Node-based orchestrators
 ## (CombatResolver). A team loses once none of its characters have
-## current_health > 0; both teams reaching 0 simultaneously (a mutual
+## current_health > 0; every team reaching 0 simultaneously (a mutual
 ## kill in the same tick) is a draw, not silently ignored.
+##
+## Team-count-agnostic since Phase 6: 2v2 team mode and free-for-all
+## (where PlayerSpawner assigns each player their own unique team id)
+## are both just "how many distinct teams still have someone alive" --
+## team mode is the N=2 case, not a separate code path.
 
 ## No winner decided yet, and no reason to declare one.
 const NONE := -2
-## Both teams simultaneously reached 0 alive members.
+## Every team simultaneously reached 0 alive members.
 const DRAW := -1
 
 
-## Returns NONE, DRAW, or a team index (0 or 1) for the winner.
-## team0_ever_present/team1_ever_present must both be true before any
-## result is returned -- otherwise the brief startup window before
-## both teams' first players have even connected yet (both alive
-## counts legitimately 0, but for "nobody's here" reasons, not "this
-## team lost") would look identical to a loss.
-static func determine(
-	team0_alive: int, team1_alive: int, team0_ever_present: bool, team1_ever_present: bool
-) -> int:
-	if not (team0_ever_present and team1_ever_present):
+## alive_team_ids: the distinct team ids that currently have >=1
+## character with current_health > 0 (order and duplicates don't
+## matter -- only emptiness/size/the single remaining value do).
+## teams_ever_present: how many distinct team ids have been observed
+## with >=1 character at any point so far (latched, never decreases).
+## Must be >= 2 before any result is returned -- otherwise the brief
+## startup window before at least 2 teams' first players have even
+## connected yet (alive_team_ids legitimately small or empty, but for
+## "nobody's here" reasons, not "eliminated") would look identical to
+## a loss or draw. Returns NONE, DRAW, or the surviving team's id.
+static func determine(alive_team_ids: Array, teams_ever_present: int) -> int:
+	if teams_ever_present < 2:
 		return NONE
-	if team0_alive == 0 and team1_alive == 0:
+	if alive_team_ids.is_empty():
 		return DRAW
-	if team0_alive == 0:
-		return 1
-	if team1_alive == 0:
-		return 0
+	if alive_team_ids.size() == 1:
+		return alive_team_ids[0]
 	return NONE

@@ -47,7 +47,7 @@ shape = SubResource("RectangleShape2D_vert")
 [node name="HitboxViewer" parent="." instance=ExtResource("5_cshv")]
 
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
-_spawnable_scenes = PackedStringArray("res://gameplay/characters/vanguard/Vanguard.tscn", "res://gameplay/characters/ranged_mage/RangedMage.tscn")
+_spawnable_scenes = PackedStringArray("res://gameplay/characters/vanguard/Vanguard.tscn", "res://gameplay/characters/ranged_mage/RangedMage.tscn", "res://gameplay/characters/warden/Warden.tscn")
 spawn_path = NodePath("../Characters")
 
 [node name="PlayerSpawner" type="Node" parent="."]

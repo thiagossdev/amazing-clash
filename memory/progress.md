@@ -208,36 +208,68 @@ changed but this file wasn't updated.
   block for full evidence and deferred items (character-select UI, a
   real reconnect system).
 
+- [x] **Phase 6 (3rd class + free-for-all) implemented and tactically
+  verified — all 6 roadmap phases now complete (MVP per the roadmap's
+  own criteria; see `memory/plan.md`'s new "MVP Status" section for
+  what's genuinely done vs. what the fuller `docs/blueprint/`
+  proposal still leaves open)**: `WinCondition.determine()`
+  generalized from 2 fixed teams to N teams (team mode is the N=2
+  case, not a separate path); `MatchRules` rewritten to a
+  `Dictionary`-keyed, team-count-agnostic orchestrator. New
+  `MatchState.match_mode` (`TEAM`/`FREE_FOR_ALL`, via a new
+  `--free-for-all` dev_bootstrap flag) makes `PlayerSpawner` assign a
+  unique team id per player in FFA instead of `index % 2` — no other
+  code needed a mode branch, since a unique-per-player team id makes
+  the existing friendly-fire/elimination logic correct for FFA with
+  zero changes. `MatchHud` made mode-aware (team breakdown vs. a
+  single alive-player count). New 3rd class **Warden**
+  (support/control, 100 HP): the lowest-damage, highest-hitstun kit in
+  the game, expressing "control" entirely through existing
+  `HitDefinition` data (no new heal/shield/buff mechanic — none exists
+  in `DamagePipeline` and adding one was out of scope). 5 new GUT
+  tests (70 total project-wide); live testing across team mode (3
+  classes, unaffected) and multiple free-for-all scenarios (2- and
+  3-player, various elimination timings) confirmed team/class
+  assignment, the "≥2 teams must have connected" guard, and the
+  late-joiner catch-up path (built in Phase 5) all still correct under
+  the generalized N-team model. See `memory/verify.md`'s Phase 6
+  section and `memory/plan.md`'s Slice 6 block for full evidence and
+  deferred items.
+
 ## Backlog (next up)
 
-- [ ] Phase 6: 3rd class (support/control archetype) + free-for-all
-  mode — completes `docs/blueprint/04-mvp-scope.md`'s MVP criteria.
-  Per `memory/plan.md`'s roadmap.
 - [ ] Review `docs/blueprint/05-open-questions.md` with the human owner
-  — most items are still genuinely open (team size beyond 2v2,
-  persistent-tree size/gating, loadout cadence, rollback
-  reconsideration, setting/tone). Friendly-fire toggle scope is now
-  resolved (see Phase 5's entry above). The build-depth split in
+  — still genuinely open: team size beyond 2v2, persistent-tree
+  size/gating, loadout cadence, rollback reconsideration, setting/tone.
+  Friendly-fire toggle scope (Phase 5) and presentation (2D top-down)
+  are resolved. The build-depth split in
   `docs/research/poe2-build-depth-inspiration/05-synthesis-amazingclash.md`
-  is the single highest-priority item to confirm before Phase 6's 3rd
-  class needs a concrete answer about how skills map to the
-  persistent/loadout split.
+  is the single highest-priority item to confirm — it's what the
+  fuller MVP proposal in `docs/blueprint/04-mvp-scope.md` still needs
+  beyond the roadmap's own now-complete 6 phases (see
+  `memory/plan.md`'s "MVP Status").
 - [ ] Decide how many ability slots a real class kit should have (R/F/T
-  are reserved in the InputMap but unwired on all classes so far) —
-  needed before Phase 6's 3rd class (support/control) is designed,
-  since a control archetype may need more than 4 active slots.
+  are reserved in the InputMap but unwired on all 3 classes) — a
+  content/balance decision for whenever the roster grows past 3.
 - [ ] Decide how (or whether) to replicate ability_q/e `ActionFsm`
   state to remote `INTERPOLATED` peers — the snapshot RPC is at a
   practical parameter-count limit; likely needs a packed-int
-  restructure before a 3rd+ slot makes this worse.
-- [ ] Character-select UI / lobby, and the connect-then-select network
-  flow it needs — class and team are both still auto-assigned by
-  connection order (Phases 4-5); a real pick screen needs its own
-  design pass, not decided this session.
+  restructure before a 4th+ ability slot makes this worse.
+- [ ] Character-select UI / lobby, and a mode-select UI (team vs.
+  free-for-all) — class, team, and match mode are all still assigned
+  by connection order or a server-startup flag (Phases 4-6); a real
+  pick screen (and the connect-then-select network flow it needs)
+  requires its own design pass, not decided this session.
 - [ ] A real reconnect/grace-period system — a mid-match disconnect
-  currently resolves as an immediate forfeit for that team (Phase 5's
-  elimination mechanism), matching "online matches should not pause,"
-  but the docs' own "Reconnect" sub-state is unbuilt.
+  currently resolves as an immediate forfeit for that team/player
+  (Phase 5's elimination mechanism, generalized to N teams in Phase 6),
+  matching "online matches should not pause," but the docs' own
+  "Reconnect" sub-state is unbuilt.
+- [ ] The full persistent build-investment layer (unlocks, node tree,
+  respec economy) and a minimal pre-match loadout draft — the single
+  biggest gap between "roadmap done" (this session) and the fuller MVP
+  proposal in `docs/blueprint/04-mvp-scope.md`. Blocked on the
+  build-depth-split confirmation above.
 
 ## Blocked
 

@@ -8,23 +8,28 @@ extends Node
 ## Wired as TestArena's LAST child, after CombatResolver, so a hit this
 ## same tick has already applied before this node reads current_health.
 ##
-## _team0_ever_present/_team1_ever_present latch true the first time a
-## team is observed with >=1 character and never reset. This is what
-## lets a mid-match disconnect of a team's last member resolve as a
-## loss for that team -- PlayerSpawner.queue_free()s a disconnecting
-## peer's character, dropping that team's *current* count to 0 exactly
-## like an elimination would -- while still correctly not declaring a
-## winner during the brief startup window before both teams' first
-## players have even connected yet (both counts start at 0, which
-## would otherwise look identical to a loss). A real reconnect/grace-
-## period system is out of scope here; see memory/plan.md.
+## Team-count-agnostic since Phase 6 (a Dictionary keyed by team id,
+## not 2 hardcoded locals): 2v2 team mode and free-for-all (where
+## PlayerSpawner assigns each player their own unique team id) are the
+## same code path here, differing only in how many distinct team ids
+## show up in the roster.
+##
+## _ever_present_teams latches every team id ever observed with >=1
+## character and never forgets one. This is what lets a mid-match
+## disconnect of a team's last member resolve as a loss for that team
+## -- PlayerSpawner.queue_free()s a disconnecting peer's character,
+## dropping that team's *current* alive count to 0 exactly like an
+## elimination would -- while still correctly not declaring a winner
+## during the brief startup window before at least 2 teams' first
+## players have even connected yet (WinCondition needs >=2 teams ever
+## present, which would otherwise look identical to a loss/draw). A
+## real reconnect/grace-period system is out of scope here; see
+## memory/plan.md.
 
 @export var characters_path: NodePath = ^"../Characters"
 
-var _team0_ever_present: bool = false
-var _team1_ever_present: bool = false
-var _last_team0_alive: int = -1
-var _last_team1_alive: int = -1
+var _ever_present_teams: Dictionary = {}
+var _last_alive_by_team: Dictionary = {}
 
 
 func _physics_process(_delta: float) -> void:
@@ -35,30 +40,32 @@ func _physics_process(_delta: float) -> void:
 	var characters := get_node_or_null(characters_path)
 	if not characters:
 		return
-	var team0_total := 0
-	var team1_total := 0
-	var team0_alive := 0
-	var team1_alive := 0
+	var alive_by_team: Dictionary = {}
 	for node in characters.get_children():
 		if not node is CharacterController:
 			continue
 		var character := node as CharacterController
-		if character.team == 0:
-			team0_total += 1
-			if character.current_health > 0.0:
-				team0_alive += 1
-		else:
-			team1_total += 1
-			if character.current_health > 0.0:
-				team1_alive += 1
-	_team0_ever_present = _team0_ever_present or team0_total > 0
-	_team1_ever_present = _team1_ever_present or team1_total > 0
-	if team0_alive != _last_team0_alive or team1_alive != _last_team1_alive:
-		_last_team0_alive = team0_alive
-		_last_team1_alive = team1_alive
-		MatchState.broadcast_team_status(team0_alive, team1_alive)
-	var result := WinCondition.determine(
-		team0_alive, team1_alive, _team0_ever_present, _team1_ever_present
-	)
+		_ever_present_teams[character.team] = true
+		if character.current_health > 0.0:
+			alive_by_team[character.team] = alive_by_team.get(character.team, 0) + 1
+	if alive_by_team != _last_alive_by_team:
+		_last_alive_by_team = alive_by_team.duplicate()
+		MatchState.broadcast_team_status(_counts_array(alive_by_team))
+	var result := WinCondition.determine(alive_by_team.keys(), _ever_present_teams.size())
 	if result != WinCondition.NONE:
 		MatchState.enter_post_game(result)
+
+
+## Converts the sparse alive_by_team Dictionary into a dense array
+## indexed by team id (0 for any team id in _ever_present_teams that
+## currently has no alive members), the shape MatchState/MatchHud read.
+func _counts_array(alive_by_team: Dictionary) -> Array[int]:
+	var max_team_id := 0
+	for team_id in _ever_present_teams:
+		max_team_id = maxi(max_team_id, team_id)
+	var counts: Array[int] = []
+	counts.resize(max_team_id + 1)
+	counts.fill(0)
+	for team_id in alive_by_team:
+		counts[team_id] = alive_by_team[team_id]
+	return counts

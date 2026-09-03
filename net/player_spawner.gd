@@ -12,16 +12,21 @@ extends Node
 ## net/player_spawner.gd, scoped down. See
 ## docs/blueprint/03-networking-and-match-modes.md.
 ##
-## Phase 4: alternates the 2 real classes by connection order (same
+## Phase 4: alternates the real classes by connection order (same
 ## array-cycling pattern SPAWN_POSITIONS already uses below) -- no
 ## lobby/character-select exists yet, so this is the simplest thing
-## that lets both classes fight each other in a live match. Phase 5:
-## also assigns team = index % 2 for 2v2 team mode, same connection-
-## order auto-assignment, no lobby/character-select UI exists yet to
-## pick team or class explicitly (deferred, see memory/plan.md).
+## that lets every class fight in a live match. Phase 5: also assigns
+## team = index % 2 for 2v2 team mode, same connection-order auto-
+## assignment, no lobby/character-select UI exists yet to pick team or
+## class explicitly (deferred, see memory/plan.md). Phase 6: 3rd entry
+## (Warden) added -- the 2-vs-3 modulus mismatch with team assignment's
+## own index % 2 is intentional, not a bug: it's what makes team
+## composition vary (not every team gets the exact same class pairing)
+## as more players connect, with no extra logic needed for that.
 const CLASS_SCENES: Array[PackedScene] = [
 	preload("res://gameplay/characters/vanguard/Vanguard.tscn"),
 	preload("res://gameplay/characters/ranged_mage/RangedMage.tscn"),
+	preload("res://gameplay/characters/warden/Warden.tscn"),
 ]
 
 ## 4 points (2v2's default team size): team 0 clusters on the left,
@@ -42,7 +47,11 @@ const CLASS_SCENES: Array[PackedScene] = [
 ## exactly overlapping (a degenerate case where a melee hitbox and
 ## hurtbox can share an exact boundary with no true intersection --
 ## found live, see memory/gotchas.md). Cycles for a 5th+ peer rather
-## than erroring; free-for-all's own spawn layout is Phase 6's concern.
+## than erroring. Reused unchanged for free-for-all -- every player
+## just cycles through the same 4 points regardless of mode; a
+## dedicated spread-out FFA layout is a cosmetic refinement, not a
+## correctness need (friendly fire and the win condition both already
+## work correctly at any spawn distance).
 const SPAWN_POSITIONS: Array[Vector2] = [
 	Vector2(360, 400), Vector2(960, 400), Vector2(300, 400), Vector2(900, 400)
 ]
@@ -70,7 +79,11 @@ func _spawn_for_peer(peer_id: int, characters: Node) -> void:
 	var character := class_scene.instantiate()
 	character.name = str(peer_id)
 	character.position = SPAWN_POSITIONS[_next_spawn_index % SPAWN_POSITIONS.size()]
-	character.team = _next_spawn_index % 2
+	character.team = (
+		_next_spawn_index
+		if MatchState.match_mode == MatchState.MatchMode.FREE_FOR_ALL
+		else _next_spawn_index % 2
+	)
 	_next_spawn_index += 1
 	characters.add_child(character)
 
