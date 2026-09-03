@@ -8,11 +8,14 @@ extends Node
 ## every peer (deterministic, no per-tick sync needed -- see
 ## gameplay/projectiles/projectile.gd); only hit resolution is gated to
 ## the server. Pattern inherited from amazing-nauts'
-## gameplay/combat/combat_resolver.gd, scoped down to Phase 3: melee,
-## a single non-piercing skillshot, and 2 independent ability slots
-## (Q/E), each melee- or projectile-style per its own AbilityResource.
-## is_projectile (no armor/buffs/VFX/objectives/piercing -- none of that
-## exists in this project's design yet).
+## gameplay/combat/combat_resolver.gd. Melee, a single non-piercing
+## skillshot, and 2 independent ability slots (Q/E), each melee- or
+## projectile-style per its own AbilityResource.is_projectile (no
+## armor/buffs/VFX/objectives/piercing -- none of that exists in this
+## project's design yet). Phase 5: an eliminated attacker
+## (current_health <= 0) can no longer land a hit, and a hit between
+## same-team characters is skipped unless MatchState.friendly_fire_enabled
+## is true.
 
 const PROJECTILE_SCENE := preload("res://gameplay/projectiles/Projectile.tscn")
 const PROJECTILE_SPEED := 700.0
@@ -34,7 +37,7 @@ func _physics_process(_delta: float) -> void:
 
 
 func _resolve_attacker(attacker: Node, roster: Array) -> void:
-	if not attacker is CharacterController:
+	if not attacker is CharacterController or attacker.current_health <= 0.0:
 		return
 	_resolve_melee(attacker, roster, attacker.action_fsm, attacker.attack_move)
 	_maybe_launch_projectile(
@@ -87,6 +90,8 @@ func _resolve_melee(
 			if defender == attacker or not defender is CharacterController:
 				continue
 			if defender in slot_fsm.already_hit:
+				continue
+			if not MatchState.friendly_fire_enabled and defender.team == attacker.team:
 				continue
 			var hurtbox := HitDetection.hurtbox_rect(
 				defender.global_position, defender.hurtbox_size
@@ -196,6 +201,8 @@ func _resolve_projectile_hit(projectile: Projectile, roster: Array) -> bool:
 		if not defender is CharacterController or defender == projectile.caster:
 			continue
 		if defender in projectile.already_hit:
+			continue
+		if not MatchState.friendly_fire_enabled and defender.team == projectile.caster.team:
 			continue
 		var hurtbox := HitDetection.hurtbox_rect(defender.global_position, defender.hurtbox_size)
 		for hit in projectile.hit_definitions:
