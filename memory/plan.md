@@ -73,8 +73,7 @@ phase independently playable/demoable even if the next never lands):
 7. Main Menu + offline character select (no duplicate-class check) +
    direct-IP host/join, replacing `dev_bootstrap.gd`'s flag-only entry
    point with a real UI flow (dev_bootstrap itself stays, unchanged,
-   for headless testing). Scope designed via `/think` 2026-09-03, see
-   Slice 7 below.
+   for headless testing). **Done** — see Slice 7 below.
 8. Room Config screen: game-mode select (Team/FFA), friendly-fire
    toggle, manual per-player team assignment (no numeric team-size
    selector — size is emergent from how players are placed), ready-
@@ -434,29 +433,102 @@ to scoped roadmap phases, not new post-MVP scope).
   late-joiner catch-up path, confirmed still correct here). See
   `memory/verify.md`'s Phase 6 section for full evidence.
 
-### Slices 7-10 (Lobby / Character-Select / Room-Config / Perks / LAN Discovery) — designed via `/think` 2026-09-03
-
-Confirmed by the human owner:
+### Slice 7 (Phase 7): Main Menu -> Character Select -> Host/Join -> Lobby -> in-game — DONE
 
 - **Flow order** (deliberately different from `docs/blueprint/03`'s
-  original Lobby→CharacterSelect ordering): Main Menu → Character
-  Select (**local, pre-connection, no duplicate-class check** — two
-  players may pick the same class) → Host (direct IP) or Join (direct
-  IP in Slice 7; LAN room list added in Slice 10) → Room Config (mode,
-  friendly fire, manual team placement, perk pick, ready) → in-game.
-- `MatchState.Phase` simplifies from `{LOBBY, CHARACTER_SELECT,
-  LOADING, IN_PROGRESS, POST_GAME}` (the 2 middle values were never
-  implemented) to `{LOBBY, IN_PROGRESS, POST_GAME}` — `LOBBY` now means
-  "connected, in Room Config."
-- `net/dev_bootstrap.gd` is **not touched** — headless flag-driven
-  testing for all of Phases 1-6 keeps working unchanged; the new UI is
-  an additive path into the same `NetworkManager`/`PlayerSpawner`.
-- New server-authoritative `net/lobby_state.gd`: `Dictionary` keyed by
-  `peer_id` holding `{class_id, team_id, perk_id, ready}` per
-  connected player, broadcast to all peers (same RPC pattern as
-  `MatchState.team_alive_counts`) so Room Config is visible to
-  everyone, not just the host. `PlayerSpawner` reads this instead of
-  auto-cycling `index % N`.
+  original Lobby→CharacterSelect ordering, now corrected there too):
+  Main Menu → Character Select (**local, pre-connection, no
+  duplicate-class check** — two players may pick the same class) →
+  Host (direct IP) or Join (direct IP; LAN room list is Slice 10) →
+  Lobby (waiting room: connected players + their chosen class,
+  host-only Start) → in-game.
+- **Scenes/scripts**: `ui/main_menu/`, `ui/character_select/`,
+  `ui/host_join/`, `ui/lobby/` — each a thin `Control` root, no
+  separate scene-flow autoload (each screen calls
+  `get_tree().change_scene_to_file()` directly). New
+  `net/lobby_state.gd` (server-authoritative `Dictionary` keyed by
+  `peer_id` → `class_id`, broadcast to all peers on every change, same
+  RPC pattern as `MatchState.team_alive_counts`); `PlayerSpawner` reads
+  this instead of auto-cycling `index % N`, falling back to the old
+  cycling behavior for any unregistered peer (keeps
+  `net/dev_bootstrap.gd`'s headless peers, which never register,
+  working unchanged). `project.godot`'s `run/main_scene` is now
+  `MainMenu.tscn` (was `TestArena.tscn`).
+- **`MatchState.Phase` change, corrected mid-implementation**: the
+  original `/think` plan dropped both `CHARACTER_SELECT` and `LOADING`
+  down to `{LOBBY, IN_PROGRESS, POST_GAME}`. The human owner caught
+  this before merge and had `LOADING` restored (`CHARACTER_SELECT`
+  stays dropped — that part of the reasoning held): a real handshake
+  was needed, not a placeholder. Final enum: `{LOBBY, LOADING,
+  IN_PROGRESS, POST_GAME}`. `enter_loading()` broadcasts LOADING; every
+  peer scene-changes to `TestArena.tscn`; each peer's own
+  `net/loading_reporter.gd` (TestArena's last child, same _ready()-
+  ordering guarantee `MatchRules` already relies on) reports back once
+  its own tree is genuinely built; the server only calls
+  `enter_in_progress()` once every currently-connected peer has
+  reported.
+- **2 real races found and fixed live**, not caught by GUT (both
+  require 2 real processes to reproduce):
+  1. `PlayerSpawner` used to spawn unconditionally at `_ready()`. A
+     scene change is asynchronous per-peer with no cross-process
+     synchronization, so the server's own tree could finish (and start
+     replicating spawned characters) before a remote peer's own
+     `TestArena/MultiplayerSpawner` existed yet — "Node not found:
+     TestArena/MultiplayerSpawner" on the client, confirmed live. Fixed
+     by gating all spawning on `MatchState.current_phase ==
+     IN_PROGRESS` (which the LOADING handshake above only reaches once
+     safe), except when it's already `IN_PROGRESS` at `_ready()` time
+     (dev_bootstrap's direct-connect flow, unaffected).
+  2. `net/loading_reporter.gd` reporting unconditionally raced
+     `dev_bootstrap.gd`'s own client flow: its `--join` peer's
+     `LoadingReporter._ready()` could fire before that peer's own ENet
+     handshake had actually finished, producing "Trying to call an RPC
+     via a multiplayer peer which is not connected." Fixed by only
+     reporting when `current_phase == LOADING` (always true for the
+     real Lobby-driven flow by causality; never true for
+     dev_bootstrap's flow, which skips LOADING entirely).
+  3. (Test-harness only, not a product bug) The live 2-process test's
+     first `--dev-autostart` attempt used a fixed 1s timer, which
+     proved unreliable across 2 independently-launched OS processes
+     with no shared clock — fixed by polling `LobbyState.player_class_
+     ids.size() >= 2` (bounded to ~10s) instead of guessing a delay.
+- **Tests**: `tests/unit/test_lobby_state.gd` (5 tests, pure
+  `resolve_class_id()`/`get_class_id()` logic — the Node/RPC parts are
+  tactically verified instead, matching this project's own convention)
+  — 75 total project-wide (was 70).
+- **Verify**: live 2-process test confirmed the full Main Menu →
+  Character Select → Host/Join → Lobby → in-game flow end-to-end with
+  each peer spawning as the class it actually chose (not the old
+  auto-alternation), zero engine errors on either peer. Live-reran
+  `dev_bootstrap.gd`'s own pre-existing headless flow (now needs the
+  scene passed explicitly: `godot4 --headless --path .
+  res://maps/test_arena/TestArena.tscn -- --server ...`, since it's no
+  longer the main scene) and confirmed it's still clean and unchanged
+  in behavior. See `memory/verify.md`'s Phase 7 section for full
+  evidence.
+- **Known gaps, deferred on purpose, not silently dropped**:
+  - **Visual verification**: this project has never had a way to
+    screenshot Godot's actual renderer (`memory/verify.md` flags this
+    at every UI-adjacent phase so far — `playwright-capture.sh` is
+    web-only). Slice 7 adds the project's first real menu screens with
+    no way to visually confirm them beyond live functional testing +
+    code reading. Not solved here; carried forward as an explicit gap,
+    same as every prior phase.
+  - A peer connecting mid-LOADING (rather than already being in the
+    Lobby when Start is pressed) has no explicit catch-up RPC for
+    LOADING itself — unlikely in this project's direct-connect,
+    small-player-count flow, not worth the extra bookkeeping yet.
+  - Double-clicking "Join" while a previous attempt is still pending
+    isn't guarded against — an untested edge case, not a known bug.
+
+### Slices 8-10 (Room Config / Perks / LAN Discovery) — designed via `/think` 2026-09-03, NOT STARTED
+
+Confirmed by the human owner (unchanged from the original design pass;
+Slice 7 above is now built exactly consistent with these):
+
+- New server-authoritative `net/lobby_state.gd` (built in Slice 7)
+  should grow `team_id`/`perk_id`/`ready` fields for these slices,
+  rather than a new parallel registry.
 - Team size gets **no numeric selector** — it's emergent from how many
   players the host places in each team column in Room Config. This is
   what satisfies the already-confirmed "team size configurable, 2v2
@@ -474,15 +546,8 @@ Confirmed by the human owner:
   broadcast reliability inside this dev environment's WSL2→LAN path is
   unverified; Slice 10 must degrade to Slice 7's manual-IP join if it
   doesn't work, not block the rest.
-- **Visual verification gap, inherited from Phases 1-6, still
-  unsolved**: this project has never had a way to screenshot Godot's
-  actual renderer (`memory/verify.md` flags this explicitly at every
-  UI-adjacent phase so far — `playwright-capture.sh` is web-only and
-  doesn't apply here). Slices 7-9 add the project's first real menu
-  screens with no established way to visually confirm them beyond
-  live headless functional testing + code reading. Carry the same
-  explicit-gap convention forward; do not claim a screenshot check
-  that didn't happen.
+- Same visual-verification gap as Slice 7 above applies to Slices 8-9
+  as well (Room Config and the perk picker are both real UI screens).
 
 ## MVP Status
 

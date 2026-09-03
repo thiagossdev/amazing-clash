@@ -118,12 +118,6 @@ func _spawn_for_peer(peer_id: int, characters: Node) -> void:
 	)
 	_next_spawn_index += 1
 	characters.add_child(character)
-	print(
-		(
-			"PlayerSpawner: peer %d spawned as %s (team %d)"
-			% [peer_id, class_scene.resource_path, character.team]
-		)
-	)
 
 
 ## Uses LobbyState's registered choice for peer_id if one exists (the

@@ -235,6 +235,38 @@ changed but this file wasn't updated.
   the generalized N-team model. See `memory/verify.md`'s Phase 6
   section and `memory/plan.md`'s Slice 6 block for full evidence and
   deferred items.
+- [x] **Phase 7 (Main Menu -> Character Select -> Host/Join -> Lobby ->
+  in-game) implemented and tactically verified**: real UI flow
+  replacing `net/dev_bootstrap.gd`'s flag-only entry point (which
+  itself is untouched and still works, confirmed live, now needs the
+  scene passed explicitly since it's no longer `project.godot`'s main
+  scene). New `ui/main_menu/`, `ui/character_select/` (local,
+  pre-connection pick, no duplicate-class check), `ui/host_join/`
+  (direct IP), `ui/lobby/` (waiting room, host-only Start). New
+  server-authoritative `net/lobby_state.gd` (peer_id -> class_id
+  registry, broadcast to all peers); `PlayerSpawner` reads it instead
+  of auto-cycling, falling back to the old cycling for any
+  unregistered peer. `MatchState.Phase` -> `{LOBBY, LOADING,
+  IN_PROGRESS, POST_GAME}` (`CHARACTER_SELECT` dropped, never
+  implemented; `LOADING` **restored** after the human owner caught the
+  original `/think` plan trying to drop it too, mid-implementation --
+  see `memory/plan.md`'s Slice 7 section for why a real handshake was
+  needed) with a genuine `enter_loading()`/`report_loaded()` handshake
+  (`net/loading_reporter.gd`, `TestArena.tscn`'s last child) gating
+  `enter_in_progress()` on every connected peer's own tree actually
+  being built. 2 real races found and fixed via live testing (not
+  catchable by GUT, both needed 2 real processes): `PlayerSpawner`
+  spawning before a remote peer's own `MultiplayerSpawner` existed yet
+  ("Node not found"), and `LoadingReporter` reporting before
+  `dev_bootstrap.gd`'s own client peer had finished its ENet handshake
+  ("RPC via a multiplayer peer which is not connected") -- see
+  `memory/gotchas.md` for both. 5 new GUT tests (75 total
+  project-wide); live 2-process test confirmed the full flow end-to-end
+  with each peer spawning as the class it actually chose, zero engine
+  errors. See `memory/verify.md`'s Phase 7 section and
+  `memory/plan.md`'s Slice 7 block for full evidence and deferred
+  items (visual verification still has no solution in this project,
+  same gap as every prior UI-adjacent phase).
 
 ## Backlog (next up)
 
@@ -255,11 +287,12 @@ changed but this file wasn't updated.
   state to remote `INTERPOLATED` peers — the snapshot RPC is at a
   practical parameter-count limit; likely needs a packed-int
   restructure before a 4th+ ability slot makes this worse.
-- [ ] Character-select UI / lobby, and a mode-select UI (team vs.
-  free-for-all) — class, team, and match mode are all still assigned
-  by connection order or a server-startup flag (Phases 4-6); a real
-  pick screen (and the connect-then-select network flow it needs)
-  requires its own design pass, not decided this session.
+- [ ] Phases 8-10 (Room Config: mode/friendly-fire/manual team
+  assignment/ready-check; 1 perk per player, visible to the room;
+  LAN room discovery) — scope already designed via `/think`
+  2026-09-03, see `memory/plan.md`'s "Slices 8-10" section. Phase 7
+  (Main Menu/Character Select/Host-Join/Lobby) is done; this is what's
+  left of the original combined "lobby" ask.
 - [ ] A real reconnect/grace-period system — a mid-match disconnect
   currently resolves as an immediate forfeit for that team/player
   (Phase 5's elimination mechanism, generalized to N teams in Phase 6),

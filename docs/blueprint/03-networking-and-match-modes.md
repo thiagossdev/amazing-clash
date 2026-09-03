@@ -85,8 +85,23 @@ with a fair, competitive PvP game.
 
 ## Match State
 
-Following `amazing-nauts`' pattern (autoload `MatchState`): `Lobby →
-CharacterSelect → Loading → InProgress → PostGame`, with `Reconnect` as
-a sub-state of `InProgress`. Online matches should not pause,
-consistent with prioritizing the competitive experience — same
-reasoning `amazing-nauts` applied.
+Originally following `amazing-nauts`' pattern verbatim (`Lobby →
+CharacterSelect → Loading → InProgress → PostGame`). **Superseded by
+Phase 7** (`memory/plan.md`'s "Slices 7-10", designed via `/think`
+2026-09-03): character selection turned out to belong entirely outside
+networked match state — it's local and happens before ever connecting
+(`ui/character_select/`), not a phase a server/client pair transitions
+through together. The real `MatchState.Phase` enum (`core/
+match_state.gd`) is `LOBBY → LOADING → IN_PROGRESS → POST_GAME`, with
+`Reconnect` still a sub-state of `IN_PROGRESS`, not its own value.
+`LOBBY` means "connected, in the Room Config waiting screen"
+(`ui/lobby/`); `LOADING` is a real handshake, not a placeholder — the
+host's Start button broadcasts it, every peer scene-changes to
+`TestArena.tscn`, and the server only advances to `IN_PROGRESS` once
+every currently-connected peer has confirmed its own tree finished
+building (`net/loading_reporter.gd`). This closes a real race: an
+RPC-driven scene change (unlike the old fixed main scene) can let one
+peer receive gameplay replication before its own tree is ready to
+receive it — confirmed live during Phase 7's implementation. Online
+matches still should not pause, consistent with prioritizing the
+competitive experience — same reasoning `amazing-nauts` applied.
