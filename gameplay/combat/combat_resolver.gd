@@ -8,9 +8,11 @@ extends Node
 ## every peer (deterministic, no per-tick sync needed -- see
 ## gameplay/projectiles/projectile.gd); only hit resolution is gated to
 ## the server. Pattern inherited from amazing-nauts'
-## gameplay/combat/combat_resolver.gd, scoped down to Phase 2b: melee +
-## a single non-piercing skillshot (no armor/buffs/VFX/objectives/
-## piercing -- none of that exists in this project's design yet).
+## gameplay/combat/combat_resolver.gd, scoped down to Phase 3: melee,
+## a single non-piercing skillshot, and 2 independent ability slots
+## (Q/E), each melee- or projectile-style per its own AbilityResource.
+## is_projectile (no armor/buffs/VFX/objectives/piercing -- none of that
+## exists in this project's design yet).
 
 const PROJECTILE_SCENE := preload("res://gameplay/projectiles/Projectile.tscn")
 const PROJECTILE_SPEED := 700.0
@@ -34,66 +36,108 @@ func _physics_process(_delta: float) -> void:
 func _resolve_attacker(attacker: Node, roster: Array) -> void:
 	if not attacker is CharacterController:
 		return
-	_resolve_melee(attacker, roster)
-	_maybe_launch_skillshot(attacker)
+	_resolve_melee(attacker, roster, attacker.action_fsm, attacker.debug_attack_move)
+	_maybe_launch_projectile(
+		attacker,
+		attacker.action_fsm,
+		attacker.debug_skillshot_move,
+		"skillshot",
+		attacker.pending_skillshot_direction
+	)
+	_resolve_ability_slot(attacker, roster, attacker.ability_q, attacker.ability_q_fsm, "ability_q")
+	_resolve_ability_slot(attacker, roster, attacker.ability_e, attacker.ability_e_fsm, "ability_e")
 
 
-func _resolve_melee(attacker: CharacterController, roster: Array) -> void:
-	if attacker.action_fsm.current_move != attacker.debug_attack_move:
+## Dispatches one ability slot to the melee or projectile resolution
+## path per its own AbilityResource.is_projectile -- the 2 test
+## abilities exercise one of each, but any future ability data (a
+## melee Q reslotted as a projectile, etc.) needs no code change here.
+func _resolve_ability_slot(
+	attacker: CharacterController,
+	roster: Array,
+	resource: AbilityResource,
+	slot_fsm: ActionFsm,
+	slot_name: String
+) -> void:
+	if not resource:
 		return
-	if not attacker.action_fsm.is_hitbox_active():
+	if resource.is_projectile:
+		var direction := (
+			attacker.pending_ability_q_direction
+			if slot_name == "ability_q"
+			else attacker.pending_ability_e_direction
+		)
+		_maybe_launch_projectile(attacker, slot_fsm, resource.move, slot_name, direction)
+	else:
+		_resolve_melee(attacker, roster, slot_fsm, resource.move)
+
+
+func _resolve_melee(
+	attacker: CharacterController, roster: Array, slot_fsm: ActionFsm, move: MoveDefinition
+) -> void:
+	if not move or slot_fsm.current_move != move:
 		return
-	for hit in attacker.debug_attack_move.hit_definitions:
+	if not slot_fsm.is_hitbox_active():
+		return
+	for hit in move.hit_definitions:
 		var hitbox := HitDetection.hitbox_rect(
 			attacker.global_position, attacker.get_aim_direction(), hit
 		)
 		for defender in roster:
 			if defender == attacker or not defender is CharacterController:
 				continue
-			if defender in attacker.action_fsm.already_hit:
+			if defender in slot_fsm.already_hit:
 				continue
 			var hurtbox := HitDetection.hurtbox_rect(
 				defender.global_position, defender.hurtbox_size
 			)
 			if HitDetection.query(hitbox, hurtbox):
 				_apply_hit(attacker, defender, hit)
-				attacker.action_fsm.already_hit.append(defender)
+				slot_fsm.already_hit.append(defender)
 
 
-## Fires exactly once: the tick the skillshot cast's ActionFsm first
-## reaches ACTIVE (move_frame == startup_frames, the same boundary
-## ActionFsm._phase_for_current_frame() itself transitions on).
-func _maybe_launch_skillshot(attacker: CharacterController) -> void:
-	if (
-		attacker.action_fsm.current_move != attacker.debug_skillshot_move
-		or not attacker.debug_skillshot_move
-	):
+## Fires exactly once per cast: the tick the given slot's ActionFsm
+## first reaches ACTIVE (move_frame == startup_frames, the same
+## boundary ActionFsm._phase_for_current_frame() itself transitions
+## on). slot_name round-trips through the spawn RPC so
+## _rpc_spawn_projectile can look the caster's move back up on every
+## peer (see _get_move_for_slot()).
+func _maybe_launch_projectile(
+	attacker: CharacterController,
+	slot_fsm: ActionFsm,
+	move: MoveDefinition,
+	slot_name: String,
+	direction: Vector2
+) -> void:
+	if not move or slot_fsm.current_move != move:
 		return
-	if attacker.action_fsm.state != ActionFsm.State.ACTIVE:
+	if slot_fsm.state != ActionFsm.State.ACTIVE:
 		return
-	if attacker.action_fsm.move_frame != attacker.debug_skillshot_move.startup_frames:
+	if slot_fsm.move_frame != move.startup_frames:
 		return
 	_next_network_id += 1
 	_rpc_spawn_projectile.rpc(
-		_next_network_id,
-		str(attacker.name),
-		attacker.global_position,
-		attacker.pending_skillshot_direction
+		_next_network_id, str(attacker.name), attacker.global_position, direction, slot_name
 	)
 
 
 @rpc("authority", "reliable", "call_local")
 func _rpc_spawn_projectile(
-	network_id: int, caster_name: String, spawn_position: Vector2, direction: Vector2
+	network_id: int,
+	caster_name: String,
+	spawn_position: Vector2,
+	direction: Vector2,
+	slot_name: String
 ) -> void:
 	var characters := get_node_or_null(characters_path)
 	var projectiles := get_node_or_null(projectiles_path)
 	if not characters or not projectiles:
 		return
 	var caster := characters.get_node_or_null(caster_name) as CharacterController
-	if not caster or not caster.debug_skillshot_move:
+	if not caster:
 		return
-	if caster.debug_skillshot_move.hit_definitions.is_empty():
+	var move := _get_move_for_slot(caster, slot_name)
+	if not move or move.hit_definitions.is_empty():
 		return
 	var projectile: Projectile = PROJECTILE_SCENE.instantiate()
 	projectiles.add_child(projectile)
@@ -104,8 +148,25 @@ func _rpc_spawn_projectile(
 		direction,
 		PROJECTILE_SPEED,
 		PROJECTILE_LIFETIME_FRAMES,
-		caster.debug_skillshot_move.hit_definitions
+		move.hit_definitions
 	)
+
+
+## Maps an RPC-carried slot name back to that caster's own
+## MoveDefinition -- needed because Resource properties (unlike a node's
+## replicated name) don't cross the network on their own; every peer
+## looks its own local copy of the caster's exported ability/move data
+## up by name instead.
+func _get_move_for_slot(caster: CharacterController, slot_name: String) -> MoveDefinition:
+	match slot_name:
+		"skillshot":
+			return caster.debug_skillshot_move
+		"ability_q":
+			return caster.ability_q.move if caster.ability_q else null
+		"ability_e":
+			return caster.ability_e.move if caster.ability_e else null
+		_:
+			return null
 
 
 ## Advances every live projectile's position (every peer, deterministic

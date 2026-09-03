@@ -1,12 +1,12 @@
 class_name CharacterController
 extends CharacterBody2D
-## Phase 2b: adds a melee test move and a mouse-aimed skillshot
-## (ActionFsm + MoveDefinition/HitDefinition) and health on top of
-## Phase 1's locomotion. All input goes through InputManager, never
-## Input directly. Networking pattern (control modes, prediction/
-## reconciliation, interpolation) adapted from amazing-nauts'
-## character_controller.gd, scoped down: no ability framework yet
-## (Phase 3), no full hero roster (Phase 4).
+## Phase 3: adds 2 independent ability slots (Q/E, each its own ActionFsm
+## and cooldown, castable independently of melee/skillshot and of each
+## other) on top of Phase 2's melee test move and mouse-aimed skillshot.
+## All input goes through InputManager, never Input directly. Networking
+## pattern (control modes, prediction/reconciliation, interpolation)
+## adapted from amazing-nauts' character_controller.gd, scoped down: no
+## full hero roster yet (Phase 4).
 ##
 ## Networked in one of 3 roles decided by _resolve_control_mode():
 ## AUTHORITATIVE (server, every character, fed by ServerSim's per-client
@@ -39,6 +39,13 @@ const MAX_VISUAL_POSITION_ERROR := 48.0
 ## pending_skillshot_direction (real mouse-aim, captured at cast time)
 ## rather than an unaimed melee swing.
 @export var debug_skillshot_move: MoveDefinition
+## Phase 3's 2 independent test ability slots -- Q and E, each its own
+## cooldown, castable while melee/skillshot are on cooldown or vice
+## versa. R/F/T InputMap actions already exist for Phase 4+ content;
+## these 2 slots are enough to prove the framework, not a full 5-slot
+## roster yet.
+@export var ability_q: AbilityResource
+@export var ability_e: AbilityResource
 ## Own hurtbox for combat, decoupled from the CharacterBody2D collision
 ## shape used for world collision.
 @export var hurtbox_size: Vector2 = Vector2(40.0, 40.0)
@@ -51,6 +58,13 @@ const MAX_VISUAL_POSITION_ERROR := 48.0
 
 var fsm := LocomotionFsm.new()
 var action_fsm := ActionFsm.new()
+## Independent of action_fsm and of each other: pressing Q doesn't lock
+## out melee/skillshot or E, only Q's own cooldown gates it again. A
+## deliberate Phase 3 simplification -- whether a real ability should
+## also lock movement/other slots is a per-ability design question for
+## Phase 4's real classes, not decided here.
+var ability_q_fsm := ActionFsm.new()
+var ability_e_fsm := ActionFsm.new()
 var control_mode: ControlMode = ControlMode.PREDICTED
 ## Never predicted -- the server is sole authority over damage taken,
 ## set directly from CharacterSnapshot.health on receipt, same category
@@ -63,6 +77,13 @@ var current_health: float = 100.0
 ## the server spawns the real projectile), same category as
 ## action_fsm.already_hit.
 var pending_skillshot_direction: Vector2 = Vector2.RIGHT
+## Same capture-at-cast-time treatment, one per ability slot -- only
+## meaningful (and only ever set) when that slot's own AbilityResource.
+## is_projectile is true; a melee-style slot like the debug Q ability
+## never reads it (CombatResolver rotates its hitbox with
+## get_aim_direction() instead, same as the base melee move).
+var pending_ability_q_direction: Vector2 = Vector2.RIGHT
+var pending_ability_e_direction: Vector2 = Vector2.RIGHT
 
 var _local_sequence: int = 0
 var _server_sim: ServerSim
@@ -83,6 +104,15 @@ var _visual_position_error: Vector2 = Vector2.ZERO
 ## it only ever originates from a server-confirmed hit, which the
 ## client already doesn't predict.
 var _lock_frames: int = 0
+## Frame-counted (decremented once per apply_input() call, matching the
+## project's existing frame-data convention), not part of
+## ClientPredictor.Checkpoint's health-taking exemption -- these ARE
+## predicted, unlike _lock_frames, because starting/cooling down an
+## ability is the local player's own input timing, not a server-only
+## reaction to a confirmed hit. Correctness during reconciliation replay
+## comes from Checkpoint carrying them, restored before replay.
+var _ability_q_cooldown_frames: int = 0
+var _ability_e_cooldown_frames: int = 0
 
 
 func _ready() -> void:
@@ -140,9 +170,8 @@ func _physics_step_predicted(delta: float) -> void:
 					sample.sequence,
 					sample.move_vector,
 					sample.dash_pressed,
-					sample.attack_pressed,
 					sample.aim_direction,
-					sample.skillshot_pressed,
+					InputBuffer.pack_ability_flags(sample),
 					sample.delta
 				)
 		)
@@ -183,6 +212,8 @@ func _sample_local_input(delta: float) -> InputBuffer.Sample:
 	sample.attack_pressed = InputManager.is_action_just_pressed(&"attack")
 	sample.aim_direction = InputManager.get_aim_direction(global_position)
 	sample.skillshot_pressed = InputManager.is_action_just_pressed(&"skillshot")
+	sample.ability_q_pressed = InputManager.is_action_just_pressed(&"ability_q")
+	sample.ability_e_pressed = InputManager.is_action_just_pressed(&"ability_e")
 	sample.delta = delta
 	return sample
 
@@ -192,9 +223,8 @@ func _rpc_send_input(
 	sequence: int,
 	move_vector: Vector2,
 	dash_pressed: bool,
-	attack_pressed: bool,
 	aim_direction: Vector2,
-	skillshot_pressed: bool,
+	ability_flags: int,
 	delta: float
 ) -> void:
 	if not NetworkManager.is_server():
@@ -205,9 +235,8 @@ func _rpc_send_input(
 	sample.sequence = sequence
 	sample.move_vector = move_vector
 	sample.dash_pressed = dash_pressed
-	sample.attack_pressed = attack_pressed
 	sample.aim_direction = aim_direction
-	sample.skillshot_pressed = skillshot_pressed
+	InputBuffer.unpack_ability_flags(sample, ability_flags)
 	sample.delta = delta
 	_server_sim.record_input(sample)
 
@@ -248,7 +277,13 @@ func _rpc_receive_snapshot(
 ## never predicted, applied directly on every control mode -- the
 ## client never predicts damage taken, only its own movement/action.
 ## INTERPOLATED: no local physics, just buffers the snapshot for
-## _render_interpolated_position(). AUTHORITATIVE never receives this.
+## _render_interpolated_position(). Ability Q/E state is NOT replicated
+## to a remote INTERPOLATED character in Phase 3 (the snapshot RPC's own
+## param count is already at its practical limit) -- a remote player's Q/
+## E cast won't visually show as active on other clients yet, a
+## deliberate, documented gap; hit resolution itself is unaffected since
+## it's already server-only regardless of what a remote peer renders.
+## AUTHORITATIVE never receives this.
 func _apply_snapshot(
 	tick: int,
 	position: Vector2,
@@ -295,6 +330,12 @@ func _capture_predicted_state(sequence: int) -> ClientPredictor.Checkpoint:
 	checkpoint.action_state = action_fsm.state
 	checkpoint.action_move = action_fsm.current_move
 	checkpoint.action_move_frame = action_fsm.move_frame
+	checkpoint.ability_q_state = ability_q_fsm.state
+	checkpoint.ability_q_move_frame = ability_q_fsm.move_frame
+	checkpoint.ability_q_cooldown_frames = _ability_q_cooldown_frames
+	checkpoint.ability_e_state = ability_e_fsm.state
+	checkpoint.ability_e_move_frame = ability_e_fsm.move_frame
+	checkpoint.ability_e_cooldown_frames = _ability_e_cooldown_frames
 	return checkpoint
 
 
@@ -307,6 +348,12 @@ func _restore_predicted_state(checkpoint: ClientPredictor.Checkpoint) -> void:
 	action_fsm.state = checkpoint.action_state as ActionFsm.State
 	action_fsm.current_move = checkpoint.action_move
 	action_fsm.move_frame = checkpoint.action_move_frame
+	ability_q_fsm.state = checkpoint.ability_q_state as ActionFsm.State
+	ability_q_fsm.move_frame = checkpoint.ability_q_move_frame
+	_ability_q_cooldown_frames = checkpoint.ability_q_cooldown_frames
+	ability_e_fsm.state = checkpoint.ability_e_state as ActionFsm.State
+	ability_e_fsm.move_frame = checkpoint.ability_e_move_frame
+	_ability_e_cooldown_frames = checkpoint.ability_e_cooldown_frames
 
 
 func _begin_visual_correction_smoothing(pre_correction_position: Vector2) -> void:
@@ -344,10 +391,11 @@ func _render_interpolated_position() -> void:
 	)
 
 
-## Starts the test attack or skillshot if one was pressed and the
+## Starts the test attack or skillshot if one was pressed and the shared
 ## action layer is free (attack takes priority if both are somehow
 ## pressed the same tick), otherwise just advances whatever move is
-## already in progress (a no-op while NEUTRAL with nothing active).
+## already in progress. Then independently advances each ability slot
+## (Q, E), which don't share the action layer or each other's cooldown.
 func apply_input(sample: InputBuffer.Sample) -> void:
 	fsm.advance(sample.move_vector, sample.dash_pressed, sample.delta)
 	velocity = fsm.velocity
@@ -355,19 +403,53 @@ func apply_input(sample: InputBuffer.Sample) -> void:
 	if sample.attack_pressed and can_start_move and debug_attack_move:
 		action_fsm.start_move(debug_attack_move)
 	elif sample.skillshot_pressed and can_start_move and debug_skillshot_move:
-		# Not trusted verbatim from the network -- see locomotion_fsm.gd's
-		# move_vector clamp for the same class of concern; a raw or
-		# oversized vector here can't cause harm on its own (Projectile.
-		# configure() normalizes again before use), but normalizing at
-		# the point of capture keeps every stored direction well-formed.
-		pending_skillshot_direction = (
-			sample.aim_direction.normalized()
-			if not sample.aim_direction.is_zero_approx()
-			else Vector2.RIGHT
-		)
+		pending_skillshot_direction = _normalized_aim(sample.aim_direction)
 		action_fsm.start_move(debug_skillshot_move)
 	else:
 		action_fsm.advance_frame()
+	var q_result := _advance_ability_slot(
+		ability_q_fsm, ability_q, sample.ability_q_pressed, _ability_q_cooldown_frames
+	)
+	_ability_q_cooldown_frames = q_result.cooldown_frames
+	if q_result.started and ability_q and ability_q.is_projectile:
+		pending_ability_q_direction = _normalized_aim(sample.aim_direction)
+	var e_result := _advance_ability_slot(
+		ability_e_fsm, ability_e, sample.ability_e_pressed, _ability_e_cooldown_frames
+	)
+	_ability_e_cooldown_frames = e_result.cooldown_frames
+	if e_result.started and ability_e and ability_e.is_projectile:
+		pending_ability_e_direction = _normalized_aim(sample.aim_direction)
+
+
+## Starts `resource`'s move if pressed, NEUTRAL, and off cooldown;
+## otherwise just advances the slot's own frame counter. Returns both
+## the cooldown to store back into the caller's own field (GDScript has
+## no by-reference int params, hence the return-and-reassign pattern at
+## each call site) and whether the move started this call, so the
+## caller can capture a fresh aim direction exactly on the cast tick
+## (see pending_ability_q_direction/pending_ability_e_direction) without
+## duplicating this method's own start-gating condition.
+func _advance_ability_slot(
+	slot_fsm: ActionFsm, resource: AbilityResource, pressed: bool, cooldown_frames: int
+) -> Dictionary:
+	var remaining := maxi(cooldown_frames - 1, 0)
+	var started := false
+	if pressed and slot_fsm.state == ActionFsm.State.NEUTRAL and resource and remaining <= 0:
+		slot_fsm.start_move(resource.move)
+		remaining = resource.cooldown_frames
+		started = true
+	else:
+		slot_fsm.advance_frame()
+	return {"cooldown_frames": remaining, "started": started}
+
+
+## Not trusted verbatim from the network -- see locomotion_fsm.gd's
+## move_vector clamp for the same class of concern; a raw or oversized
+## vector here can't cause harm on its own (Projectile.configure()
+## normalizes again before use), but normalizing at the point of capture
+## keeps every stored direction well-formed.
+func _normalized_aim(aim_direction: Vector2) -> Vector2:
+	return aim_direction.normalized() if not aim_direction.is_zero_approx() else Vector2.RIGHT
 
 
 ## Current aim direction for this character's melee hitbox -- Phase 2a
