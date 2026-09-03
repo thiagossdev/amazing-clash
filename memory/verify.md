@@ -283,3 +283,62 @@ in `progress.md`. No exceptions.
 - [ ] Character-select UI, a 3rd class, and visual on-screen
   confirmation of each class's distinct `Visual` color are explicitly
   deferred — see `memory/plan.md`'s Slice 4 block and Deferred list.
+
+### Phase 5: match modes (team assignment, friendly fire, elimination win condition, minimal HUD)
+
+- [x] `WinCondition.determine()` pure logic — 5/5 new GUT tests
+  (`test_win_condition.gd`): no result before both teams have
+  connected, team 1 wins when team 0 is eliminated (and vice versa), a
+  simultaneous mutual elimination resolves as a draw, no result while
+  both teams still have survivors.
+- [x] Live 2-process test (`--simulate-self-eliminate`, a new
+  permanent dev-testing flag that zeroes a peer's own health directly,
+  bypassing hit geometry): confirmed the full chain end-to-end —
+  `team_status` broadcasts updated correctly as each peer connected
+  (`team0=1,team1=0` → `team0=1,team1=1`) and again the instant the
+  server's own character was eliminated (`team0=0,team1=1`);
+  `enter_post_game(winning_team=1)` fired server-side; **the same
+  event reached the client** (`enter_post_game winning_team=1
+  is_server=false`), confirming `MatchState`'s new `@rpc` broadcast
+  actually replicates match-phase state to a client for the first time
+  — previously `enter_in_progress()` never had an RPC at all and
+  nothing client-side read `current_phase`, so this had never been
+  live-tested before this phase. Zero errors on either peer.
+- [x] Live 3-process test (server + 2 clients, the 2nd and 3rd peers
+  landing on the same team by `index % 2`): with `MatchState.
+  friendly_fire_enabled` at its default (`false`), a teammate's
+  `--simulate-attack` produced **no** hit log. With `--friendly-fire`
+  passed to the server, the exact same geometry produced `hit
+  attacker=...(team0) defender=...(team0) damage=8.0` (Quick Slash's
+  authored damage, confirming the right move resolved). Running both
+  conditions with identical spawn geometry rules out a false positive
+  from a simply out-of-range attack — the first run's silence is
+  actually the friendly-fire gate, not a missed swing.
+- [x] Found and fixed a real geometry bug during this same live
+  testing (not assumed from code review): the first spawn-position
+  layout placed the 2nd-spawned teammate at a *higher* x than the
+  1st, so that teammate's default rightward-facing melee swing missed
+  entirely regardless of the friendly-fire flag — the initial "off
+  blocks it" result was a false positive. Fixed by placing the
+  2nd-spawned teammate at a *lower* x (see `net/player_spawner.gd`'s
+  own doc comment); re-ran both conditions with the corrected layout
+  before treating the result as conclusive.
+- [x] Regression check: the base 2-peer test (`--simulate-attack
+  --simulate-ability-q --simulate-ability-e` on the server) still ran
+  with zero errors on both peers. No hits landed in this specific run
+  because the new team-clustered spawn layout now puts opposite-team
+  characters 600 units apart by default (previously 60) — an accepted,
+  documented consequence of realistic 2v2 spawn positioning, not a
+  regression: the melee/projectile hit-resolution code itself is
+  unchanged from Phase 2a-4 and was independently reconfirmed by the
+  friendly-fire-ON test above (an 8.0-damage hit landing correctly).
+- [x] `gdformat --check` / `gdlint` (project files, excluding
+  third-party `addons/gut/`) / `godot4 --headless --import` all clean.
+  65/65 GUT tests total project-wide.
+- [ ] Character-select UI / lobby, a real reconnect/grace-period
+  system, and per-character team visibility on remote clients (only
+  the aggregate `team_alive_counts` is client-visible) are explicitly
+  deferred — see `memory/plan.md`'s Slice 5 block and Deferred list.
+- [ ] `MatchHud`'s visual rendering (label positions, banner
+  readability) was not screenshot-verified — same headless-has-no-
+  renderer gap as every other visual item in this file.

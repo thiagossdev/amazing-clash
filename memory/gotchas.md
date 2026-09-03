@@ -88,6 +88,22 @@ Format:
   place it after all of them, not next to the class/data it logically
   operates on.
 
+- **2026-09-03** — Testing the Phase 5 friendly-fire gate: placed a
+  2nd-spawned teammate at a *higher* x than the 1st, then had it
+  `--simulate-attack` the 1st. Got "no hit" with friendly fire off and
+  assumed that proved the gate worked -- it didn't. Melee's default
+  facing is `Vector2.RIGHT` (no move input yet), so the attacker's
+  swing went toward higher x, away from its target; the hit would have
+  missed regardless of the friendly-fire flag. Only caught by also
+  running the SAME test with friendly fire ON and getting the SAME "no
+  hit" result -- if the flag genuinely gated it, ON should have shown a
+  hit. → **Rule**: when a live test's "expected: blocked" result could
+  also be explained by "the attack never had a chance to land" (wrong
+  facing direction, out of range, wrong timing), always run the
+  positive control too (the same setup with the gate open) before
+  treating a negative result as confirmation. A single "nothing
+  happened" run proves nothing on its own.
+
 <!--
 Examples:
 

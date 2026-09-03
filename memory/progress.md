@@ -184,28 +184,60 @@ changed but this file wasn't updated.
   evidence, and `memory/plan.md`'s Slice 4 block for what's deferred
   (character-select UI, a 3rd class).
 
+- [x] **Phase 5 (match modes) implemented and tactically verified**:
+  `PlayerSpawner` assigns `team = index % 2` and clusters teammates 60
+  units apart per side (4 spawn points, team 0 left / team 1 right).
+  `MatchState.friendly_fire_enabled` (default off, `--friendly-fire`
+  dev_bootstrap flag) gates `CombatResolver`'s 2 hit-resolution loops.
+  An eliminated character (`current_health <= 0`) freezes permanently
+  server-side and locally on the owning client. New `WinCondition`
+  (pure, unit-tested) + `MatchRules` (server-only orchestrator, wired
+  last after `CombatResolver`) resolve NONE/DRAW/a team win from each
+  team's alive count, handling both the "match hasn't fully started"
+  and "last teammate disconnected" edge cases correctly. `MatchState`
+  is now genuinely client-visible for the first time (fixed a real
+  latent gap: phase transitions never reached clients before this
+  phase) via `@rpc` broadcasts plus a late-joiner catch-up handler. New
+  `MatchHud` shows live team-alive counts and a win/draw banner. 5 new
+  GUT tests (`test_win_condition.gd`, 65 total project-wide); live
+  2-process test confirmed the elimination→win-condition→client-RPC
+  chain end-to-end, and a live 3-process test confirmed the friendly-
+  fire gate blocks a same-team hit by default and allows it with the
+  flag (same geometry both times, ruling out a false positive). See
+  `memory/verify.md`'s Phase 5 section and `memory/plan.md`'s Slice 5
+  block for full evidence and deferred items (character-select UI, a
+  real reconnect system).
+
 ## Backlog (next up)
 
-- [ ] Phase 5: match modes -- team mode (2v2 default), friendly-fire
-  toggle, win condition, minimal lobby/HUD/match flow (this is also
-  where a real character-select UI belongs, replacing Phase 4's
-  connection-order class alternation). Per `memory/plan.md`'s roadmap.
+- [ ] Phase 6: 3rd class (support/control archetype) + free-for-all
+  mode — completes `docs/blueprint/04-mvp-scope.md`'s MVP criteria.
+  Per `memory/plan.md`'s roadmap.
 - [ ] Review `docs/blueprint/05-open-questions.md` with the human owner
-  — most items are still genuinely open (friendly-fire toggle scope,
-  team size, persistent-tree size/gating, loadout cadence, rollback
-  reconsideration, setting/tone). The build-depth split in
+  — most items are still genuinely open (team size beyond 2v2,
+  persistent-tree size/gating, loadout cadence, rollback
+  reconsideration, setting/tone). Friendly-fire toggle scope is now
+  resolved (see Phase 5's entry above). The build-depth split in
   `docs/research/poe2-build-depth-inspiration/05-synthesis-amazingclash.md`
   is the single highest-priority item to confirm before Phase 6's 3rd
   class needs a concrete answer about how skills map to the
   persistent/loadout split.
 - [ ] Decide how many ability slots a real class kit should have (R/F/T
-  are reserved in the InputMap but unwired on both Phase 4 classes) —
+  are reserved in the InputMap but unwired on all classes so far) —
   needed before Phase 6's 3rd class (support/control) is designed,
   since a control archetype may need more than 4 active slots.
 - [ ] Decide how (or whether) to replicate ability_q/e `ActionFsm`
   state to remote `INTERPOLATED` peers — the snapshot RPC is at a
   practical parameter-count limit; likely needs a packed-int
   restructure before a 3rd+ slot makes this worse.
+- [ ] Character-select UI / lobby, and the connect-then-select network
+  flow it needs — class and team are both still auto-assigned by
+  connection order (Phases 4-5); a real pick screen needs its own
+  design pass, not decided this session.
+- [ ] A real reconnect/grace-period system — a mid-match disconnect
+  currently resolves as an immediate forfeit for that team (Phase 5's
+  elimination mechanism), matching "online matches should not pause,"
+  but the docs' own "Reconnect" sub-state is unbuilt.
 
 ## Blocked
 
