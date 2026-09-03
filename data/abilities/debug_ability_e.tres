@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="AbilityResource" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://gameplay/abilities/ability_resource.gd" id="1_abty"]
+[ext_resource type="Resource" path="res://data/moves/debug_ability_e.tres" id="2_move"]
+
+[resource]
+script = ExtResource("1_abty")
+ability_name = "Fireball"
+move = ExtResource("2_move")
+cooldown_frames = 150
+is_projectile = true

@@ -186,3 +186,57 @@ in `progress.md`. No exceptions.
 - [ ] Visual confirmation that a skillshot's hitbox/projectile actually
   renders and looks right on screen — not done, same headless-has-no-
   renderer gap as every other visual item in this file.
+
+### Phase 3: Ability Framework (2 independent Q/E slots)
+
+- [x] `AbilityResource` loads and imports cleanly as a `class_name`
+  Resource (`gdformat`/`gdlint` clean, confirmed registered in
+  `godot4 --headless --import`'s class list alongside
+  `CharacterController`).
+- [x] `CharacterController`'s ability-slot additions — independent
+  activation of Q and E, both active simultaneously with melee, no
+  restart mid-move on a repeated press, cooldown blocks an immediate
+  re-cast right after the move ends, re-cast succeeds once the
+  cooldown fully elapses — 6/6 new GUT tests
+  (`test_character_controller_combat.gd`, 12/12 in that file now).
+- [x] `project.godot` InputMap: `attack` confirmed rebound to
+  `InputEventMouseButton button_index=1` (left mouse button, was
+  physical_keycode 74/J); `ability_q`/`ability_e`/`ability_r`/
+  `ability_f`/`ability_t` confirmed bound to physical_keycode 81/69/
+  82/70/84 (Q/E/R/F/T) — read directly from `project.godot`, not
+  inferred.
+- [x] Live 2-process test (server casts `--simulate-attack
+  --simulate-ability-q --simulate-ability-e`, client `--join`):
+  server log shows the base melee attack landing (10 dmg), ability_q/
+  Power Strike landing as its own melee hit (25 dmg) independently of
+  the base attack's own cooldown/state, and ability_e/Fireball
+  spawning a projectile via the generalized `_rpc_spawn_projectile`
+  (slot_name="ability_e") — confirmed replicating identically to the
+  client's own log line (byte-for-byte same direction vector), proving
+  the slot-name-keyed spawn/lookup generalization preserves Phase 2b's
+  deterministic-replication guarantee for a second, independently-
+  cooldown-gated projectile source. Confirmed via temporary
+  instrumentation (`[VERIFY]`/`# TEMP-VERIFY-PHASE3`), removed after
+  verifying. Zero errors on either peer's log across 3 separate live
+  runs (combined, and ability_e isolated to rule out a timing
+  coincidence).
+- [x] `gdformat --check` / `gdlint` / `godot4 --headless --import` all
+  clean. 58/58 GUT tests total project-wide.
+- [ ] Ability_e/Fireball's projectile connecting with the defender in
+  the same live run wasn't forced/observed — not treated as a gap: the
+  hit-application and hit-geometry paths are unchanged from Phase 2b's
+  already-live-verified skillshot (same `_apply_hit`/`HitDetection.
+  projectile_hitbox_rect` code, just reached via a generalized
+  slot-name lookup instead of a hardcoded field), and the spawn itself
+  (the part that actually changed this phase) is directly confirmed
+  above.
+- [ ] Remote (`INTERPOLATED`) peer visual replication of ability_q/e
+  `ActionFsm` state — explicitly deferred, not silently dropped; see
+  `memory/plan.md`'s Slice 3 networking note. Hit resolution is
+  unaffected (already server-only).
+- [ ] R/F/T keybindings are registered in the InputMap but wired to no
+  ability — explicitly deferred pending the human owner's decision on
+  how many slots a real class kit should have (Phase 4).
+- [ ] Per-ability projectile speed/lifetime — both projectile-capable
+  slots share `CombatResolver`'s existing constants; deferred until a
+  real ranged class (Phase 4) needs differentiated projectile feel.

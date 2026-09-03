@@ -15,8 +15,10 @@ extends Node
 ## mouse either, so InputManager.get_aim_direction() resolves off
 ## whatever the headless viewport's mouse position defaults to -- fine
 ## for proving the projectile spawns/travels/expires, not for testing a
-## specific aim). No flags leaves this a no-op. Pattern inherited from
-## amazing-nauts' net/dev_bootstrap.gd.
+## specific aim). `-- --simulate-ability-q` / `-- --simulate-ability-e`
+## fire one press each ~1.6s/~1.8s in, same reasoning, to prove Phase
+## 3's independent ability slots. No flags leaves this a no-op. Pattern
+## inherited from amazing-nauts' net/dev_bootstrap.gd.
 ##
 ## host()/join() run first and synchronously, before anything that
 ## awaits: PlayerSpawner._ready() (a sibling node under the same
@@ -58,3 +60,11 @@ func _ready() -> void:
 	if "--simulate-skillshot" in args:
 		await get_tree().create_timer(1.4).timeout
 		Input.action_press(&"skillshot")
+
+	if "--simulate-ability-q" in args:
+		await get_tree().create_timer(1.6).timeout
+		Input.action_press(&"ability_q")
+
+	if "--simulate-ability-e" in args:
+		await get_tree().create_timer(1.8).timeout
+		Input.action_press(&"ability_e")

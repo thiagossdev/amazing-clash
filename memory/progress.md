@@ -132,20 +132,57 @@ changed but this file wasn't updated.
   until an explicit `as Projectile` cast was added (`memory/gotchas.md`
   2026-09-02).
 
+- [x] **Phase 3 (Ability Framework) implemented and tactically
+  verified**: new `AbilityResource` (`gameplay/abilities/`) wrapping
+  Phase 2's `MoveDefinition`/`HitDefinition` unchanged, 2 test
+  abilities (`data/abilities/debug_ability_q.tres` "Power Strike"
+  melee-style, `debug_ability_e.tres` "Fireball" projectile-style).
+  `attack` rebound from J to the **left mouse button**;
+  `ability_q`/`ability_e`/`ability_r`/`ability_f`/`ability_t` added on
+  Q/E/R/F/T (Path of Exile 2's convention — R/F/T bound but unwired,
+  intentionally deferred). `CharacterController` gained 2 fully
+  independent ability slots (`ability_q_fsm`/`ability_e_fsm`, each its
+  own `ActionFsm` and cooldown counter via the new
+  `_advance_ability_slot()` helper); `InputBuffer.Sample`'s 4 press
+  flags now travel over the network as one packed bitmask int
+  (`pack_ability_flags`/`unpack_ability_flags`) instead of separate
+  bool RPC params. `CombatResolver._resolve_attacker` generalized to
+  dispatch either ability slot through the existing melee-hitbox path
+  or the existing projectile-launch path (now `_maybe_launch_projectile`,
+  parameterized by a `slot_name` round-tripped through
+  `_rpc_spawn_projectile` so every peer looks the caster's own move up
+  via `_get_move_for_slot()`) per that slot's own
+  `AbilityResource.is_projectile`. `ClientPredictor.Checkpoint` grew 6
+  fields to reconcile both ability slots' state/cooldowns. 6 new GUT
+  tests (58 total project-wide), all passing; live 2-process test
+  confirmed melee attack (10 dmg), ability_q/Power Strike (25 dmg
+  melee), and ability_e/Fireball (projectile spawn) all resolve
+  server-authoritatively, with the Fireball spawn RPC replicating
+  identically to the client — see `memory/verify.md`'s Phase 3 section
+  for full evidence, and `memory/plan.md`'s Slice 3 block for the
+  deferred items (remote ability-slot visual replication,
+  per-ability projectile speed/lifetime, unwired R/F/T).
+
 ## Backlog (next up)
 
-- [ ] Phase 3: Ability Framework — 2-3 abilities on the placeholder
-  character, 100% data-driven via Resource; schema leaves room for
-  Eslabong-style Evolution/Specialization branches and a minimal
-  loadout-slot model without implementing either yet. Per
-  `memory/plan.md`'s roadmap for the full 6-phase sequence.
+- [ ] Phase 4: first 2 real classes (melee + ranged skillshot
+  archetypes) replace the placeholder character. Per `memory/plan.md`'s
+  roadmap for the full 6-phase sequence.
 - [ ] Review `docs/blueprint/05-open-questions.md` with the human owner
   — most items are still genuinely open (friendly-fire toggle scope,
   team size, persistent-tree size/gating, loadout cadence, rollback
   reconsideration, setting/tone). The build-depth split in
   `docs/research/poe2-build-depth-inspiration/05-synthesis-amazingclash.md`
-  is the single highest-priority item to confirm before Phase 3
-  (Ability Framework) needs a real answer.
+  is the single highest-priority item to confirm before real class
+  kits (Phase 4) need a concrete answer about how skills map to the
+  persistent/loadout split.
+- [ ] Decide how many ability slots a real class kit should have (R/F/T
+  are reserved in the InputMap but unwired) — needed before Phase 4's
+  class design can be finalized.
+- [ ] Decide how (or whether) to replicate ability_q/e `ActionFsm`
+  state to remote `INTERPOLATED` peers — the snapshot RPC is at a
+  practical parameter-count limit; likely needs a packed-int
+  restructure before a 3rd+ slot makes this worse.
 
 ## Blocked
 
