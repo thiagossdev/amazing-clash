@@ -14,16 +14,31 @@ extends CanvasLayer
 ## entry per player, not per side) isn't meaningful to show broken out
 ## the same way team mode's is -- a per-team-of-one list would just be
 ## a list of 0s and 1s.
+##
+## Phase 13a: GraceLabel shows a minimal "N player(s) disconnected"
+## line whenever MatchState.players_in_grace_period is nonzero --
+## aggregate count only, no per-player name (this project has no
+## display-name system yet, same limitation team/class already have
+## client-side). Deliberately does NOT say "reconnecting" -- Slice 13b
+## (the only thing that would make that true) doesn't exist yet in
+## this build; a disconnected player's character is vulnerable and
+## either gets killed or times out as a forfeit, nothing reconnects it.
+## /check caught an earlier draft that said "reconnecting..." here,
+## which would have promised players a mechanism this build can't
+## deliver.
 
 @onready var _status_label: Label = $StatusLabel
 @onready var _banner_label: Label = $BannerLabel
+@onready var _grace_label: Label = $GraceLabel
 
 
 func _ready() -> void:
 	_banner_label.visible = false
 	EventBus.match_state_changed.connect(_on_match_state_changed)
 	EventBus.team_status_changed.connect(_on_team_status_changed)
+	EventBus.grace_period_count_changed.connect(_on_grace_period_count_changed)
 	_refresh_status_label()
+	_refresh_grace_label()
 
 
 func _on_match_state_changed(_new_phase: int) -> void:
@@ -33,6 +48,20 @@ func _on_match_state_changed(_new_phase: int) -> void:
 
 func _on_team_status_changed(_alive_counts: Array[int]) -> void:
 	_refresh_status_label()
+
+
+func _on_grace_period_count_changed(_count: int) -> void:
+	_refresh_grace_label()
+
+
+func _refresh_grace_label() -> void:
+	var count := MatchState.players_in_grace_period
+	if count <= 0:
+		_grace_label.text = ""
+	elif count == 1:
+		_grace_label.text = "1 player disconnected"
+	else:
+		_grace_label.text = "%d players disconnected" % count
 
 
 func _refresh_status_label() -> void:

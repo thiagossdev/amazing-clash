@@ -62,3 +62,71 @@ func test_ffa_cycles_after_max_slots_without_erroring() -> void:
 		wrapped_slot,
 		"a 9th+ FFA player should cycle back to an existing slot, not error"
 	)
+
+
+## Phase 13a (grace-period freeze). PlayerSpawner._ready() reaches
+## get_node(characters_path) whenever NetworkManager.is_server() reads
+## true in this test run's own SceneTree (observed live -- a bare
+## offline SceneTree defaults to server-like), which would error on a
+## missing "../Characters" sibling and, worse, could auto-spawn into
+## `characters` if some earlier test left MatchState.current_phase at
+## IN_PROGRESS. _spawner_and_characters() below builds the real
+## sibling shape _ready() expects and pins the phase to LOBBY (saved/
+## restored) so these tests stay isolated regardless of suite order --
+## same isolation discipline test_lobby_state.gd's own live-singleton
+## tests already established.
+func _spawner_and_characters() -> Array:
+	var original_phase := MatchState.current_phase
+	MatchState.current_phase = MatchState.Phase.LOBBY
+	var root: Node = add_child_autofree(Node.new())
+	var characters := Node.new()
+	characters.name = "Characters"
+	root.add_child(characters)
+	var spawner := PlayerSpawner.new()
+	spawner.characters_path = ^"../Characters"
+	root.add_child(spawner)
+	MatchState.current_phase = original_phase
+	return [spawner, characters]
+
+
+func test_begin_grace_period_tracks_the_disconnecting_peer() -> void:
+	var spawner_and_characters := _spawner_and_characters()
+	var spawner: PlayerSpawner = spawner_and_characters[0]
+	var characters: Node = spawner_and_characters[1]
+	var character := Node2D.new()
+	character.name = "555"
+	characters.add_child(character)
+	spawner._begin_grace_period(555, characters)
+	assert_true(spawner._grace_timers.has(555))
+
+
+func test_begin_grace_period_is_a_noop_if_the_character_is_already_gone() -> void:
+	# No get_tree() dependency here -- the early return (no matching
+	# character) happens before _begin_grace_period ever calls
+	# create_timer(), so a plain .new() without add_child is enough.
+	var spawner: PlayerSpawner = autofree(PlayerSpawner.new())
+	var characters: Node = autofree(Node.new())
+	spawner._begin_grace_period(999, characters)
+	assert_false(
+		spawner._grace_timers.has(999), "nothing to grace-period if the character never existed"
+	)
+
+
+func test_expire_grace_period_despawns_and_clears_tracking() -> void:
+	var spawner: PlayerSpawner = autofree(PlayerSpawner.new())
+	var characters: Node = autofree(Node.new())
+	var character := Node2D.new()
+	character.name = "777"
+	characters.add_child(character)
+	spawner._grace_timers[777] = null
+	spawner._expire_grace_period(777, characters)
+	assert_false(spawner._grace_timers.has(777))
+	await get_tree().process_frame
+	assert_eq(characters.get_child_count(), 0, "queue_free() is deferred -- 1 frame to actually go")
+
+
+func test_expire_grace_period_is_a_noop_when_not_tracked() -> void:
+	var spawner: PlayerSpawner = autofree(PlayerSpawner.new())
+	var characters: Node = autofree(Node.new())
+	spawner._expire_grace_period(424242, characters)
+	assert_eq(characters.get_child_count(), 0)
