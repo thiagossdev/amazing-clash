@@ -1,18 +1,23 @@
 extends Control
-## Room Config: mode select (Team/FFA), friendly-fire toggle, manual
-## per-player team assignment (Team mode only, host-only, a per-row
-## "Switch Team" button rather than 2 drag-target columns -- same
-## outcome, much less UI machinery), a ready checkbox per non-host
-## player, and a host-only Start button. Perks (Phase 9) and LAN
-## discovery (Phase 10) are not this screen's job yet, see
-## memory/plan.md's "Slices 7-10".
+## Room Config: mode select (Team/FFA), friendly-fire toggle, per-player
+## SELF-SERVICE team assignment (Team mode only -- a "Switch Team"
+## button on a peer's own row only, never another peer's; corrected
+## mid-Phase-9, was host-controlled-for-everyone, a real authority bug
+## the human owner caught, not a design choice), a ready checkbox per
+## non-host player, a self-service perk pick (Phase 9, visible on every
+## row, changeable only on a peer's own -- same authority shape as
+## team), and a host-only Start button. LAN discovery (Phase 10) is not
+## this screen's job yet, see memory/plan.md's "Slices 7-10".
 ##
 ## Mode/friendly-fire controls are host-only: NetworkManager.is_server()
 ## gates both interactivity (disabled for clients) and which peer's own
 ## script instance is allowed to actually call
 ## LobbyState.set_room_match_mode()/set_room_friendly_fire() -- both are
-## called directly (no RPC), since the host IS the server locally, the
-## same reasoning LobbyState.set_team()'s own doc comment gives.
+## called directly (no RPC), since the host IS the server locally.
+## Team and perk, unlike those two, are per-player choices, not
+## match-wide settings -- LobbyState.set_local_team()/set_local_perk()
+## are self-service (any peer, own row only), same shape as
+## set_local_ready().
 
 const MODE_LABELS: Array[String] = ["Team", "Free For All"]
 
@@ -94,8 +99,10 @@ func _build_player_row(peer_id: int, local_id: int, team_mode: bool) -> HBoxCont
 	var label := Label.new()
 	var class_id: String = LobbyState.player_class_ids[peer_id]
 	var team_suffix := " [Team %d]" % LobbyState.get_team_id(peer_id) if team_mode else ""
+	var perk_id := LobbyState.get_perk_id(peer_id, LobbyState.PERK_IDS[0])
+	var perk_suffix := " (%s)" % perk_id.capitalize()
 	var role_suffix := " (Host)" if peer_id == _host_peer_id() else ""
-	label.text = "Peer %s: %s%s%s" % [peer_id, class_id, team_suffix, role_suffix]
+	label.text = "Peer %s: %s%s%s%s" % [peer_id, class_id, team_suffix, perk_suffix, role_suffix]
 	row.add_child(label)
 
 	if peer_id != _host_peer_id():
@@ -107,15 +114,35 @@ func _build_player_row(peer_id: int, local_id: int, team_mode: bool) -> HBoxCont
 			ready_check.toggled.connect(LobbyState.set_local_ready)
 		row.add_child(ready_check)
 
-	if _is_host and team_mode:
+	if peer_id == local_id and team_mode:
 		var switch_button := Button.new()
 		switch_button.text = "Switch Team"
 		switch_button.pressed.connect(
-			func(): LobbyState.set_team(peer_id, 1 - LobbyState.get_team_id(peer_id))
+			func(): LobbyState.set_local_team(1 - LobbyState.get_team_id(local_id))
 		)
 		row.add_child(switch_button)
 
+	if peer_id == local_id:
+		row.add_child(_build_perk_option())
+
 	return row
+
+
+## Only ever built for the local peer's own row -- a perk is
+## self-service (LobbyState.set_local_perk()), same authority shape as
+## team. Every other peer's row shows their pick as read-only text
+## (perk_suffix above), same as class.
+func _build_perk_option() -> OptionButton:
+	var option := OptionButton.new()
+	for perk_id in LobbyState.PERK_IDS:
+		option.add_item(perk_id.capitalize())
+	option.selected = LobbyState.PERK_IDS.find(
+		LobbyState.get_perk_id(multiplayer.get_unique_id(), LobbyState.PERK_IDS[0])
+	)
+	option.item_selected.connect(
+		func(index: int): LobbyState.set_local_perk(LobbyState.PERK_IDS[index])
+	)
+	return option
 
 
 func _host_peer_id() -> int:
@@ -128,6 +155,9 @@ func _host_peer_id() -> int:
 ## memory/verify.md's Phase 8 section for how these are used in the
 ## live multi-process test. Host-only flags do nothing on a client, and
 ## vice versa, matching each control's own real interactivity gating.
+## --dev-switch-team and --dev-perk=<id> are available to EITHER role --
+## team and perk are both self-service, per-player choices, not
+## host-only (team corrected mid-Phase-9; perk is Phase 9's own new pick).
 func _maybe_dev_hooks() -> void:
 	var args := OS.get_cmdline_user_args()
 	if _is_host:
@@ -135,28 +165,32 @@ func _maybe_dev_hooks() -> void:
 			_on_mode_selected(MatchState.MatchMode.FREE_FOR_ALL)
 		if "--dev-room-friendly-fire" in args:
 			_on_friendly_fire_toggled(true)
-		if "--dev-switch-team" in args:
-			_await_and_switch_first_client_team()
 	else:
 		if "--dev-ready" in args:
 			LobbyState.set_local_ready(true)
+	if "--dev-switch-team" in args:
+		_await_and_switch_local_team()
+	for arg in args:
+		if arg.begins_with("--dev-perk="):
+			LobbyState.set_local_perk(arg.trim_prefix("--dev-perk="))
 	if _is_host and "--dev-autostart" in args:
 		_await_and_autostart()
 
 
-## Peer ids are ENet-assigned and not predictable ahead of time (not a
-## small sequential int -- confirmed live, see memory/gotchas.md), so
-## this can't take a literal target id the way --simulate-* flags
-## targeting the LOCAL peer's own input can. Polls for the first
-## currently-registered non-host peer instead, same bounded-wait
+## Waits for the LOCAL peer's own registration to land in LobbyState
+## before switching -- synchronous on the host (register_local_player()
+## applies directly), but a client's own registration only lands after
+## its _rpc_register round-trip completes, so a poll (not a fixed
+## delay -- proved unreliable across independent OS processes in Phase
+## 7's own live testing) is needed here too, same bounded-wait
 ## reasoning as _await_and_autostart().
-func _await_and_switch_first_client_team() -> void:
+func _await_and_switch_local_team() -> void:
+	var local_id := multiplayer.get_unique_id()
 	var max_wait_ticks := 40
 	for _i in max_wait_ticks:
-		for peer_id in LobbyState.player_class_ids:
-			if peer_id != _host_peer_id():
-				LobbyState.set_team(peer_id, 1 - LobbyState.get_team_id(peer_id))
-				return
+		if LobbyState.player_team_ids.has(local_id):
+			LobbyState.set_local_team(1 - LobbyState.get_team_id(local_id))
+			return
 		await get_tree().create_timer(0.5).timeout
 
 

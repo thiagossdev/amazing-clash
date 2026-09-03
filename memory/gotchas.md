@@ -196,6 +196,46 @@ Format:
   fix is almost always cheaper before shipping (one pure validation
   function, `LobbyState.has_valid_team_split()`) than after.
 
+- **2026-09-03** — The human owner caught a real authority error in
+  Phase 8's shipped "Switch Team" control mid-Phase-9: it was
+  host-only (the host clicking any player's row moved *that* player),
+  but the intended model is self-service -- each player controls only
+  their own team. → **Rule**: when a manual per-player control lets
+  one privileged actor (the host) mutate another peer's own state,
+  default to asking "should this actually be self-service instead?"
+  before shipping -- host-only felt natural to build (it's the same
+  authority level as the mode/friendly-fire/Start controls right next
+  to it in the UI) but wasn't actually the right model for *this*
+  specific field. Fixed by keying the server-side RPC off
+  `multiplayer.get_remote_sender_id()` (never a client-supplied peer
+  id) instead of checking "is the sender the host" -- the same trust
+  pattern `_rpc_register` (class choice) already used, which
+  structurally removes the need for a host-authority check on this RPC
+  at all rather than adding one.
+
+- **2026-09-03** — Phase 9's perk multiplier was first written into
+  `net/player_spawner.gd`, right next to where class/team get applied
+  at spawn -- looked consistent with the existing pattern, but
+  `PlayerSpawner` only ever runs on the *server*, producing the one
+  AUTHORITATIVE copy of each character. Every other peer's own local
+  copy of that same character (PREDICTED for its owner, INTERPOLATED
+  for everyone else) is a separate node instance spawned by
+  `MultiplayerSpawner`'s own replication machinery, which never calls
+  `PlayerSpawner`'s code. A stat multiplier set only in `PlayerSpawner`
+  therefore never reached the very peer who picked the perk, for
+  anything read locally (movement speed, cooldown timers) -- it would
+  have looked like the perk silently did nothing outside the server's
+  own internal simulation, and a single-process live test can't catch
+  this at all (it only ever observes the server's own copy). → **Rule**:
+  any per-character value that a *remote* peer needs to see/feel
+  locally (not just something the server resolves in combat) must be
+  computed on every peer's own `_ready()`/spawn path from already-
+  replicated data, not written once by whichever code path happens to
+  run server-side only. `CharacterController._apply_perk_from_lobby_
+  state()` is the fix -- reads `LobbyState` directly, runs identically
+  on every peer, no new RPC needed since the source data was already
+  replicated.
+
 <!--
 Examples:
 

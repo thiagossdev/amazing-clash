@@ -531,4 +531,69 @@ in `progress.md`. No exceptions.
   (not-ready vs. invalid team split) -- a small UX follow-up, not a
   correctness gap, see `memory/progress.md`'s Backlog.
 - [ ] Perks and LAN discovery remain explicitly deferred -- see
-  `memory/plan.md`'s "Slices 9-10" section.
+  `memory/plan.md`'s "Slice 9"/"Slice 10" sections.
+
+### Phase 9: 1 self-service perk per player, visible to the room
+
+- [x] `test_lobby_state.gd` (25/25 GUT tests): pure `resolve_perk_id()`
+  (registered id passthrough, unrecognized/empty falls back to
+  `PERK_IDS[0]`) and `get_perk_id()` (fallback/registered) coverage,
+  same shape as the existing class-id tests.
+- [x] `test_locomotion_fsm.gd`: a `move_speed_multiplier` case
+  confirming it scales `velocity` independent of `MOVE_SPEED`/
+  `DASH_SPEED` (dash unaffected, per design).
+- [x] `test_character_controller_combat.gd`:
+  `test_apply_perk_from_lobby_state_scales_stats_on_ready` -- the
+  regression test for the real bug below, asserting
+  `_apply_perk_from_lobby_state()` scales `max_health`/
+  `fsm.move_speed_multiplier`/`cooldown_multiplier` when called
+  directly, independent of which node spawned the character.
+- [x] `gdformat`/`gdlint` clean across every new/changed file
+  (`gameplay/perks/perk_resource.gd`, `net/lobby_state.gd`,
+  `net/player_spawner.gd`, `gameplay/characters/character_base/
+  character_controller.gd`, `gameplay/characters/character_base/
+  locomotion_fsm.gd`, `ui/lobby/lobby.gd`). 103/103 GUT tests total
+  project-wide (was 86).
+- [x] **Real bug found by `/check` and fixed before merge**: the perk
+  multiplier was originally applied in `net/player_spawner.gd`, which
+  only ever produces the AUTHORITATIVE (server-side) copy of a
+  character -- each client's own PREDICTED/INTERPOLATED copy is a
+  separate node instance spawned by `MultiplayerSpawner`'s own
+  replication, which never runs `PlayerSpawner`'s code at all. A
+  multiplier set only there would have silently never reached the
+  peer who actually picked the perk (or any remote observer) for
+  movement speed or cooldown -- only the server's own internal
+  simulation would have felt it. Fixed by moving application into
+  `CharacterController._apply_perk_from_lobby_state()`, called from
+  every peer's own `_ready()`, reading already-replicated `LobbyState`
+  data directly (no new RPC). See `memory/gotchas.md` 2026-09-03.
+- [x] Live 2-process test (`--dev-autoplay --dev-class=vanguard
+  --dev-host --dev-perk=vitality --dev-autostart` /
+  `--dev-autoplay --dev-class=ranged_mage --dev-join=127.0.0.1
+  --dev-perk=swift --dev-ready`, temporary `print()` trace in
+  `CharacterController._apply_perk_from_lobby_state()`, removed before
+  the final commit): confirmed correct math -- Vanguard's 120 base HP
+  x Vitality's 1.15 multiplier = 138.0 max_health; Ranged Mage's
+  move_speed_multiplier = 1.1 from Swift, cooldown_multiplier
+  unaffected (1.0) for both, matching each perk's actual fields.
+  Critically, **both characters' values were logged identically on
+  the server's own process AND on the client's own separate process**
+  -- direct proof the per-peer application fix holds across a real
+  network boundary, not just within a single process (which is
+  exactly the scenario the original `PlayerSpawner`-only bug would
+  have passed unnoticed under, since a single-process live test can't
+  distinguish "applied once, server-side" from "applied identically
+  on every peer").
+- [x] `/check` (high severity) run on the full branch diff before
+  merge; found the bug above plus 2 low-severity findings
+  (`resolve_class_id()`/`resolve_perk_id()` duplicated validation
+  logic; a stale doc comment in `locomotion_fsm.gd` still pointing at
+  `net/player_spawner.gd`), both fixed -- see `memory/plan.md`'s
+  Slice 9 block for the specifics.
+- [ ] **Visual verification not done** -- same unsolved gap as every
+  prior UI-adjacent phase (no way to screenshot Godot's actual
+  renderer in this environment). The perk picker is a real UI control
+  with no visual confirmation beyond live functional testing and code
+  reading.
+- [ ] LAN discovery remains explicitly deferred -- see
+  `memory/plan.md`'s "Slice 10" section.

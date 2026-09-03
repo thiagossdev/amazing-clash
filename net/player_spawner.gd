@@ -113,12 +113,28 @@ func _spawn_for_peer(peer_id: int, characters: Node) -> void:
 	if characters.has_node(str(peer_id)):
 		return
 	var class_scene := _resolve_class_scene(peer_id)
-	var character := class_scene.instantiate()
+	var character: CharacterController = class_scene.instantiate()
 	character.name = str(peer_id)
 	character.position = SPAWN_POSITIONS[_next_spawn_index % SPAWN_POSITIONS.size()]
 	character.team = _resolve_team_id(peer_id)
 	_next_spawn_index += 1
 	characters.add_child(character)
+	# Perk multipliers are NOT applied here, deliberately -- this method
+	# only ever runs on the server (see _ready()'s own early return
+	# above). A perk's move_speed_multiplier/cooldown_multiplier are
+	# read during client-side PREDICTION (CharacterController.
+	# apply_input(), the same code path AUTHORITATIVE uses), not just
+	# server simulation -- unlike `team`, which only ever matters to
+	# server-only logic (CombatResolver/MatchRules). Applying the perk
+	# here would leave every owning CLIENT's own local mirror at the
+	# default 1.0 multiplier (MultiplayerSpawner replicates the spawn,
+	# not arbitrary script properties set before add_child -- the same
+	# reason `team` itself is documented as never replicated), causing
+	# a visible, permanent misprediction/reconciliation-snap for anyone
+	# who picked Swift/Adept. See CharacterController._ready()'s own
+	# _apply_perk_from_lobby_state(), which runs on every peer's own
+	# instance instead, reading the already-replicated LobbyState
+	# registry directly.
 
 
 ## FFA is unaffected by Phase 8 -- every player still gets a unique

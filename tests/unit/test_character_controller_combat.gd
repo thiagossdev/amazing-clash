@@ -11,6 +11,20 @@ func _spawn_character() -> CharacterController:
 	return add_child_autofree(CHARACTER_SCENE.instantiate())
 
 
+## Registers peer_id in the LIVE LobbyState autoload (not a fresh
+## LobbyStateScript.new() instance -- _apply_perk_from_lobby_state()
+## reads the real singleton, since that's what every peer does live)
+## and un-registers it after the assertion, so this test can't leak
+## state into any other test that also spawns a character.
+func _spawn_character_with_perk(peer_id: int, perk_id: String) -> CharacterController:
+	LobbyState.player_perk_ids[peer_id] = perk_id
+	var character := CHARACTER_SCENE.instantiate()
+	character.name = str(peer_id)
+	add_child_autofree(character)
+	LobbyState.player_perk_ids.erase(peer_id)
+	return character
+
+
 func _sample(
 	attack_pressed: bool = false, ability_q_pressed: bool = false, ability_e_pressed: bool = false
 ) -> InputBuffer.Sample:
@@ -125,3 +139,51 @@ func test_ability_q_can_be_cast_again_once_cooldown_elapses() -> void:
 	character.apply_input(_sample(false, true))
 	assert_eq(character.ability_q_fsm.current_move, character.ability_q.move)
 	assert_ne(character.ability_q_fsm.state, ActionFsm.State.NEUTRAL)
+
+
+func test_cooldown_multiplier_shortens_ability_cooldown() -> void:
+	var character := _spawn_character()
+	character.cooldown_multiplier = 0.5
+	character.apply_input(_sample(false, true))
+	var halved_cooldown := int(character.ability_q.cooldown_frames * 0.5)
+	for _i in range(halved_cooldown):
+		character.apply_input(_sample())
+	character.apply_input(_sample(false, true))
+	assert_eq(
+		character.ability_q_fsm.current_move,
+		character.ability_q.move,
+		"a 0.5 cooldown_multiplier (e.g. Adept) should let Q recast after half its normal cooldown"
+	)
+	assert_ne(character.ability_q_fsm.state, ActionFsm.State.NEUTRAL)
+
+
+func test_apply_perk_from_lobby_state_scales_stats_on_ready() -> void:
+	var character := _spawn_character_with_perk(919191, "swift")
+	assert_eq(
+		character.fsm.move_speed_multiplier,
+		1.1,
+		"a character whose peer_id is registered with a perk in LobbyState should be scaled on _ready()"
+	)
+
+
+func test_apply_perk_from_lobby_state_is_a_no_op_for_an_unregistered_peer() -> void:
+	var character := CHARACTER_SCENE.instantiate()
+	character.name = "424242"
+	add_child_autofree(character)
+	assert_eq(character.max_health, 100.0)
+	assert_eq(character.fsm.move_speed_multiplier, 1.0)
+	assert_eq(character.cooldown_multiplier, 1.0)
+
+
+func test_default_cooldown_multiplier_is_a_no_op() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, true))
+	var halved_cooldown := int(character.ability_q.cooldown_frames * 0.5)
+	for _i in range(halved_cooldown):
+		character.apply_input(_sample())
+	character.apply_input(_sample(false, true))
+	assert_eq(
+		character.ability_q_fsm.state,
+		ActionFsm.State.NEUTRAL,
+		"without a perk (multiplier 1.0), half the normal cooldown must still be on cooldown"
+	)
