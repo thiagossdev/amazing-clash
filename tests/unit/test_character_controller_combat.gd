@@ -217,3 +217,42 @@ func test_default_cooldown_multiplier_is_a_no_op() -> void:
 		ActionFsm.State.NEUTRAL,
 		"without a perk (multiplier 1.0), half the normal cooldown must still be on cooldown"
 	)
+
+
+func test_taking_damage_triggers_a_hit_flash() -> void:
+	var character := _spawn_character()
+	character.take_damage(10.0)
+	character._update_visual_feedback()
+	assert_eq(character.get_node(character.visual_path).modulate, character.HIT_FLASH_MODULATE)
+
+
+func test_hit_flash_fades_after_its_own_frame_count() -> void:
+	var character := _spawn_character()
+	character.take_damage(10.0)
+	# +1: the call that detects the drop also spends the first flash
+	# frame, so HIT_FLASH_FRAMES total frames of flash need
+	# HIT_FLASH_FRAMES + 1 calls to fully decay to 0.
+	for _i in range(character.HIT_FLASH_FRAMES + 1):
+		character._update_visual_feedback()
+	assert_eq(character.get_node(character.visual_path).modulate, character.NEUTRAL_MODULATE)
+
+
+func test_active_action_triggers_a_swing_pulse() -> void:
+	var character := _spawn_character()
+	character.action_fsm.state = ActionFsm.State.ACTIVE
+	character._update_visual_feedback()
+	assert_eq(character.get_node(character.visual_path).modulate, character.ACTIVE_SWING_MODULATE)
+
+
+func test_hit_flash_takes_priority_over_swing_pulse() -> void:
+	var character := _spawn_character()
+	character.action_fsm.state = ActionFsm.State.ACTIVE
+	character.take_damage(10.0)
+	character._update_visual_feedback()
+	assert_eq(character.get_node(character.visual_path).modulate, character.HIT_FLASH_MODULATE)
+
+
+func test_no_action_and_no_recent_hit_is_neutral_modulate() -> void:
+	var character := _spawn_character()
+	character._update_visual_feedback()
+	assert_eq(character.get_node(character.visual_path).modulate, character.NEUTRAL_MODULATE)

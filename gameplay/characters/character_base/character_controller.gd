@@ -28,6 +28,18 @@ enum ControlMode { AUTHORITATIVE, PREDICTED, INTERPOLATED }
 const RECONCILIATION_SMOOTHING_RATE_PER_SECOND := 20.0
 const MAX_VISUAL_POSITION_ERROR := 48.0
 
+## Purely cosmetic swing/hit feedback -- no gameplay effect, so no
+## Checkpoint/network replication needed (see _update_visual_feedback()'s
+## own doc comment for why deriving it fresh every tick from
+## already-correct local state is enough on every peer, AUTHORITATIVE/
+## PREDICTED/INTERPOLATED alike). Overbright (>1.0) modulate values read
+## as a flash toward white against this project's flat Polygon2D
+## placeholder art, the same technique any sprite-based flash would use.
+const HIT_FLASH_FRAMES := 6
+const HIT_FLASH_MODULATE := Color(2.2, 2.2, 2.2, 1.0)
+const ACTIVE_SWING_MODULATE := Color(1.35, 1.35, 1.35, 1.0)
+const NEUTRAL_MODULATE := Color(1.0, 1.0, 1.0, 1.0)
+
 ## Which child node's local `position` absorbs the reconciliation-
 ## smoothing offset.
 @export var visual_path: NodePath = ^"Visual"
@@ -129,6 +141,9 @@ var _latest_remote_snapshot_time: float = 0.0
 ## visible child lags -- global_position (and therefore collision) is
 ## always corrected immediately.
 var _visual_position_error: Vector2 = Vector2.ZERO
+## Local-only, purely cosmetic (see _update_visual_feedback()).
+var _hit_flash_frames_remaining: int = 0
+var _previous_health_for_flash: float = 0.0
 ## Server-only: frames remaining where this character's own simulation
 ## step is entirely frozen (both movement and the action layer) --
 ## applied to both attacker and defender on a confirmed hit (see
@@ -159,6 +174,7 @@ func _ready() -> void:
 		if camera:
 			camera.target = self
 	_apply_perk_from_lobby_state()
+	_previous_health_for_flash = current_health
 
 
 ## Runs on EVERY peer's own local instance of this character -- the
@@ -197,6 +213,7 @@ func _physics_process(delta: float) -> void:
 			_physics_step_predicted(delta)
 		ControlMode.INTERPOLATED:
 			_render_interpolated_position()
+	_update_visual_feedback()
 
 
 ## Which of the 3 network roles this instance plays on THIS peer.
@@ -432,6 +449,46 @@ func _restore_predicted_state(checkpoint: ClientPredictor.Checkpoint) -> void:
 func _begin_visual_correction_smoothing(pre_correction_position: Vector2) -> void:
 	_visual_position_error += pre_correction_position - global_position
 	_visual_position_error = _visual_position_error.limit_length(MAX_VISUAL_POSITION_ERROR)
+
+
+## Swing pulse + hit flash for melee/skillshot/ability_q/ability_e alike
+## -- runs identically on every control mode (AUTHORITATIVE, PREDICTED,
+## INTERPOLATED), unlike most of this file's networking-sensitive logic,
+## because it needs no authority: a hit flash only needs to notice
+## current_health dropped since last tick (already correct on every
+## peer -- set directly by take_damage() on the server, and by snapshot
+## receipt/reconciliation everywhere else), and a swing pulse only needs
+## to know whether any of this character's OWN action FSMs is currently
+## ACTIVE (action_fsm is already snapshot-replicated to every peer; the
+## known Phase 3 gap -- ability_q_fsm/ability_e_fsm state isn't
+## replicated to remote INTERPOLATED peers yet -- means a remote peer
+## won't see someone else's Q/E swing pulse, same pre-existing
+## limitation as everything else that gap already affects, not a new
+## one). A hit flash always wins over a swing pulse while both would
+## otherwise apply (landing a hit mid-swing is the more important of
+## the two to read clearly).
+func _update_visual_feedback() -> void:
+	var visual := get_node_or_null(visual_path)
+	if not visual:
+		return
+	if current_health < _previous_health_for_flash:
+		_hit_flash_frames_remaining = HIT_FLASH_FRAMES
+	_previous_health_for_flash = current_health
+	if _hit_flash_frames_remaining > 0:
+		_hit_flash_frames_remaining -= 1
+		visual.modulate = HIT_FLASH_MODULATE
+	elif _is_any_action_active():
+		visual.modulate = ACTIVE_SWING_MODULATE
+	else:
+		visual.modulate = NEUTRAL_MODULATE
+
+
+func _is_any_action_active() -> bool:
+	return (
+		action_fsm.state == ActionFsm.State.ACTIVE
+		or ability_q_fsm.state == ActionFsm.State.ACTIVE
+		or ability_e_fsm.state == ActionFsm.State.ACTIVE
+	)
 
 
 func _decay_visual_position_error(delta: float) -> void:

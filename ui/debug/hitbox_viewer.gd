@@ -74,12 +74,33 @@ func _draw_hurtbox(character: CharacterController) -> void:
 	draw_rect(_to_local(rect), HURTBOX_COLOR, false, LINE_WIDTH)
 
 
+## Draws the base attack's hitbox, plus ability_q/ability_e's own
+## hitbox when that slot's AbilityResource is melee-style (not
+## is_projectile -- a projectile-style slot's hitbox is drawn instead
+## by _draw_projectile_hitbox once the projectile actually spawns).
+## Mirrors CombatResolver._resolve_ability_slot()'s own generalization
+## -- this viewer stopped tracking that generalization when Phase 3
+## added independent ability_q_fsm/ability_e_fsm slots, so Heavy Slam/
+## Bulwark Strike-style abilities never drew here even though they hit
+## correctly server-side. Caught by the human owner while play-testing
+## Vanguard: no debug hitbox ever appeared for Q/E, reasonably read as
+## "the hit isn't landing" even though it always was.
 func _draw_hitbox_if_active(character: CharacterController) -> void:
-	if character.action_fsm.current_move != character.attack_move:
+	_draw_slot_hitbox_if_active(character, character.action_fsm, character.attack_move)
+	if character.ability_q and not character.ability_q.is_projectile:
+		_draw_slot_hitbox_if_active(character, character.ability_q_fsm, character.ability_q.move)
+	if character.ability_e and not character.ability_e.is_projectile:
+		_draw_slot_hitbox_if_active(character, character.ability_e_fsm, character.ability_e.move)
+
+
+func _draw_slot_hitbox_if_active(
+	character: CharacterController, slot_fsm: ActionFsm, move: MoveDefinition
+) -> void:
+	if not move or slot_fsm.current_move != move:
 		return
-	if not character.action_fsm.is_hitbox_active():
+	if not slot_fsm.is_hitbox_active():
 		return
-	for hit in character.attack_move.hit_definitions:
+	for hit in move.hit_definitions:
 		var rect := HitDetection.hitbox_rect(
 			character.global_position, character.get_aim_direction(), hit
 		)

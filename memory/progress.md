@@ -447,6 +447,45 @@ changed but this file wasn't updated.
   behavior the same unmodified flag produced 9 full attack cycles
   (20 frames each) in a ~4.8s window, temporary trace confirmed then
   removed. `gdformat`/`gdlint` clean, no regressions.
+- [x] Added cosmetic swing-pulse + hit-flash feedback, human-owner
+  requested while play-testing ("todos as skill precisa de feedback
+  visual, além do fato de acertar"): new
+  `CharacterController._update_visual_feedback()`, called every tick
+  from `_physics_process` on every control mode (AUTHORITATIVE,
+  PREDICTED, INTERPOLATED alike -- so you see it on remote characters
+  too, not just your own). A hit flashes the defender's `Visual`
+  `Polygon2D` to an overbright white-ish `modulate` for
+  `HIT_FLASH_FRAMES` (6, ~0.1s) the tick `current_health` is observed
+  to drop -- no new replication needed, `current_health` is already
+  correct on every peer via existing snapshot/reconciliation. A swing
+  pulses a subtler highlight whenever any of the 3 melee-hitbox-
+  capable FSMs (`action_fsm`, `ability_q_fsm`, `ability_e_fsm`) is
+  ACTIVE; a hit flash always wins over a swing pulse when both would
+  otherwise apply. 5 new GUT tests (117 total project-wide, was 112).
+  **Known, pre-existing gap this inherits, not new**: `ability_q_fsm`/
+  `ability_e_fsm` state still isn't replicated to remote INTERPOLATED
+  peers (the Phase 3 gap, `memory/plan.md`'s Deferred section) -- a
+  remote peer won't see someone else's Q/E swing pulse yet, same as
+  they already don't see the swing itself.
+- [x] Found and fixed a real bug while investigating why the human
+  owner saw nothing in the F1 `HitboxViewer` for Vanguard: `_draw_
+  hitbox_if_active()` only ever checked the base `action_fsm`/
+  `attack_move` pair -- it was never updated when Phase 3 gave
+  ability_q/ability_e their own independent FSMs, so a melee-style
+  ability (Vanguard's Heavy Slam/Bulwark Strike) never drew a debug
+  hitbox, even though `CombatResolver._resolve_ability_slot()` already
+  correctly resolves real damage for them (confirmed by reading that
+  code path, not assumed). Debug-visual-only bug, not a combat one --
+  reasonably misread as "the hit isn't landing" from the missing
+  visual alone. Fixed by generalizing `_draw_hitbox_if_active()` to
+  also draw `ability_q`/`ability_e`'s own hitbox whenever that slot is
+  melee-style (`not is_projectile`), mirroring `CombatResolver`'s own
+  existing generalization exactly. No new test added -- this file's
+  existing tests only cover F1 toggle/group behavior, never the
+  `_draw()` logic itself (nothing in this project unit-tests draw
+  calls, consistent with the long-standing "no way to screenshot
+  Godot's renderer here" limitation); verified by code-path comparison
+  against the already-correct `CombatResolver` logic instead.
 
 ## Backlog (next up)
 
