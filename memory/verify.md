@@ -642,3 +642,33 @@ in `progress.md`. No exceptions.
   renderer in this environment). The LAN rooms list is a real UI
   control with no visual confirmation beyond live functional testing
   and code reading.
+
+### Phase 12: spawn layout generalized for 2v2 through 5v5 + free-for-all
+
+- [x] `tests/unit/test_player_spawner.gd` (4/4 GUT tests, all new):
+  teammates spawn at distinct y values (never stacked), team 0/1
+  clusters land on opposite sides of arena center, free-for-all spawns
+  sit on a shared circle around arena center at distinct angles, and a
+  9th+ free-for-all player correctly cycles back to an earlier slot
+  instead of erroring.
+- [x] `gdformat`/`gdlint` clean across every changed file
+  (`net/player_spawner.gd`, `tests/unit/test_player_spawner.gd`).
+  121/121 GUT tests total project-wide (was 117).
+- [x] TDD confirmed: ran the new test file before implementing
+  `_spawn_position_for()` and its 2 helpers -- got a real GDScript
+  parse error (the method didn't exist yet), not just a logical
+  assertion failure, then implemented until green.
+- [x] Live 3-process test, team mode: server + 2 clients, default
+  `index % 2` alternation puts 2 peers on team 0 and 1 on team 1 --
+  exercises the new per-team vertical stacking (2 members on the same
+  team, previously impossible to distinguish from the old 4-fixed-
+  point layout without Room Config's manual assignment). Zero engine
+  errors on any of the 3 processes.
+- [x] Live 3-process test, free-for-all (`--free-for-all`): server +
+  2 clients, each gets a unique team id via the existing FFA logic,
+  spawn position resolved through the new circle-based `_ffa_spawn_
+  position()` path. Zero engine errors on any of the 3 processes.
+- [ ] **Visual verification not done** -- same unsolved gap as every
+  prior UI-adjacent phase; this phase is not UI-adjacent (a pure
+  position-calculation change) so this is recorded for consistency,
+  not because anything new needed it.

@@ -102,7 +102,7 @@ phase independently playable/demoable even if the next never lands):
     points to a computed `(team_id, index_within_team, team_count)`
     layout, so a real 5v5 (or any confirmed team-size combination)
     gets a sane arrangement instead of cycling through 4 points.
-    **Not started** — scope below.
+    **Done** — see Slice 12 below.
 13. Reconnect/grace-period system: a mid-match disconnect freezes the
     character in place (vulnerable, not invulnerable -- disconnecting
     has a real cost) for 30s instead of an immediate forfeit; a
@@ -779,20 +779,36 @@ the single reasonable shape, already researched in
 - No client-visible change: this only affects what the server accepts
   as a hit, not movement/prediction.
 
-### Slice 12 (Spawn Layout Generalization) — NOT STARTED
+### Slice 12 (Spawn Layout Generalization) — DONE
 
-Confirmed by the human owner 2026-09-03 (mechanical, no real fork):
-
-- `net/player_spawner.gd`'s hardcoded 4-point `SPAWN_POSITIONS`
-  replaced by a computed layout: teams distributed around the arena
-  center (600, 400; interior roughly 1200x800 per `TestArena.tscn`'s
-  wall placement), each team's members placed in a short row 60 units
-  apart (unchanged spacing convention from Phase 5). Must correctly
-  handle every already-confirmed team-size combination (2v2 through
-  5v5) and free-for-all (each player is their own team, per
-  `MatchState.MatchMode.FREE_FOR_ALL`).
-- No behavior change to team assignment itself (`_resolve_team_id()`)
-  or class assignment -- purely a spawn-position calculation swap.
+- **Built exactly as scoped**: `net/player_spawner.gd`'s hardcoded
+  4-point `SPAWN_POSITIONS` replaced by `_spawn_position_for(team_id)`.
+  Team mode: team 0 clusters at x=300, team 1 at x=900 (unchanged x
+  values from the original layout), members stacked vertically
+  `TEAM_MEMBER_SPACING` (60) apart around arena-center height via a
+  new per-team counter (`_next_index_for_team`, keyed by team id) --
+  unbounded in code, comfortably inside the arena's safe interior for
+  every confirmed team size (2v2 through 5v5). Free-for-all: each
+  uniquely-teamed player placed on a fixed circle
+  (`FFA_SPAWN_RADIUS` 300 around `ARENA_CENTER`), `FFA_SPAWN_SLOTS` (8)
+  evenly-spaced angles, cycling for a 9th+ player rather than erroring
+  -- same "never error" guarantee the original 4-point layout had.
+  `_resolve_team_id()`/class assignment untouched, as scoped.
+- **Tests**: new `tests/unit/test_player_spawner.gd` (4 tests) --
+  `PlayerSpawner` is a `Node` but `_spawn_position_for()` and its 2
+  helpers touch no scene tree, only the `MatchState` autoload, so it's
+  instantiated directly via `.new()` + `autofree()` (same "pure logic
+  gets a GUT test" convention as `WinCondition`/`LobbyState`), with
+  `MatchState.match_mode` saved/restored around the FFA-mode tests so
+  they can't leak into any other test file. 121 total GUT tests
+  project-wide (was 117). Written TDD-first: confirmed the tests
+  failed with a real parse error (`_spawn_position_for()` didn't exist
+  yet) before implementing.
+- **Verify**: `gdformat`/`gdlint` clean. 2 live multi-process headless
+  runs (3 processes each): team mode (2 on team 0 via the default
+  `index % 2` alternation, 1 on team 1 -- exercises the new per-team
+  stacking) and free-for-all (`--free-for-all`), both zero engine
+  errors on every process.
 
 ### Slice 13 (Reconnect / Grace-Period) — NOT STARTED
 

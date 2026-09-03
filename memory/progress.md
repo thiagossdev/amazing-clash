@@ -486,6 +486,20 @@ changed but this file wasn't updated.
   calls, consistent with the long-standing "no way to screenshot
   Godot's renderer here" limitation); verified by code-path comparison
   against the already-correct `CombatResolver` logic instead.
+- [x] **Phase 12 (spawn layout generalized for 2v2 through 5v5 + FFA)
+  implemented and tactically verified**: `net/player_spawner.gd`'s
+  hardcoded 4-point `SPAWN_POSITIONS` replaced by `_spawn_position_for
+  (team_id)` -- team mode stacks a team's members vertically around
+  arena-center height (unbounded, comfortably inside the arena for
+  every confirmed team size); free-for-all places each uniquely-teamed
+  player on a fixed circle around the arena center, cycling past 8
+  slots rather than erroring. `_resolve_team_id()`/class assignment
+  untouched. TDD: new `tests/unit/test_player_spawner.gd` (4 tests,
+  written and confirmed failing -- a real parse error, the method
+  didn't exist yet -- before implementing) -- 121 total GUT tests
+  project-wide (was 117). 2 live 3-process runs (team mode + FFA), zero
+  engine errors on either. See `memory/verify.md`'s Phase 12 section
+  and `memory/plan.md`'s Slice 12 block for full evidence.
 
 ## Backlog (next up)
 
@@ -509,14 +523,8 @@ changed but this file wasn't updated.
   position-history buffer keyed by server tick, bounded compensation
   window).
 - [x] ~~Generalize `PlayerSpawner`'s team assignment~~ — resolved by
-  Phase 8: the host manually places any number of connected players on
-  either team in Room Config, which already covers every confirmed
-  team size (2v2 through 5v5, all 2-sided). Spawn *positions* still
-  only have 4 hardcoded points (`SPAWN_POSITIONS`), cycled for a 5th+
-  peer rather than laid out properly for a real 5v5 — a cosmetic gap,
-  not a correctness one (friendly fire/win condition are unaffected by
-  spawn distance, per Phase 5's own note), left as a follow-up if a
-  5v5 is actually played, not invented here.
+  Phase 8 (manual team placement in Room Config) and Phase 12 (spawn
+  *positions* generalized beyond the old 4 hardcoded points) together.
 - [ ] Decide how many ability slots a real class kit should have (R/F/T
   are reserved in the InputMap but unwired on all 3 classes) — a
   content/balance decision for whenever the roster grows past 3.

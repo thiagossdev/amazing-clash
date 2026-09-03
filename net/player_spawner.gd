@@ -12,8 +12,7 @@ extends Node
 ## net/player_spawner.gd, scoped down. See
 ## docs/blueprint/03-networking-and-match-modes.md.
 ##
-## Phase 4: alternates the real classes by connection order (same
-## array-cycling pattern SPAWN_POSITIONS already uses below) -- no
+## Phase 4: alternates the real classes by connection order -- no
 ## lobby/character-select exists yet, so this is the simplest thing
 ## that lets every class fight in a live match.
 ##
@@ -43,43 +42,36 @@ const CLASS_SCENES: Array[PackedScene] = [
 	preload("res://gameplay/characters/warden/Warden.tscn"),
 ]
 
-## 4 points (2v2's default team size): team 0 clusters on the left,
-## team 1 clusters on the right -- index parity matches
-## _spawn_for_peer's own `team = index % 2`, so index 0/2 (team 0) land
-## near x=300 and index 1/3 (team 1) near x=900. Teammates are placed
-## side by side, 60 units apart on the same y -- close enough for a
-## real, mouse-aimed melee swing to reach a teammate/nearby enemy
-## without either character needing to move first.
-##
-## Stale note, corrected: this spacing (and which of the 2 spawn points
-## in a pair gets the lower x) used to be tuned around melee's old
-## default aim -- LocomotionFsm.facing_direction (Vector2.RIGHT with no
-## move input yet), confirmed live via an un-aimed --simulate-attack.
-## Melee's aim source moved to real mouse-aim (see CharacterController.
-## current_aim_direction/get_aim_direction()) after the human owner
-## caught aim being coupled to movement, so an *un-aimed* headless
-## --simulate-attack can no longer be relied on to land deterministically
-## the way it once did (same "no real mouse in headless" caveat
-## --simulate-skillshot already had) -- a real player's mouse-aimed
-## swing is unaffected and this is the actual fix's point. A future
-## headless melee-hit test needs an explicit fake-aim dev flag, the
-## same way class/perk already get one, not a coincidental default.
-## Clear of the 4 wall colliders in TestArena.tscn, and never spawn
-## exactly overlapping (a degenerate case where a melee hitbox and
-## hurtbox can share an exact boundary with no true intersection --
-## found live, see memory/gotchas.md). Cycles for a 5th+ peer rather
-## than erroring. Reused unchanged for free-for-all -- every player
-## just cycles through the same 4 points regardless of mode; a
-## dedicated spread-out FFA layout is a cosmetic refinement, not a
-## correctness need (friendly fire and the win condition both already
-## work correctly at any spawn distance).
-const SPAWN_POSITIONS: Array[Vector2] = [
-	Vector2(360, 400), Vector2(960, 400), Vector2(300, 400), Vector2(900, 400)
-]
+## Phase 12: replaced the original 4 hardcoded spawn points (tuned only
+## for a fixed 2v2) with a computed layout, now that team size is
+## confirmed configurable (2v2 through 5v5). Team mode: team 0 clusters
+## left of arena center, team 1 clusters right -- unchanged x values
+## from the original 4-point layout, but members now stack vertically
+## per-team (TEAM_MEMBER_SPACING apart) instead of being limited to 2
+## fixed slots each, so a 5th teammate gets a real spot instead of
+## cycling back onto an earlier one. Free-for-all: no "left/right"
+## concept applies to N individually-teamed players, so each spawns on
+## a circle around the arena center instead (FFA_SPAWN_SLOTS evenly-
+## spaced angles, cycling for a 9th+ player rather than erroring --
+## same "never error, just cycle" guarantee the original 4-point
+## layout already had). Never spawns exactly overlapping (a degenerate
+## case where a melee hitbox and hurtbox can share an exact boundary
+## with no true intersection -- found live, see memory/gotchas.md);
+## every generated position differs from every other by construction
+## (distinct index_within_team or distinct FFA angle), same invariant
+## as before. Clear of TestArena.tscn's 4 wall colliders (interior
+## roughly x:36-1164, y:36-764 for a 20-radius character against
+## 32-thick walls) -- every constant below stays well inside that.
+const ARENA_CENTER := Vector2(600.0, 400.0)
+const TEAM_CLUSTER_X := {0: 300.0, 1: 900.0}
+const TEAM_MEMBER_SPACING := 60.0
+const FFA_SPAWN_RADIUS := 300.0
+const FFA_SPAWN_SLOTS := 8
 
 @export var characters_path: NodePath = ^"../Characters"
 
 var _next_spawn_index: int = 0
+var _next_index_for_team: Dictionary = {}
 
 
 ## Phase 7: no longer spawns unconditionally at _ready() -- doing so
@@ -122,8 +114,8 @@ func _spawn_for_peer(peer_id: int, characters: Node) -> void:
 	var class_scene := _resolve_class_scene(peer_id)
 	var character: CharacterController = class_scene.instantiate()
 	character.name = str(peer_id)
-	character.position = SPAWN_POSITIONS[_next_spawn_index % SPAWN_POSITIONS.size()]
 	character.team = _resolve_team_id(peer_id)
+	character.position = _spawn_position_for(character.team)
 	_next_spawn_index += 1
 	characters.add_child(character)
 	# Perk multipliers are NOT applied here, deliberately -- this method
@@ -170,6 +162,33 @@ func _resolve_class_scene(peer_id: int) -> PackedScene:
 		registered_index if registered_index != -1 else _next_spawn_index % CLASS_SCENES.size()
 	)
 	return CLASS_SCENES[scene_index]
+
+
+## Team mode: stacks this team's Nth member vertically around arena-
+## center height, TEAM_MEMBER_SPACING apart -- unbounded in practice
+## (no cap on team size here), but every confirmed team size (2v2
+## through 5v5) stays comfortably inside the arena's safe interior.
+## Free-for-all: places this (uniquely-teamed) player on a fixed circle
+## around the arena center instead, since "left/right of center" has
+## no meaning once every player is their own team.
+func _spawn_position_for(team_id: int) -> Vector2:
+	if MatchState.match_mode == MatchState.MatchMode.FREE_FOR_ALL:
+		return _ffa_spawn_position(team_id)
+	return _team_spawn_position(team_id)
+
+
+func _team_spawn_position(team_id: int) -> Vector2:
+	var index_within_team: int = _next_index_for_team.get(team_id, 0)
+	_next_index_for_team[team_id] = index_within_team + 1
+	var x: float = TEAM_CLUSTER_X.get(team_id, ARENA_CENTER.x)
+	var y := ARENA_CENTER.y - TEAM_MEMBER_SPACING * 2.0 + index_within_team * TEAM_MEMBER_SPACING
+	return Vector2(x, y)
+
+
+func _ffa_spawn_position(team_id: int) -> Vector2:
+	var slot := team_id % FFA_SPAWN_SLOTS
+	var angle := TAU * float(slot) / float(FFA_SPAWN_SLOTS)
+	return ARENA_CENTER + Vector2(FFA_SPAWN_RADIUS, 0.0).rotated(angle)
 
 
 func _despawn_for_peer(peer_id: int, characters: Node) -> void:
