@@ -365,6 +365,32 @@ changed but this file wasn't updated.
   actual Wi-Fi) was never tested, out of this environment's reach. See
   `memory/verify.md`'s Phase 10 section and `memory/plan.md`'s Slice 10
   block for full evidence.
+- [x] Fixed a real gap the human owner caught during manual play-testing
+  after Fases 7-10: a hit projectile only ever `queue_free()`'d on the
+  server -- every other peer's own decorative copy kept flying until
+  its `remaining_lifetime_frames` ran out, instead of disappearing the
+  moment it actually hit. Known and explicitly documented as deferred
+  since Phase 2b's own code comment ("a deliberate, minor visual-
+  polish gap for this first pass"), not a regression from Fases 7-10.
+  Fixed with a new `CombatResolver._rpc_despawn_projectile(network_id)`
+  broadcast (`@rpc("authority", "reliable", "call_local")`, same shape
+  as the existing `_rpc_spawn_projectile`), fired the instant the
+  server confirms a hit; `Projectile`'s node is now named `str(
+  network_id)` (same "look it up by a replicated id" convention
+  `PlayerSpawner` already uses for characters) so the RPC can find the
+  exact instance on every peer. Natural lifetime expiry is unaffected
+  -- still needs no RPC, already deterministic on every peer.
+  **Verification note**: forcing a genuine coincidental live hit is
+  impractical in this headless environment for the same reason Phase
+  2b's own testing already established -- confirmed empirically this
+  session (a fired skillshot's default no-real-mouse aim direction
+  points away from where the other peer spawns, not toward it), not
+  assumed. Verified instead by: full GUT suite still green (111/111,
+  no regression), a live 2-process regression run confirming the
+  changed spawn/advance code path still works with zero engine errors,
+  and structural review -- the new RPC mirrors `_rpc_spawn_projectile`
+  exactly, which live testing has already proven correct across every
+  phase that's used it. `gdformat`/`gdlint` clean.
 
 ## Backlog (next up)
 
