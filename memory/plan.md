@@ -14,8 +14,10 @@ skeleton — done and tactically verified 2026-09-02** (see
 **Phase 2b (aimed skillshot/projectile) — done and tactically verified
 2026-09-02** (see `memory/verify.md`'s Phase 2b section). **Phase 3
 (Ability Framework) — done and tactically verified 2026-09-03** (see
-`memory/verify.md`'s Phase 3 section). **Phase 4 (first 2 real classes)
-is next.** Full design is in
+`memory/verify.md`'s Phase 3 section). **Phase 4 (first 2 real
+classes) — done and tactically verified 2026-09-03** (see
+`memory/verify.md`'s Phase 4 section). **Phase 5 (match modes) is
+next.** Full design is in
 `docs/blueprint/` (start at
 `docs/blueprint/README.md`), grounded in
 `docs/research/eslabong-inspiration/` and
@@ -56,9 +58,9 @@ phase independently playable/demoable even if the next never lands):
    Evolution/Specialization branches and a minimal loadout-slot model
    without implementing either yet. **Done** — see Slice 3 below.
 4. First 2 real classes (melee + ranged skillshot archetypes) replace
-   the placeholder character. **Next.**
+   the placeholder character. **Done** — see Slice 4 below.
 5. Match modes: team mode (2v2 default), friendly-fire toggle, win
-   condition, minimal lobby/HUD/match flow.
+   condition, minimal lobby/HUD/match flow. **Next.**
 6. 3rd class (support/control archetype) + free-for-all mode —
    completes `docs/blueprint/04-mvp-scope.md`'s MVP criteria.
 
@@ -214,6 +216,54 @@ until Phase 6 ships.
   way the original hardcoded skillshot path did). See
   `memory/verify.md`'s Phase 3 section for full evidence.
 
+### Slice 4 (Phase 4): Two real, orthogonal classes fight each other in a live match — DONE
+
+- **Data**: 8 new `MoveDefinition` `.tres` files (4 per class) +
+  4 new `AbilityResource` `.tres` files (Q/E per class), all authored
+  with final, concrete stats (no placeholders):
+  - **Vanguard** (melee frontline, `max_health` 120): Quick Slash (LMB,
+    8 dmg), Piercing Thrust (RMB skillshot, 12 dmg projectile), Heavy
+    Slam (Q, melee, 28 dmg, 150f cooldown), Bulwark Strike (E, melee,
+    15 dmg, 100f cooldown) — an all-melee kit plus one projectile poke.
+  - **Ranged Mage** (ranged skillshot dealer, `max_health` 80): Arcane
+    Jab (LMB, 5 dmg, weak self-defense melee), Arcane Bolt (RMB
+    skillshot, 22 dmg projectile, main nuke), Frost Shard (Q,
+    projectile, 10 dmg, 70f cooldown, fast poke), Arcane Nova (E,
+    projectile, 30 dmg, 180f cooldown, payoff spell) — an all-projectile
+    kit past its one melee panic button.
+  - Both classes reuse `CombatResolver`'s shared projectile speed/
+    lifetime constants (already-documented Phase 3 deferral, not a new
+    gap).
+- **Scenes**: `gameplay/characters/vanguard/Vanguard.tscn`,
+  `gameplay/characters/ranged_mage/RangedMage.tscn` — both instance
+  the same unmodified `character_controller.gd`, differing only in
+  which move/ability resources and `max_health` they assign, plus a
+  distinct `Visual` color for basic on-screen distinguishability.
+  `Character.tscn` (the placeholder) is kept, unchanged in role: it's
+  now purely the generic GUT test fixture for framework-level tests
+  (`test_character_controller_combat.gd`), never spawned in an actual
+  match.
+- **Behavior/wiring**: `PlayerSpawner.CLASS_SCENES` alternates Vanguard/
+  RangedMage by connection order (the same array-cycling pattern
+  `SPAWN_POSITIONS` already used) — no lobby or character-select UI;
+  that's Phase 5's job. `TestArena.tscn`'s `MultiplayerSpawner.
+  _spawnable_scenes` updated to the 2 real class scenes (was
+  `Character.tscn`). Mechanical rename alongside this phase's own
+  deliverable: `CharacterController.debug_attack_move`/
+  `debug_skillshot_move` → `attack_move`/`skillshot_move` (7 files) --
+  assigning real class data to a field named "debug_" was actively
+  misleading.
+- **Tests**: new `test_character_classes.gd` (2 tests) confirms each
+  scene's kit is wired correctly (guards against an `ExtResource`
+  pointing at the wrong move/ability, not a duplicate of the generic
+  cooldown-gating coverage already in `test_character_controller_combat.gd`)
+  — 60 total (was 58).
+- **Verify**: live 2-process test confirmed peer 1 (server, spawned
+  first) got Vanguard and the client peer got Ranged Mage (alternation
+  works); Vanguard's Quick Slash (8), Heavy Slam (28), and Bulwark
+  Strike (15) all landed with their exact authored damage values,
+  server-authoritatively. See `memory/verify.md`'s Phase 4 section.
+
 ## Deferred / Out of Scope
 
 - Matchmaking/dedicated-server infrastructure — Phase 1 targets direct
@@ -222,9 +272,13 @@ until Phase 6 ships.
   respec economy) — Phase 3 only seeds the data schema.
 - Rollback netcode reconsideration — deferred until Phase 2's real
   entity counts exist to evaluate against.
-- Any class/ability content — Phases 1-2 use one placeholder character
-  only; Phase 3 adds 2 generic test abilities (Q/E) to that same
-  placeholder; real classes with real kits start at Phase 4.
+- A 3rd class (support/control archetype) — Phase 6, alongside
+  free-for-all mode. Only 2 classes exist after Phase 4 (Vanguard,
+  Ranged Mage), both damage-dealer archetypes; no support/control kit
+  exists yet.
+- Character-select UI / lobby — Phase 4 alternates class by connection
+  order only; a real pick screen is Phase 5's "minimal lobby/HUD/match
+  flow" item.
 - R/F/T keybindings exist in the InputMap (Phase 3) but are not wired
   to any ability — deferred to whichever later phase adds a 3rd+
   ability slot (needs the human owner's decision on how many slots a

@@ -240,3 +240,46 @@ in `progress.md`. No exceptions.
 - [ ] Per-ability projectile speed/lifetime — both projectile-capable
   slots share `CombatResolver`'s existing constants; deferred until a
   real ranged class (Phase 4) needs differentiated projectile feel.
+
+### Phase 4: first 2 real classes (Vanguard, Ranged Mage)
+
+- [x] The `debug_attack_move`/`debug_skillshot_move` → `attack_move`/
+  `skillshot_move` rename touched every call site (`character_controller.gd`,
+  `combat_resolver.gd`, `hitbox_viewer.gd`, `Character.tscn`,
+  `test_character_controller_combat.gd`) — confirmed via `grep -rn` for
+  the old names returning zero matches project-wide (excluding
+  `addons/`) after the rename.
+- [x] `Vanguard.tscn`/`RangedMage.tscn` each wire a distinct, correct
+  kit (not Character.tscn's placeholder data) — 2/2 new GUT tests
+  (`test_character_classes.gd`), asserting `move_name`/`ability_name`/
+  `is_projectile`/`max_health` on both scenes.
+- [x] `godot4 --headless --import` clean after adding 8 new
+  `MoveDefinition` `.tres`, 4 new `AbilityResource` `.tres`, and 2 new
+  character scenes, and after retargeting `TestArena.tscn`'s
+  `MultiplayerSpawner._spawnable_scenes` from `Character.tscn` to the
+  2 real class scenes.
+- [x] Live 2-process test: server (peer 1, spawned first) got Vanguard,
+  the joining client peer got Ranged Mage — confirming `PlayerSpawner.
+  CLASS_SCENES` alternation assigns distinct classes per connection
+  order. Server casting attack + ability_q + ability_e landed Quick
+  Slash (8 dmg), Heavy Slam (28 dmg), and Bulwark Strike (15 dmg) --
+  all 3 exactly matching Vanguard's authored kit stats, resolved
+  server-authoritatively through the same generic `CombatResolver`
+  path Phase 3 already proved. Confirmed via temporary instrumentation
+  (`[VERIFY]`/`# TEMP-VERIFY-PHASE4`), removed after verifying. Zero
+  errors on either peer's log.
+- [x] `gdformat --check` / `gdlint` (project files, excluding the
+  third-party `addons/gut/` which has its own pre-existing,
+  out-of-scope lint findings) / `godot4 --headless --import` all
+  clean. 60/60 GUT tests total project-wide.
+- [ ] Ranged Mage's own kit (Arcane Jab/Bolt/Frost Shard/Nova) wasn't
+  separately exercised in the same live run (only Vanguard, the
+  server's own peer, cast abilities in this test) — not treated as a
+  gap: `test_character_classes.gd` confirms Ranged Mage's kit is wired
+  correctly, and hit *resolution* for a projectile-style ability is
+  already live-verified generically in Phase 3 (Fireball/ability_e).
+  Forcing a second live-cast run with a headless "client casts" flag
+  would exercise the same code path again, not new code.
+- [ ] Character-select UI, a 3rd class, and visual on-screen
+  confirmation of each class's distinct `Visual` color are explicitly
+  deferred — see `memory/plan.md`'s Slice 4 block and Deferred list.
