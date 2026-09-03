@@ -1,0 +1,56 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://net/dev_bootstrap.gd" id="1_boot"]
+[ext_resource type="Script" path="res://net/player_spawner.gd" id="2_spwn"]
+[ext_resource type="Script" path="res://ui/hud/network_stats_overlay.gd" id="3_stats"]
+[ext_resource type="PackedScene" path="res://camera/ArenaCamera.tscn" id="4_cam"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_horiz"]
+size = Vector2(1200, 32)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_vert"]
+size = Vector2(32, 800)
+
+[node name="TestArena" type="Node2D"]
+
+[node name="DevBootstrap" type="Node" parent="."]
+script = ExtResource("1_boot")
+
+[node name="Walls" type="StaticBody2D" parent="."]
+
+[node name="Ceiling" type="CollisionShape2D" parent="Walls"]
+position = Vector2(600, 0)
+shape = SubResource("RectangleShape2D_horiz")
+
+[node name="Floor" type="CollisionShape2D" parent="Walls"]
+position = Vector2(600, 800)
+shape = SubResource("RectangleShape2D_horiz")
+
+[node name="LeftWall" type="CollisionShape2D" parent="Walls"]
+position = Vector2(0, 400)
+shape = SubResource("RectangleShape2D_vert")
+
+[node name="RightWall" type="CollisionShape2D" parent="Walls"]
+position = Vector2(1200, 400)
+shape = SubResource("RectangleShape2D_vert")
+
+[node name="Characters" type="Node2D" parent="."]
+
+[node name="ArenaCamera" parent="." instance=ExtResource("4_cam")]
+
+[node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
+_spawnable_scenes = PackedStringArray("res://gameplay/characters/character_base/Character.tscn")
+spawn_path = NodePath("../Characters")
+
+[node name="PlayerSpawner" type="Node" parent="."]
+script = ExtResource("2_spwn")
+
+[node name="NetworkStatsOverlay" type="CanvasLayer" parent="."]
+script = ExtResource("3_stats")
+
+[node name="Label" type="Label" parent="NetworkStatsOverlay"]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 300.0
+offset_bottom = 40.0
+text = "Ping: -- | Snapshots/s: --"
