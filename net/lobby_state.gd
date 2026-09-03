@@ -115,13 +115,21 @@ func _ready() -> void:
 ## without any Node/multiplayer context, matching this project's
 ## WinCondition-style "pure logic gets a GUT test" convention.
 func resolve_class_id(requested: String) -> String:
-	return requested if requested in CLASS_IDS else CLASS_IDS[0]
+	return _resolve_id(requested, CLASS_IDS)
 
 
-## Pure, same shape as resolve_class_id() -- see that function's own
-## doc comment.
+## Pure, same validate-or-default rule as resolve_class_id() -- kept as
+## its own named function (rather than callers using _resolve_id()
+## directly) so both id kinds still read as one obvious call each, with
+## the shared logic centralized in _resolve_id() instead of copied.
 func resolve_perk_id(requested: String) -> String:
-	return requested if requested in PERK_IDS else PERK_IDS[0]
+	return _resolve_id(requested, PERK_IDS)
+
+
+## Shared by resolve_class_id()/resolve_perk_id() so the validate-or-
+## default rule lives in exactly one place.
+func _resolve_id(requested: String, valid_ids: Array[String]) -> String:
+	return requested if requested in valid_ids else valid_ids[0]
 
 
 func get_class_id(peer_id: int, fallback: String = "") -> String:

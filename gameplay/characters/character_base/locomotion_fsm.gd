@@ -20,8 +20,9 @@ const DASH_SPEED := 620.0
 const DASH_DURATION := 0.15
 const DASH_COOLDOWN := 0.6
 
-## Set once at spawn (net/player_spawner.gd) from the peer's chosen
-## Room Config perk (Phase 9) -- 1.0 (no-op) for anyone without one.
+## Set once at spawn, on every peer's own copy of this character, from
+## CharacterController._apply_perk_from_lobby_state() (the peer's chosen
+## Room Config perk, Phase 9) -- 1.0 (no-op) for anyone without one.
 ## Deliberately scoped to walk speed only, not DASH_SPEED: dash is a
 ## distinct evasive tool with its own balance, not "movement speed" in
 ## the sense the Swift/Balanced perks describe.
