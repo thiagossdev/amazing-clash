@@ -1,9 +1,9 @@
 class_name HitboxViewer
 extends Node2D
 ## Dev-tool world-space overlay: draws every character's own hurtbox
-## (always) and an active attacker's hitbox(es) (Phase 2a, melee only --
-## Phase 2b adds projectile shapes), plus the arena walls' collision
-## rects and each character's own physics CollisionShape2D circle.
+## (always), an active attacker's melee hitbox(es), every live
+## projectile's own hitbox, plus the arena walls' collision rects and
+## each character's own physics CollisionShape2D circle.
 ## Pattern inherited from amazing-nauts' ui/debug/hitbox_viewer.gd,
 ## scoped down: no beams/armor-tinted hurtboxes -- neither exists in
 ## this project's design yet.
@@ -21,6 +21,7 @@ const LINE_WIDTH := 2.0
 
 @export var characters_path: NodePath = ^"../Characters"
 @export var walls_path: NodePath = ^"../Walls"
+@export var projectiles_path: NodePath = ^"../Projectiles"
 
 
 func _ready() -> void:
@@ -51,6 +52,11 @@ func _draw() -> void:
 	if walls:
 		for shape_owner in walls.get_children():
 			_draw_wall_shape(shape_owner)
+	var projectiles := get_node_or_null(projectiles_path)
+	if projectiles:
+		for projectile in projectiles.get_children():
+			if projectile is Projectile:
+				_draw_projectile_hitbox(projectile)
 
 
 func _draw_character_shape(character: CharacterController) -> void:
@@ -69,12 +75,20 @@ func _draw_hurtbox(character: CharacterController) -> void:
 
 
 func _draw_hitbox_if_active(character: CharacterController) -> void:
-	if not character.action_fsm.is_hitbox_active() or not character.debug_attack_move:
+	if character.action_fsm.current_move != character.debug_attack_move:
+		return
+	if not character.action_fsm.is_hitbox_active():
 		return
 	for hit in character.debug_attack_move.hit_definitions:
 		var rect := HitDetection.hitbox_rect(
 			character.global_position, character.get_aim_direction(), hit
 		)
+		draw_rect(_to_local(rect), HITBOX_COLOR, false, LINE_WIDTH)
+
+
+func _draw_projectile_hitbox(projectile: Projectile) -> void:
+	for hit in projectile.hit_definitions:
+		var rect := HitDetection.projectile_hitbox_rect(projectile.global_position, hit.hitbox_size)
 		draw_rect(_to_local(rect), HITBOX_COLOR, false, LINE_WIDTH)
 
 
