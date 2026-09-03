@@ -10,6 +10,17 @@ func is_action_just_pressed(action: StringName) -> bool:
 	return false if suppress_gameplay_input else Input.is_action_just_pressed(action)
 
 
+## Held state (not just the press edge) -- used for actions that should
+## auto-repeat while the button stays down, gated only by their own
+## cooldown/recovery (attack/skillshot/ability_q/ability_e via
+## CharacterController.apply_input()'s existing can_start_move/
+## cooldown checks, unchanged by this). Not used for dash, which stays
+## edge-triggered (is_action_just_pressed) -- auto-repeating an evasive
+## burst on hold is a separate balance question, not asked for here.
+func is_action_pressed(action: StringName) -> bool:
+	return false if suppress_gameplay_input else Input.is_action_pressed(action)
+
+
 func get_axis(negative_action: StringName, positive_action: StringName) -> float:
 	return 0.0 if suppress_gameplay_input else Input.get_axis(negative_action, positive_action)
 

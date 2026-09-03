@@ -424,6 +424,29 @@ changed but this file wasn't updated.
   Comment corrected in place; a future headless melee-hit test would
   need an explicit fake-aim dev flag, not a coincidental default,
   mirroring how class/perk already get one.
+- [x] Holding attack/skillshot/ability_q/ability_e now auto-repeats
+  the instant that slot's own move+recovery (or ability cooldown)
+  ends, instead of requiring a fresh press each time -- the human
+  owner's own request while play-testing. New
+  `InputManager.is_action_pressed()` (held state, mirroring the
+  existing `is_action_just_pressed()`), swapped in for all 4 of
+  `_sample_local_input()`'s attack/skillshot/ability_q/ability_e reads.
+  `dash` deliberately left edge-triggered (`is_action_just_pressed`,
+  unchanged) -- auto-repeating an evasive burst on hold is a separate
+  balance question, not asked for here. The actual repeat gating is
+  unchanged (`apply_input()`'s existing `can_start_move`/cooldown-
+  remaining checks), so "respects cooldown" was already correct by
+  construction, not new logic. New GUT test
+  `test_holding_attack_auto_repeats_once_the_move_ends` locks the
+  `apply_input()`-level contract (112 total tests, was 111); the
+  `_sample_local_input()` half isn't unit-testable (depends on the
+  real `Input` singleton), so verified live instead: `net/
+  dev_bootstrap.gd`'s existing `--simulate-attack` flag already never
+  releases the key it presses, so under the old edge-triggered
+  behavior it fired exactly once by design -- under the new held-state
+  behavior the same unmodified flag produced 9 full attack cycles
+  (20 frames each) in a ~4.8s window, temporary trace confirmed then
+  removed. `gdformat`/`gdlint` clean, no regressions.
 
 ## Backlog (next up)
 
