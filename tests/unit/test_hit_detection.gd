@@ -26,6 +26,11 @@ func test_hurtbox_rect_centers_on_defender() -> void:
 	assert_eq(rect.get_center(), Vector2(200, 200))
 
 
+func test_projectile_hitbox_rect_centers_on_projectile_position() -> void:
+	var rect := HitDetection.projectile_hitbox_rect(Vector2(300, 300), Vector2(20, 20))
+	assert_eq(rect.get_center(), Vector2(300, 300))
+
+
 func test_query_true_when_boxes_overlap() -> void:
 	var hitbox := Rect2(Vector2(0, 0), Vector2(50, 50))
 	var hurtbox := Rect2(Vector2(25, 25), Vector2(50, 50))
