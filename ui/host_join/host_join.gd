@@ -21,7 +21,18 @@ func _ready() -> void:
 	_maybe_dev_autoconnect()
 
 
+## Releases our own listen-socket bind on DISCOVERY_PORT (via
+## stop_listening()) BEFORE anything else -- including before
+## NetworkManager.host() -- so a sibling process on the same machine
+## trying to bind that same port to listen (this project's own
+## 2-headless-process local-verification convention) isn't held up any
+## longer than necessary. PacketPeerUDP.bind() has no SO_REUSEPORT
+## option in Godot's GDScript API, so 2 real processes briefly racing
+## for the same port is a genuine, if narrow, possibility here -- never
+## a concern for 2 real players, who are always on separate machines
+## with separate network stacks.
 func _on_host_pressed() -> void:
+	LanDiscovery.stop_listening()
 	var err := NetworkManager.host()
 	if err != OK:
 		_status_label.text = "Failed to host (error %s)" % err
@@ -104,3 +115,4 @@ func _await_and_join_discovered_room() -> void:
 			_on_join_pressed(ip)
 			return
 		await get_tree().create_timer(0.5).timeout
+	_status_label.text = "No LAN rooms found -- try Join by IP."

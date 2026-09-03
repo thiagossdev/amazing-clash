@@ -57,6 +57,8 @@ func start_advertising() -> void:
 ## new joiners (Room Config's Start button, see ui/lobby/lobby.gd) --
 ## advertising a room nobody can actually join anymore is pointless.
 func stop_advertising() -> void:
+	if _advertise_socket:
+		_advertise_socket.close()
 	_advertise_socket = null
 
 
