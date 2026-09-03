@@ -21,6 +21,18 @@ const PROJECTILE_SCENE := preload("res://gameplay/projectiles/Projectile.tscn")
 const PROJECTILE_SPEED := 700.0
 const PROJECTILE_LIFETIME_FRAMES := 120  # 2s @ 60Hz
 
+## Phase 11 (lag compensation): a hit resolves against the defender's
+## position at the attacker's estimated one-way-latency timestamp, not
+## the defender's live current position -- so an attacker who visually
+## saw the defender in range (on their own screen, some ms ago) isn't
+## penalized by round-trip delay for something that was true when they
+## acted. Bounded to MAX_COMPENSATION_TICKS (~200ms) so a very
+## high-latency attacker can't reach arbitrarily far into the past;
+## see docs/research/networking-architecture-inspiration/ for the
+## industry precedent (Valve/Source, Overwatch) this follows.
+const MS_PER_TICK := 1000.0 / 60.0
+const MAX_COMPENSATION_TICKS := 12
+
 @export var characters_path: NodePath = ^"../Characters"
 @export var projectiles_path: NodePath = ^"../Projectiles"
 
@@ -94,7 +106,7 @@ func _resolve_melee(
 			if not MatchState.friendly_fire_enabled and defender.team == attacker.team:
 				continue
 			var hurtbox := HitDetection.hurtbox_rect(
-				defender.global_position, defender.hurtbox_size
+				_compensated_defender_position(attacker, defender), defender.hurtbox_size
 			)
 			if HitDetection.query(hitbox, hurtbox):
 				_apply_hit(attacker, defender, hit)
@@ -224,7 +236,9 @@ func _resolve_projectile_hit(projectile: Projectile, roster: Array) -> bool:
 			continue
 		if not MatchState.friendly_fire_enabled and defender.team == projectile.caster.team:
 			continue
-		var hurtbox := HitDetection.hurtbox_rect(defender.global_position, defender.hurtbox_size)
+		var hurtbox := HitDetection.hurtbox_rect(
+			_compensated_defender_position(projectile.caster, defender), defender.hurtbox_size
+		)
 		for hit in projectile.hit_definitions:
 			var hitbox := HitDetection.projectile_hitbox_rect(
 				projectile.global_position, hit.hitbox_size
@@ -234,6 +248,21 @@ func _resolve_projectile_hit(projectile: Projectile, roster: Array) -> bool:
 				projectile.already_hit.append(defender)
 				return true
 	return false
+
+
+## The defender's position rewound to the attacker's estimated
+## one-way-latency timestamp (half the attacker's own measured RTT,
+## converted to ticks at 60Hz, bounded to MAX_COMPENSATION_TICKS).
+## NetworkManager.get_peer_rtt_ms() already returns 0 for a peer id
+## that isn't a connected remote peer -- correctly zero-compensating
+## the server's own listen-server player, who has no real network hop
+## to account for.
+func _compensated_defender_position(
+	attacker: CharacterController, defender: CharacterController
+) -> Vector2:
+	var one_way_ms := NetworkManager.get_peer_rtt_ms(attacker.name.to_int()) / 2.0
+	var compensation_ticks := mini(int(round(one_way_ms / MS_PER_TICK)), MAX_COMPENSATION_TICKS)
+	return defender.position_at_tick(defender.current_tick() - compensation_ticks)
 
 
 func _apply_hit(

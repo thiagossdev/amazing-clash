@@ -672,3 +672,51 @@ in `progress.md`. No exceptions.
   prior UI-adjacent phase; this phase is not UI-adjacent (a pure
   position-calculation change) so this is recorded for consistency,
   not because anything new needed it.
+
+### Phase 11: lag compensation in HitDetection
+
+- [x] `test_hit_detection.gd` (4 new `position_at_or_before()` cases):
+  exact-tick match, latest-strictly-before-target match (no exact
+  entry at the target tick), falls back to the given default when
+  every history entry is newer than the target, falls back on empty
+  history.
+- [x] `test_character_controller_combat.gd` (2 new `position_at_tick()`
+  cases): reads the correct entry from a manually-populated
+  `_position_history`; falls back to live `global_position` when
+  history is empty.
+- [x] `gdformat`/`gdlint` clean across every changed file
+  (`gameplay/combat/hit_detection.gd`, `gameplay/combat/
+  combat_resolver.gd`, `gameplay/characters/character_base/
+  character_controller.gd`, both test files). 127/127 GUT tests total
+  project-wide (was 121).
+- [x] TDD confirmed: ran both new test files' additions before
+  implementing `position_at_or_before()`/`position_at_tick()` -- real
+  GDScript parse errors (the functions didn't exist yet), not just
+  failed assertions, then implemented until green.
+- [x] Live 2-process regression (`--simulate-attack --simulate-
+  skillshot --simulate-ability-q` on the host, `--simulate-move` on
+  the client): zero engine errors with every hit-resolution call site
+  now routed through the new compensation lookup.
+- [x] **Correctness of the RTT=0 (loopback) case verified by code-path
+  reasoning, not just live absence-of-errors**: `CombatResolver` is
+  wired as `TestArena`'s LAST child specifically so every character's
+  own `_physics_process` (which now includes `_record_position_
+  history()`) has already run for the current tick before any hit
+  resolves. With `NetworkManager.get_peer_rtt_ms()` returning 0 for
+  the loopback connections this environment can produce,
+  `compensation_ticks` is always 0 here, so `position_at_tick(current_
+  tick)` returns exactly the position just recorded this same tick --
+  identical to the pre-Phase-11 `defender.global_position` read. This
+  is why a live run showing "combat still works, zero errors" is
+  meaningful evidence here, not just a smoke test.
+- [ ] **Genuine non-zero-latency compensation was not demonstrated
+  live** -- this dev environment has no way to inflate the real
+  measured ENet RTT between 2 local processes (distinct from
+  `NetworkManager.artificial_latency_ms`, which only delays local
+  side-effects of received data, not the actual wire round-trip
+  `get_peer_rtt_ms()` reads). The compensation math itself is unit-
+  tested and the RTT=0 case is proven live and by reasoning above;
+  what's not proven live is the case that actually matters most for a
+  real high-latency player. Documented as an honest gap, not claimed.
+- [ ] **Visual verification not applicable** -- this phase changes no
+  UI, only server-side hit resolution.

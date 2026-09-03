@@ -500,6 +500,27 @@ changed but this file wasn't updated.
   project-wide (was 117). 2 live 3-process runs (team mode + FFA), zero
   engine errors on either. See `memory/verify.md`'s Phase 12 section
   and `memory/plan.md`'s Slice 12 block for full evidence.
+- [x] **Phase 11 (lag compensation in `HitDetection`) implemented and
+  tactically verified**: new per-character `_position_history` ring
+  buffer (24 entries, ~400ms @60Hz) on `CharacterController`, recorded
+  every authoritative physics tick; new pure `HitDetection.
+  position_at_or_before()`; new `CombatResolver.
+  _compensated_defender_position()` used by both `_resolve_melee` and
+  `_resolve_projectile_hit` in place of `defender.global_position`,
+  bounded to 12 ticks (~200ms) of compensation via `NetworkManager.
+  get_peer_rtt_ms()`. TDD: 6 new tests across `test_hit_detection.gd`
+  and `test_character_controller_combat.gd`, confirmed failing (real
+  parse errors) before implementing -- 127 total GUT tests
+  project-wide (was 121). Live 2-process regression (melee, skillshot,
+  and ability_q, one peer moving) clean, zero engine errors. **Honestly
+  scoped**: this environment's loopback RTT measures ~0ms, so the
+  compensation math is mathematically a no-op here (confirmed by
+  `CombatResolver`'s own last-child tick ordering, not just assumed) --
+  a genuine non-zero-latency demonstration isn't practical to force
+  (no way to inflate real measured ENet RTT in this environment,
+  distinct from `NetworkManager.artificial_latency_ms`, which only
+  delays local side-effects). See `memory/verify.md`'s Phase 11
+  section and `memory/plan.md`'s Slice 11 block for full evidence.
 
 ## Backlog (next up)
 
@@ -511,17 +532,8 @@ changed but this file wasn't updated.
   `docs/blueprint/05-open-questions.md` and `memory/plan.md`'s "Open
   Questions" section for the decisions and their backlog follow-ups
   below.
-- [ ] Implement real lag compensation in `HitDetection` (rewind
-  hurtboxes to the timestamp the attacker actually saw, per
-  `docs/blueprint/03-networking-and-match-modes.md`'s intended
-  architecture) — confirmed not yet implemented (no position-history
-  buffer or timestamp rewind exists in `gameplay/combat/` or `net/`
-  today; hits resolve against each character's live server-tick
-  position only). Concrete gap surfaced by
-  `docs/research/networking-architecture-inspiration/04-synthesis-amazingclash.md`,
-  which also sketches a suggested implementation shape (short rolling
-  position-history buffer keyed by server tick, bounded compensation
-  window).
+- [x] ~~Implement real lag compensation in `HitDetection`~~ — resolved
+  by Phase 11, see the Phase 11 entry above.
 - [x] ~~Generalize `PlayerSpawner`'s team assignment~~ — resolved by
   Phase 8 (manual team placement in Room Config) and Phase 12 (spawn
   *positions* generalized beyond the old 4 hardcoded points) together.

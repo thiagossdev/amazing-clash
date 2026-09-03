@@ -40,6 +40,14 @@ const HIT_FLASH_MODULATE := Color(2.2, 2.2, 2.2, 1.0)
 const ACTIVE_SWING_MODULATE := Color(1.35, 1.35, 1.35, 1.0)
 const NEUTRAL_MODULATE := Color(1.0, 1.0, 1.0, 1.0)
 
+## Phase 11 (lag compensation): how many of this character's own recent
+## positions _position_history keeps, at 1 entry/physics tick (60Hz) --
+## ~400ms of history, generous headroom over the max compensation
+## window CombatResolver itself enforces (see its own MAX_COMPENSATION_
+## TICKS), so that window -- not this buffer's depth -- is always the
+## real limiting factor.
+const POSITION_HISTORY_MAX_ENTRIES := 24
+
 ## Which child node's local `position` absorbs the reconciliation-
 ## smoothing offset.
 @export var visual_path: NodePath = ^"Visual"
@@ -160,6 +168,13 @@ var _lock_frames: int = 0
 ## comes from Checkpoint carrying them, restored before replay.
 var _ability_q_cooldown_frames: int = 0
 var _ability_e_cooldown_frames: int = 0
+## Server-only (AUTHORITATIVE): a short ring buffer of this character's
+## own recent positions, keyed by _server_sim.tick_count(), for lag-
+## compensated hit resolution (see position_at_tick() and
+## CombatResolver's own use of it). Never part of ClientPredictor.
+## Checkpoint -- same category as _server_sim itself, only meaningful
+## on the AUTHORITATIVE instance.
+var _position_history: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -273,7 +288,9 @@ func _physics_step_authoritative(delta: float) -> void:
 	elif current_health > 0.0:
 		apply_input(sample)
 		move_and_slide()
-	if _server_sim.should_broadcast_snapshot():
+	var should_broadcast := _server_sim.should_broadcast_snapshot()
+	_record_position_history()
+	if should_broadcast:
 		_rpc_receive_snapshot.rpc(
 			_server_sim.tick_count(),
 			global_position,
@@ -489,6 +506,35 @@ func _is_any_action_active() -> bool:
 		or ability_q_fsm.state == ActionFsm.State.ACTIVE
 		or ability_e_fsm.state == ActionFsm.State.ACTIVE
 	)
+
+
+## Server-only (AUTHORITATIVE): appends this tick's position to
+## _position_history, dropping the oldest entry once past
+## POSITION_HISTORY_MAX_ENTRIES -- called every _physics_step_
+## authoritative tick regardless of whether this character actually
+## moved (a frozen/locked character's position still matters for lag
+## compensation).
+func _record_position_history() -> void:
+	_position_history.append({"tick": _server_sim.tick_count(), "position": global_position})
+	if _position_history.size() > POSITION_HISTORY_MAX_ENTRIES:
+		_position_history.pop_front()
+
+
+## Server-only: this character's own position at (or the closest tick
+## before) target_tick, from its recent position history -- used by
+## CombatResolver for lag-compensated hit resolution. Falls back to the
+## character's live current position if target_tick predates
+## everything still buffered (a very fresh spawn, or a compensation
+## request wider than POSITION_HISTORY_MAX_ENTRIES actually covers).
+func position_at_tick(target_tick: int) -> Vector2:
+	return HitDetection.position_at_or_before(_position_history, target_tick, global_position)
+
+
+## Server-only: this character's own current authoritative tick count
+## (0 if it has none, e.g. a non-AUTHORITATIVE instance -- CombatResolver
+## never calls this on one, but the guard keeps it safe either way).
+func current_tick() -> int:
+	return _server_sim.tick_count() if _server_sim else 0
 
 
 func _decay_visual_position_error(delta: float) -> void:
