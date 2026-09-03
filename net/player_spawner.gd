@@ -32,6 +32,11 @@ extends Node
 ## own index % 2 is intentional, not a bug: it's what makes team
 ## composition vary (not every team gets the exact same class pairing)
 ## as more players connect, with no extra logic needed for that.
+##
+## Phase 8: Team mode now prefers a peer's manually-assigned
+## LobbyState.get_team_id() (Room Config), falling back to the
+## original index % 2 for an unregistered peer -- see
+## _resolve_team_id() below. FFA is unaffected, unchanged from Phase 6.
 const CLASS_SCENES: Array[PackedScene] = [
 	preload("res://gameplay/characters/vanguard/Vanguard.tscn"),
 	preload("res://gameplay/characters/ranged_mage/RangedMage.tscn"),
@@ -111,13 +116,24 @@ func _spawn_for_peer(peer_id: int, characters: Node) -> void:
 	var character := class_scene.instantiate()
 	character.name = str(peer_id)
 	character.position = SPAWN_POSITIONS[_next_spawn_index % SPAWN_POSITIONS.size()]
-	character.team = (
-		_next_spawn_index
-		if MatchState.match_mode == MatchState.MatchMode.FREE_FOR_ALL
-		else _next_spawn_index % 2
-	)
+	character.team = _resolve_team_id(peer_id)
 	_next_spawn_index += 1
 	characters.add_child(character)
+
+
+## FFA is unaffected by Phase 8 -- every player still gets a unique
+## team id off the same spawn-order counter Phase 6 already used, no
+## manual assignment exists or is needed for it. Team mode now prefers
+## Room Config's manually-assigned team_id for any peer that went
+## through it; an unregistered peer (net/dev_bootstrap.gd's headless
+## test peers, which never touch LobbyState) falls back to the
+## original index % 2 alternation unchanged.
+func _resolve_team_id(peer_id: int) -> int:
+	if MatchState.match_mode == MatchState.MatchMode.FREE_FOR_ALL:
+		return _next_spawn_index
+	if LobbyState.get_class_id(peer_id, "") == "":
+		return _next_spawn_index % 2
+	return LobbyState.get_team_id(peer_id, _next_spawn_index % 2)
 
 
 ## Uses LobbyState's registered choice for peer_id if one exists (the

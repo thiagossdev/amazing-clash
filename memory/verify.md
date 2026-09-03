@@ -465,6 +465,70 @@ in `progress.md`. No exceptions.
   still pending is untested and unguarded — an edge case, not a known
   bug; `ui/host_join/host_join.gd` doesn't disable the button or debounce
   the click.
-- [ ] Room Config (mode/friendly-fire/team assignment/ready/perks) and
-  LAN discovery remain explicitly deferred — see `memory/plan.md`'s
-  "Slices 8-10" section.
+- [ ] Perks and LAN discovery remain explicitly deferred — see
+  `memory/plan.md`'s "Slices 9-10" section. Room Config (mode,
+  friendly-fire, manual teams, ready) is done, see Phase 8 below.
+
+### Phase 8: Room Config -- mode, friendly fire, manual teams, ready, Start
+
+- [x] `test_lobby_state.gd` (16/16 GUT tests, 9 new): `get_team_id()`
+  fallback/registered, `is_ready()` default/registered,
+  `all_non_host_ready()` (trivially true solo, false when a peer
+  hasn't reported, ignores the host's own flag, true once every
+  non-host peer reports), `has_valid_team_split()` (trivially true
+  under 2 players, false when everyone shares one team, true once 2
+  teams have members).
+- [x] `gdformat`/`gdlint` clean across every new/changed file
+  (`net/lobby_state.gd`, `net/player_spawner.gd`,
+  `core/match_state.gd`, `ui/lobby/lobby.gd`, `ui/lobby/Lobby.tscn`).
+  86/86 GUT tests total project-wide (was 77).
+- [x] Live 2-process test (`--dev-autoplay --dev-class=<id> --dev-host
+  --dev-switch-team --dev-autostart --dev-trace` /
+  `--dev-autoplay --dev-class=<id> --dev-join=127.0.0.1 --dev-ready
+  --dev-trace`, temporary `FileAccess`-based trace instrumentation in
+  `ui/lobby/lobby.gd`/`net/player_spawner.gd` since plain `print()`
+  proved unreliable here -- Godot's own stdout buffering doesn't
+  respect `stdbuf -oL` when output is redirected to a file, confirmed
+  by comparing a run with and without it; removed before the final
+  commit): confirmed (a) default team alternation (host team 0, client
+  team 1) plus a host-issued manual "Switch Team" correctly moving the
+  client onto the host's team (both spawned on team 0); (b) the Start
+  button's `disabled` state genuinely gated on readiness --
+  `start_disabled=true` while the client hadn't reported ready yet,
+  `false` once it had; (c) host-chosen FFA mode + friendly-fire both
+  reaching the real `MatchState` and the real spawn
+  (`mode=1 ff=true` on both characters' spawn trace).
+- [x] A 4th live run specifically re-confirmed the `match_mode`
+  replication fix (see `memory/gotchas.md` 2026-09-03) on the
+  **client's own process**, not just the host's -- a temporary trace
+  in `MatchState._rpc_enter_in_progress()` showed
+  `local_mode=1` on both the host's and the client's own separate
+  trace files after the host chose FFA, confirming the client's local
+  `MatchState.match_mode` actually updates now (previously would have
+  stayed at the `TEAM` default, since nothing broadcast it before this
+  fix).
+- [x] `has_valid_team_split()`'s wiring into the Start button's
+  `disabled` gate was verified by code inspection, not a 5th live run
+  -- simple boolean composition on top of already-live-tested pieces
+  (`all_non_host_ready()`, and the pure function itself is
+  GUT-covered); a live run would only re-prove logic already proven
+  elsewhere, unlike the `match_mode` fix, which specifically needed a
+  real 2nd process (a client's own local state isn't observable from
+  the host's side).
+- [x] `/check` (high severity) run on the full branch diff before
+  merge; found 2 real bugs (match_mode replication, team-split
+  soft-lock) and 1 stale doc-comment reference, all fixed -- see
+  `memory/plan.md`'s Slice 8 block and `memory/gotchas.md` 2026-09-03
+  for the specifics. The 4th finding (missing `memory/verify.md`/
+  `memory/plan.md` updates) is this section and the Slice 8 block
+  themselves.
+- [ ] **Visual verification not done** -- same unsolved gap as every
+  prior UI-adjacent phase (no way to screenshot Godot's actual
+  renderer in this environment). Room Config is a real UI screen with
+  no visual confirmation beyond live functional testing and code
+  reading.
+- [ ] The disabled Start button gives the host no on-screen reason
+  (not-ready vs. invalid team split) -- a small UX follow-up, not a
+  correctness gap, see `memory/progress.md`'s Backlog.
+- [ ] Perks and LAN discovery remain explicitly deferred -- see
+  `memory/plan.md`'s "Slices 9-10" section.

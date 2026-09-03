@@ -106,9 +106,9 @@ func _on_peer_connected(peer_id: int) -> void:
 	if not NetworkManager.is_server():
 		return
 	if current_phase == Phase.IN_PROGRESS:
-		_rpc_enter_in_progress.rpc_id(peer_id)
+		_rpc_enter_in_progress.rpc_id(peer_id, match_mode)
 	elif current_phase == Phase.POST_GAME:
-		_rpc_enter_post_game.rpc_id(peer_id, winning_team)
+		_rpc_enter_post_game.rpc_id(peer_id, winning_team, match_mode)
 	if current_phase != Phase.LOBBY:
 		_rpc_receive_team_status.rpc_id(peer_id, team_alive_counts)
 
@@ -125,19 +125,28 @@ func _on_peer_disconnected(peer_id: int) -> void:
 		enter_in_progress()
 
 
-## Server-only: called by ui/lobby/lobby.gd's host-only Start button.
-## Every peer reacts by scene-changing to TestArena.tscn; the actual
-## match doesn't start until every one of them reports back ready, see
-## report_loaded() below.
-func enter_loading() -> void:
+## Server-only: called by ui/lobby/lobby.gd's host-only Start button
+## with the mode chosen in Room Config. Every peer reacts by scene-
+## changing to TestArena.tscn; the actual match doesn't start until
+## every one of them reports back ready, see report_loaded() below.
+## Phase 8: broadcasts mode here (rather than leaving match_mode
+## server-local, as it was when only dev_bootstrap.gd's --free-for-all
+## flag set it identically on every process before anyone connected) --
+## a real bug found by /check: without this, a non-host client's own
+## match_mode silently stayed at the TEAM default even in an FFA match,
+## since Room Config's choice previously only reached the server. See
+## memory/gotchas.md.
+func enter_loading(mode: MatchMode) -> void:
 	current_phase = Phase.LOADING
+	match_mode = mode
 	_loaded_peer_ids.clear()
-	_rpc_enter_loading.rpc()
+	_rpc_enter_loading.rpc(mode)
 
 
 @rpc("authority", "reliable", "call_local")
-func _rpc_enter_loading() -> void:
+func _rpc_enter_loading(mode: int) -> void:
 	current_phase = Phase.LOADING
+	match_mode = mode
 	EventBus.match_state_changed.emit(current_phase)
 
 
@@ -176,14 +185,19 @@ func _all_connected_peers_loaded() -> bool:
 	return true
 
 
+## No mode parameter -- broadcasts the current match_mode, already set
+## either by enter_loading() (Room Config flow) or directly by
+## dev_bootstrap.gd's --free-for-all flag before this is ever called
+## (direct-connect flow, which skips LOADING entirely).
 func enter_in_progress() -> void:
 	current_phase = Phase.IN_PROGRESS
-	_rpc_enter_in_progress.rpc()
+	_rpc_enter_in_progress.rpc(match_mode)
 
 
 @rpc("authority", "reliable", "call_local")
-func _rpc_enter_in_progress() -> void:
+func _rpc_enter_in_progress(mode: int) -> void:
 	current_phase = Phase.IN_PROGRESS
+	match_mode = mode
 	EventBus.match_state_changed.emit(current_phase)
 
 
@@ -200,13 +214,14 @@ func enter_post_game(winning: int) -> void:
 		return
 	current_phase = Phase.POST_GAME
 	winning_team = winning
-	_rpc_enter_post_game.rpc(winning)
+	_rpc_enter_post_game.rpc(winning, match_mode)
 
 
 @rpc("authority", "reliable", "call_local")
-func _rpc_enter_post_game(winning: int) -> void:
+func _rpc_enter_post_game(winning: int, mode: int) -> void:
 	current_phase = Phase.POST_GAME
 	winning_team = winning
+	match_mode = mode
 	EventBus.match_state_changed.emit(current_phase)
 
 
