@@ -521,9 +521,50 @@ changed but this file wasn't updated.
   distinct from `NetworkManager.artificial_latency_ms`, which only
   delays local side-effects). See `memory/verify.md`'s Phase 11
   section and `memory/plan.md`'s Slice 11 block for full evidence.
+- [x] **Phase 13a (grace-period delay before disconnect forfeit)
+  implemented and tactically verified**: `net/player_spawner.gd` no
+  longer despawns immediately on `peer_disconnected` -- starts a 30s
+  grace timer instead (`--dev-grace-period=` override for testing,
+  validated with `is_valid_float()`/`push_error()` rather than
+  silently becoming 0), despawning only if unclaimed. No new freeze
+  mechanism needed -- `ServerSim`'s existing stale-input fallback
+  already stops the character. New `MatchState.players_in_grace_period`
+  (aggregate) drives a minimal `MatchHud` "N player(s) disconnected"
+  line. TDD: 4 new `PlayerSpawner` tests, confirmed failing before
+  implementing -- 131 total GUT tests project-wide (was 127). `/check`
+  (high) found and fixed 5 real issues: a stale `MatchRules` comment
+  claiming instant-forfeit still happens, a `MatchHud` label
+  overpromising "reconnecting..." (Slice 13b doesn't exist yet), the
+  malformed-flag-silently-becomes-0 bug, a missing `.uid` for the
+  Phase-12 test file (pre-existing, caught here), and documenting (not
+  fixing) the edge case of a new peer joining mid-grace-period. Live
+  2-process test (`--dev-grace-period=3`) confirmed the delay and
+  expiry timing via a temporary trace; vulnerability during the grace
+  period was verified by code-path reading (no exclusion exists
+  anywhere in `CombatResolver`), not forced live -- same aim-in-
+  headless limitation every phase since the melee-aim fix has had.
+  See `memory/verify.md`'s Phase 13a section and `memory/plan.md`'s
+  Slice 13a block for full evidence. **Slice 13b (token-based
+  reconnect) is a separate, larger, not-yet-started phase** -- see
+  `memory/plan.md`'s Slice 13b block; needs its own `/think` before
+  implementing, per the human owner's own explicit instruction not to
+  start it here.
 
 ## Backlog (next up)
 
+- [ ] Slice 13b (token-based reconnect) -- see `memory/plan.md`'s Slice
+  13b block for the full decided scope (token identity, no node
+  rename, `controlling_peer_id` indirection, reconnect flow bypasses
+  Character Select/Room Config). Deliberately not started in the same
+  session as 13a -- real identity/networking risk, needs its own
+  `/think` first.
+- [ ] A new peer joining mid-grace-period (Phase 13a) can transiently
+  make more characters "alive" than there are connected peers --
+  doesn't corrupt the win condition (every character is counted
+  honestly, grace-period-frozen or not) or crash anything, just an
+  unusual transient team-size state Phase 13a didn't design for.
+  Found by `/check`. See `gameplay/match/match_rules.gd`'s own doc
+  comment for the mechanism.
 - [ ] `docs/blueprint/05-open-questions.md` is now fully resolved except
   **monetization**, deliberately deferred (2026-09-03) — revisit once
   the core loop is proven fun, not before. All other items (presentation,

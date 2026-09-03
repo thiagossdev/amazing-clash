@@ -110,7 +110,7 @@ phase independently playable/demoable even if the next never lands):
        character in place (vulnerable, not invulnerable -- disconnecting
        has a real cost) for 30s instead of an immediate forfeit, no
        new freeze mechanism needed (`ServerSim`'s existing stale-input
-       fallback already does it). **Not started** — scope below.
+       fallback already does it). **Done** — see Slice 13a below.
     b. Token-based reconnect: a reconnect within the grace window,
        authenticated by a per-player secret token (issued once, held
        in the client's own memory, not IP-matched), resumes the same
@@ -845,37 +845,64 @@ to scoped roadmap phases, not new post-MVP scope).
   stacking) and free-for-all (`--free-for-all`), both zero engine
   errors on every process.
 
-### Slice 13a (Grace-Period Freeze, no reconnect yet) — NOT STARTED
+### Slice 13a (Grace-Period Freeze, no reconnect yet) — DONE
 
-Confirmed by the human owner 2026-09-03. Split from the original single
-Slice 13 (2026-09-03, this session) the same way Slice 2 was split into
-2a/2b -- this half is small, low-risk, and independently valuable even
-if 13b never lands: a disconnect no longer instantly forfeits.
-
-- **Vulnerability during the grace period**: the disconnected
-  character freezes in place but stays **vulnerable** -- disconnecting
-  has a real cost, it is not a safe refuge.
-- **Grace period**: 30 seconds.
-- `PlayerSpawner` no longer despawns immediately on `peer_disconnected`
-  -- it starts a 30s grace timer for that peer's character instead,
-  despawning only if it elapses unclaimed (falls back to exactly
-  today's behavior: `MatchRules` reads the despawn as that team's
-  alive count dropping, per its own already-correct
-  `_ever_present_teams` logic -- unchanged).
-- The character freezing in place needs **no new freeze mechanism**:
-  `ServerSim.next_input()` already degrades a starved input buffer to
-  a neutral (no-movement) sample after `STALE_INPUT_TIMEOUT_TICKS`
-  (~0.2s) with no fresh input arriving -- which a disconnected peer's
-  character already is, permanently, once its owner is gone. The only
-  new work is *not despawning* and tracking the 30s window.
-- `MatchHud`/Room Config need some minimal "player X disconnected,
-  Ns to reconnect" indicator -- exact presentation not specified
-  further than that it must exist.
-- **Deliberately not built here** (Slice 13b's job): a way for the
-  original player to actually reclaim the frozen character. Without
-  13b, the grace period is pure delay -- it still always ends in the
-  same forfeit 13a alone doesn't change that outcome, only when it
-  happens and whether the character was killable in the meantime.
+- **Built exactly as scoped**: `net/player_spawner.gd` no longer
+  despawns on `peer_disconnected` -- `_begin_grace_period()` starts a
+  `get_tree().create_timer(30.0)` (overridable via
+  `--dev-grace-period=<seconds>` for live testing, validated with
+  `is_valid_float()` and `push_error()` on a malformed value rather
+  than silently becoming a 0-second grace period). `_expire_grace_period()`
+  fires on timeout, despawning exactly like the old immediate path
+  did. No new freeze mechanism was needed, as scoped: `ServerSim.
+  next_input()` already degrades a starved input buffer to a neutral
+  sample once `STALE_INPUT_TIMEOUT_TICKS` passes with no fresh input,
+  which a disconnected peer's character already never receives again.
+  The character is fully vulnerable throughout -- no exclusion was
+  added anywhere in `CombatResolver`'s hit-resolution loops.
+- **Client-visible indicator**: new `MatchState.players_in_grace_period`
+  (aggregate count, no per-player identity -- same convention
+  `team_alive_counts` already uses), broadcast via a new `reliable`
+  RPC (not `unreliable_ordered` like team status -- a missed "count
+  changed" update here would leave a stale on-screen indicator, not
+  just a stale number). New `MatchHud` `GraceLabel`: "N player(s)
+  disconnected".
+- **Tests**: 4 new `PlayerSpawner` tests (`_begin_grace_period()`/
+  `_expire_grace_period()` tracking, no-op guards) -- 131 total GUT
+  tests project-wide (was 127). TDD: confirmed failing (real parse
+  errors) before implementing.
+- **`/check` (high) found 5 real issues, all fixed**: (1)
+  `gameplay/match/match_rules.gd`'s header comment still claimed a
+  disconnect drops a team's alive count to 0 *immediately* -- no
+  longer true, corrected in place, and now also documents the grace-
+  period's actual match-flow consequence (a 1v1 disconnect doesn't
+  end the match until the grace period expires or the opponent kills
+  the now-defenseless character) and a known edge case (a new peer
+  joining mid-grace-period can transiently make more characters
+  "alive" than there are connected peers -- doesn't corrupt the win
+  condition, not fixed here, flagged in `memory/progress.md`'s
+  Backlog); (2) `MatchHud`'s original label said "reconnecting...",
+  which promises a mechanism Slice 13b hasn't built yet -- reworded to
+  just "disconnected"; (3) the malformed-flag-value bug described
+  above; (4) `tests/unit/test_player_spawner.gd.uid` was missing from
+  git entirely (a pre-existing gap since Phase 12, caught and fixed
+  here); (5) the edge-case documentation itself.
+- **Verify**: `gdformat`/`gdlint` clean. Live 2-process test with
+  `--dev-grace-period=3` (a real 30s is impractical to wait out
+  live): confirmed via a temporary trace (removed before the final
+  commit) that a disconnect starts the grace period and it expires
+  ~3s later exactly as configured, zero engine errors. Live-confirmed
+  the malformed-flag fix (`--dev-grace-period=abc` logs the expected
+  `push_error` and keeps the 30.0 default). Vulnerability during the
+  grace period was **not** live-forced (aiming a real hit in headless
+  mode is unreliable, the same established limitation every phase
+  since Fase 7's melee-aim fix has carried) -- verified instead by
+  code-path reading: no exclusion for a grace-period character exists
+  anywhere in `CombatResolver`, so it is structurally identical to any
+  other character from combat's point of view.
+- **Known gaps, deferred on purpose**: the mid-grace-period-join edge
+  case above; same visual-verification gap as every prior UI-adjacent
+  phase.
 
 ### Slice 13b (Token-Based Reconnect) — NOT STARTED
 
