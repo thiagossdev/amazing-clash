@@ -404,3 +404,67 @@ in `progress.md`. No exceptions.
 - [ ] Character-select/mode-select UI, per-team-of-one HUD breakdown
   for FFA, and a real reconnect/grace-period system remain explicitly
   deferred — see `memory/plan.md`'s Slice 6 block and Deferred list.
+
+### Phase 7: Main Menu -> Character Select -> Host/Join -> Lobby -> in-game
+
+- [x] `test_lobby_state.gd` (5/5 GUT tests): `resolve_class_id()`
+  passes a valid id through, falls back to the first canonical id for
+  an unrecognized or empty one; `get_class_id()` returns the fallback
+  for an unregistered peer and the registered choice otherwise.
+- [x] `gdformat` / `gdlint` clean across every new/changed file
+  (`net/lobby_state.gd`, `net/loading_reporter.gd`,
+  `net/player_spawner.gd`, `core/match_state.gd`,
+  `ui/main_menu/main_menu.gd`, `ui/character_select/
+  character_select.gd`, `ui/host_join/host_join.gd`,
+  `ui/lobby/lobby.gd`). `godot4 --headless --import` clean. 75/75 GUT
+  tests total project-wide (was 70).
+- [x] Live 2-process end-to-end test of the real flow (`--dev-autoplay
+  --dev-class=<id> --dev-host --dev-autostart` /
+  `--dev-autoplay --dev-class=<id> --dev-join=127.0.0.1`, the
+  headless-only hooks each new screen's `_ready()` reads, driving the
+  exact same handler a real click would): confirmed Main Menu →
+  Character Select → Host/Join → Lobby → in-game end-to-end, each peer
+  spawning as the class it *actually chose* (not the old auto-
+  alternation) — verified by peer id in `PlayerSpawner`'s spawn call
+  matching each process's own `--dev-class` flag. Zero engine errors
+  on either peer, after fixing 2 real races found by this exact test
+  (see `memory/gotchas.md` 2026-09-03, both entries): `PlayerSpawner`
+  spawning before a remote peer's own `MultiplayerSpawner` existed, and
+  `LoadingReporter` reporting before a client's own ENet handshake had
+  finished.
+- [x] Live re-verification that `net/dev_bootstrap.gd`'s own
+  pre-existing flow (`--server --simulate-attack` / `--join`) still
+  works, unchanged, now that it's no longer reached via
+  `project.godot`'s default main scene — invoked with the scene passed
+  explicitly (`godot4 --headless --path .
+  res://maps/test_arena/TestArena.tscn -- --server ...`). Confirmed
+  clean (zero errors) and confirmed the original index-cycling class
+  alternation (Vanguard/Ranged Mage) still holds for these
+  never-registered-in-LobbyState peers.
+- [x] `MatchState.Phase`'s `LOADING` value: a correction from the human
+  owner mid-implementation (the original `/think` plan had dropped it
+  entirely) — restored, with a real `enter_loading()`/
+  `report_loaded()` handshake gating `enter_in_progress()` on every
+  connected peer's own tree being confirmed built. This is exactly the
+  mechanism the 2 live-testing races above needed to be fixed at all;
+  without it, `PlayerSpawner`'s race would have no correct fix.
+- [ ] **Visual verification not done** — no established way in this
+  project to screenshot Godot's actual renderer (same gap flagged at
+  every UI-adjacent phase in this file so far; `playwright-capture.sh`
+  is web-only). Phase 7 adds the project's first real menu screens
+  (Main Menu, Character Select, Host/Join, Lobby) with no visual
+  confirmation beyond live functional testing and code reading. Not
+  silently skipped — named here as an explicit, still-unsolved gap.
+- [ ] A peer connecting mid-LOADING (rather than already being in the
+  Lobby when Start is pressed) has no explicit catch-up RPC for
+  LOADING itself, unlike `IN_PROGRESS`/`POST_GAME` — not treated as a
+  blocking gap: unlikely in this project's direct-connect,
+  small-player-count flow (see `core/match_state.gd`'s own doc
+  comment); worth revisiting if it ever becomes a real problem.
+- [ ] Double-clicking "Join" while a previous connection attempt is
+  still pending is untested and unguarded — an edge case, not a known
+  bug; `ui/host_join/host_join.gd` doesn't disable the button or debounce
+  the click.
+- [ ] Room Config (mode/friendly-fire/team assignment/ready/perks) and
+  LAN discovery remain explicitly deferred — see `memory/plan.md`'s
+  "Slices 8-10" section.

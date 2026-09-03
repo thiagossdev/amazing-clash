@@ -104,6 +104,42 @@ Format:
   treating a negative result as confirmation. A single "nothing
   happened" run proves nothing on its own.
 
+- **2026-09-03** — Phase 7: `PlayerSpawner` spawned unconditionally at
+  `_ready()`, same as every prior phase. That was safe when TestArena
+  was the fixed main scene (every peer's tree already existed by the
+  time anyone connected), but Phase 7 made Lobby → TestArena a real
+  per-peer `change_scene_to_file()` with no cross-process
+  synchronization -- the server's own tree could finish (and start
+  replicating spawned characters) before a remote peer's own
+  `TestArena/MultiplayerSpawner` node existed yet, producing "Node not
+  found: TestArena/MultiplayerSpawner" only on the client, silently
+  never explained by anything server-side (the server's own log showed
+  nothing wrong). → **Rule**: an RPC-driven scene change changes the
+  risk profile of *any* code that assumes "my tree exists, therefore
+  every other connected peer's does too" -- re-audit every `_ready()`
+  that spawns/replicates something the instant a fixed main scene
+  becomes a dynamically-loaded one, don't assume prior-phase-safe code
+  stays safe.
+
+- **2026-09-03** — Phase 7's live 2-process verification: a dev-only
+  `--dev-autostart` hook fired the host's Start button after a fixed
+  1-second `create_timer` delay, mirroring `dev_bootstrap.gd`'s own
+  `--simulate-*` pattern. It looked broken (host started solo,
+  `multiplayer.get_peers()` was empty) even though the client process
+  *had* been launched. Root cause: 2 independent OS processes launched
+  from 2 separate tool calls have no shared clock and no synchronized
+  start time -- `Time.get_ticks_msec()` on one process says nothing
+  about the other's progress, and Godot's own headless cold-start time
+  (first-run import, resource loading) varies enough that a
+  same-machine sibling process isn't a safe timing assumption either.
+  → **Rule**: a dev-only auto-advance hook driving a *multi-process*
+  live test should poll real, observable state (here:
+  `LobbyState.player_class_ids.size() >= 2`) instead of a fixed delay,
+  even when the single-process precedent (`dev_bootstrap.gd`'s own
+  simulate-input timers) uses one safely -- those only wait on *that
+  same process's* own connection to complete, not on a sibling
+  process's independent progress.
+
 <!--
 Examples:
 

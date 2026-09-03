@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="AMAZING//CLASH"
-run/main_scene="res://maps/test_arena/TestArena.tscn"
+run/main_scene="res://ui/main_menu/MainMenu.tscn"
 config/features=PackedStringArray("4.8", "Forward Plus")
 config/icon="res://icon.svg"
 
@@ -21,6 +21,7 @@ EventBus="*res://core/event_bus.gd"
 MatchState="*res://core/match_state.gd"
 InputManager="*res://input/input_manager.gd"
 NetworkManager="*res://net/network_manager.gd"
+LobbyState="*res://net/lobby_state.gd"
 
 [display]
 
