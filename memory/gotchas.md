@@ -29,6 +29,23 @@ Format:
   `_ready()`-time print of the values the error implies, e.g. `is_server()`
   here), not from the error message's own surface location.
 
+- **2026-09-02** — Copied `amazing-nauts`' debug-console test pattern
+  (a synthetic `InputEventKey` with only `physical_keycode` set, no
+  `keycode`) for an Escape-closes-the-console test, and it failed:
+  `project.godot` had no explicit `ui_cancel` action, so it fell back
+  to Godot's engine-default binding, which a `physical_keycode`-only
+  synthetic event doesn't match the way this project's OWN actions
+  (move/dash/debug toggles, all defined with `physical_keycode`) do.
+  `amazing-nauts` never hit this because its `project.godot` already
+  redefines `ui_cancel` explicitly with `physical_keycode`. → **Rule**:
+  when copying a test that simulates a built-in Godot UI action
+  (`ui_cancel`, `ui_accept`, etc.) via `physical_keycode`, also copy or
+  add that action's explicit `physical_keycode`-based InputMap entry —
+  don't assume the engine default matches this project's own input
+  convention. Writing the behavioral test (not just the pure-logic
+  `parse_command` one) is what caught this; a copy-and-trust-it pass
+  would have shipped it silently broken.
+
 <!--
 Examples:
 
