@@ -279,8 +279,10 @@ changed but this file wasn't updated.
   ready, Start) implemented and tactically verified**: evolves Phase
   7's minimal `ui/lobby/` waiting room into the full Room Config
   screen -- host-only mode dropdown (Team/FFA) and friendly-fire
-  checkbox, a per-row "Switch Team" button (Team mode only, host-only),
-  a ready checkbox per non-host player, host-only Start gated on
+  checkbox, a per-row "Switch Team" button (Team mode only,
+  self-service -- corrected mid-Phase-9 from an original host-only
+  design, see the Phase 9 entry below), a ready checkbox per non-host
+  player, host-only Start gated on
   `LobbyState.all_non_host_ready()`. `net/lobby_state.gd` grew
   `player_team_ids`/`player_ready`/`room_match_mode`/`room_friendly_
   fire` in place (its `registry_changed` signal renamed to `room_state_
@@ -304,6 +306,35 @@ changed but this file wasn't updated.
   Phase 8 section and `memory/plan.md`'s Slice 8 block for full
   evidence and deferred items (same visual-verification gap as every
   prior UI phase; the disabled Start button doesn't yet explain why).
+- [x] **Phase 9 (1 self-service perk per player, visible to the room)
+  implemented and tactically verified**: `gameplay/perks/perk_resource.gd`
+  plus 4 `data/perks/*.tres` (Vitality, Swift, Adept, Balanced), `net/
+  lobby_state.gd` grew `player_perk_ids`, Room Config gained a
+  per-player perk dropdown (self-service from the start, unlike team's
+  mid-Phase-8 correction). **Correction applied on this branch**:
+  team switching, shipped host-only in Phase 8, was caught by the human
+  owner as a real authority error and fixed to be self-service too --
+  each peer's own row only, server RPC keyed off
+  `multiplayer.get_remote_sender_id()` (see `memory/plan.md`'s updated
+  Slice 8 block, `memory/gotchas.md` 2026-09-03). **Real bug found by
+  `/check` and fixed before merge**: the perk multiplier was applied in
+  `PlayerSpawner` (server-side spawn only), never reaching a peer's own
+  PREDICTED/INTERPOLATED copy of any character (separate node
+  instances from `MultiplayerSpawner`'s own replication, which never
+  runs `PlayerSpawner`'s code) -- silently made perks do nothing for
+  movement speed/cooldown outside the server's own simulation. Fixed by
+  moving application into
+  `CharacterController._apply_perk_from_lobby_state()`, called from
+  every peer's own `_ready()`. Also deduped `resolve_class_id()`/
+  `resolve_perk_id()`'s identical validation logic and fixed a stale
+  doc comment, both flagged by the same `/check` pass. 103 total GUT
+  tests project-wide (was 86); live 2-process test (Vanguard+Vitality
+  host, Ranged Mage+Swift client) confirmed correct math (120 base HP
+  x 1.15 = 138) with **identical values logged on both the server's and
+  the client's own process** for both characters -- direct proof the
+  per-peer fix holds across a real network boundary. See
+  `memory/verify.md`'s Phase 9 section and `memory/plan.md`'s Slice 9
+  block for full evidence.
 
 ## Backlog (next up)
 
@@ -342,9 +373,9 @@ changed but this file wasn't updated.
   state to remote `INTERPOLATED` peers — the snapshot RPC is at a
   practical parameter-count limit; likely needs a packed-int
   restructure before a 4th+ ability slot makes this worse.
-- [ ] Phases 9-10 (1 perk per player, visible to the room; LAN room
-  discovery) — scope already designed via `/think` 2026-09-03, see
-  `memory/plan.md`'s "Slices 9-10" section. Phases 7-8 (Main
+- [ ] Phase 10 (LAN room discovery) — scope already designed via
+  `/think` 2026-09-03, see `memory/plan.md`'s "Slice 10" section.
+  Phases 7-9 (Main
   Menu/Character Select/Host-Join/Lobby/Room Config) are done; this is
   what's left of the original combined "lobby" ask.
 - [ ] Give the Room Config Start button an explanation of why it's

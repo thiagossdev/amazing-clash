@@ -83,8 +83,8 @@ phase independently playable/demoable even if the next never lands):
 9. Perk selection inside Room Config: 1 perk per player from a small
    fixed pool (same pool for every class), visible live to the rest of
    the room, applied as a flat stat multiplier at spawn (no
-   `DamagePipeline`/`HitDefinition` changes). **Not started** — scope
-   designed via `/think` 2026-09-03, see Slice 9 below.
+   `DamagePipeline`/`HitDefinition` changes). **Done** — see Slice 9
+   below.
 10. LAN room discovery: UDP broadcast beacon (host) + listener
     (client), surfaced as a live room list on Slice 7's Join screen,
     manual-IP fallback always available. Isolated as its own slice
@@ -523,16 +523,24 @@ to scoped roadmap phases, not new post-MVP scope).
 
 ### Slice 8 (Phase 8): Room Config — mode, friendly fire, manual teams, ready, Start — DONE
 
-- **Scope built exactly as designed** (no deviation): host-only mode
-  dropdown (Team/FFA) and friendly-fire checkbox in `ui/lobby/`
-  (evolved from Phase 7's minimal waiting room, not a competing new
-  screen); manual per-player team assignment via a per-row "Switch
-  Team" button (host-only, Team mode only) rather than 2 drag-target
-  columns — same outcome ("host can move any player between teams,
-  visible to everyone"), far less UI machinery; a ready checkbox per
-  non-host player; a host-only Start button. No numeric team-size
+- **Scope built as designed, with one correction applied mid-Phase-9**:
+  host-only mode dropdown (Team/FFA) and friendly-fire checkbox in
+  `ui/lobby/` (evolved from Phase 7's minimal waiting room, not a
+  competing new screen); a per-row "Switch Team" button (Team mode
+  only) rather than 2 drag-target columns — same outcome ("everyone
+  sees who's on which team"), far less UI machinery; a ready checkbox
+  per non-host player; a host-only Start button. No numeric team-size
   selector, as planned — size is just how many players ended up in
-  each team.
+  each team. **Correction (2026-09-03, applied on the Phase 9
+  branch)**: "Switch Team" originally shipped host-only (the host
+  clicking any row's button moved *that* player) — the human owner
+  caught this as a real authority error partway through Phase 9. Team
+  choice is self-service: each peer's button only appears/works on
+  their own row, and the server-side RPC operates on
+  `multiplayer.get_remote_sender_id()` (never a client-supplied peer
+  id), the same trust pattern `_rpc_register` already used for class
+  choice — removes the need for a host-authority check on this RPC
+  entirely rather than adding one. See `memory/gotchas.md` 2026-09-03.
 - **`net/lobby_state.gd` grew in place** (not a parallel registry, as
   planned): `player_team_ids`, `player_ready`, `room_match_mode`,
   `room_friendly_fire` added alongside the existing `player_class_ids`;
@@ -597,29 +605,74 @@ to scoped roadmap phases, not new post-MVP scope).
   follow-up, not done here since it wasn't asked for and doesn't block
   correctness.
 
-### Slices 9-10 (Perks / LAN Discovery) — designed via `/think` 2026-09-03, NOT STARTED
+### Slice 9 (Phase 9): 1 self-service perk per player, visible to the room — DONE
 
-Confirmed by the human owner (unchanged from the original design pass;
-Slice 8 above already grew `net/lobby_state.gd` in the shape these
-expect):
+- **Scope built exactly as designed**: `gameplay/perks/perk_resource.gd`
+  (`Resource`: `perk_name`, `max_health_multiplier`,
+  `move_speed_multiplier`, `cooldown_multiplier`, all default `1.0`) +
+  4 `.tres` files in `data/perks/` with the confirmed starting values
+  (Vitality +15% max health, Swift +10% move speed, Adept -10% all
+  ability cooldowns, Balanced +7% max health/+5% move speed).
+  `net/lobby_state.gd` grew `player_perk_ids` + `PERK_IDS`/
+  `PERK_RESOURCES` alongside the existing per-peer fields, same
+  broadcast-the-whole-registry shape as class/team. Perk pick in
+  `ui/lobby/`'s Room Config is self-service from the start (unlike
+  team, which needed a mid-phase correction — see Slice 8 above): a
+  dropdown per player, each peer's own row only, visible to everyone.
+- **Where the multiplier actually applies, and why it moved**: not
+  `PlayerSpawner` (where it was first written) — a real bug, caught by
+  `/check`, moved it to
+  `CharacterController._apply_perk_from_lobby_state()`, called from
+  every peer's own `_ready()`. `PlayerSpawner`'s server-side spawn call
+  only ever produces the AUTHORITATIVE copy of a character; each
+  client's own PREDICTED/INTERPOLATED copies are separate node
+  instances spawned by `MultiplayerSpawner`'s own replication, which
+  never runs `PlayerSpawner`'s code at all. A multiplier set only in
+  `PlayerSpawner` therefore silently never reached the very peer who
+  picked the perk (or any remote observer) — it would have looked like
+  perks did nothing for movement speed or cooldown outside the host's
+  own server-side simulation. Reading `LobbyState` directly from
+  `CharacterController._ready()` (already-replicated data, no new RPC
+  needed) fixes this structurally: every peer computes the same
+  multiplier from the same source, independent of which node spawned
+  it.
+- **Tests**: `test_apply_perk_from_lobby_state_scales_stats_on_ready`
+  (regression test for the bug above) plus pure `resolve_perk_id()`/
+  `get_perk_id()` coverage in `test_lobby_state.gd` and a
+  `move_speed_multiplier` case in `test_locomotion_fsm.gd` — 103 total
+  project-wide (was 86).
+- **Post-review cleanup**: `resolve_class_id()`/`resolve_perk_id()`
+  shared identical validate-or-default logic — extracted into a shared
+  private `_resolve_id()` helper so a future validation-rule change
+  only needs to happen once. `locomotion_fsm.gd`'s
+  `move_speed_multiplier` doc comment still pointed at
+  `net/player_spawner.gd` after the fix above moved application
+  elsewhere; corrected.
+- **Verify**: live 2-process test (temporary `print()` trace, removed
+  before the final commit, same convention as Phase 8's own): host
+  (Vanguard + Vitality) and client (Ranged Mage + Swift) both connect,
+  pick their perk, ready up, host starts. Confirmed correct math (120
+  base HP × 1.15 = 138) and, critically, **identical values logged on
+  both the server's and the client's own process** for both
+  characters — proof the fix (apply per-peer, not per-spawn-call)
+  actually holds across a real network boundary, not just in a single
+  process. See `memory/verify.md`'s Phase 9 section for the full
+  trace.
+- **Known gaps, deferred on purpose**: same visual-verification gap as
+  every prior UI-adjacent phase (still no way to screenshot Godot's
+  real renderer in this environment).
 
-- **Perks**: 1 per player, picked in Room Config, visible live to the
-  room. Flat stat multiplier only (`gameplay/perks/perk_resource.gd`:
-  `max_health_multiplier`, `move_speed_multiplier`,
-  `cooldown_multiplier`), applied once at spawn — zero changes to
-  `DamagePipeline`/`HitDefinition`. One shared pool of 4, same for
-  every class (`data/perks/`): Vitality (+15% max health), Swift (+10%
-  move speed), Adept (-10% all ability cooldowns), Balanced (+7% max
-  health, +5% move speed) — starting values, not final balance.
-  `LobbyState` grows a `player_perk_ids` field alongside `player_team_
-  ids`/`player_ready`, same broadcast shape.
-- **LAN discovery** (Slice 10): UDP broadcast beacon/listener, isolated
-  from the ENet gameplay connection entirely. Flagged, not resolved:
-  broadcast reliability inside this dev environment's WSL2→LAN path is
-  unverified; Slice 10 must degrade to Slice 7's manual-IP join if it
-  doesn't work, not block the rest.
-- Same visual-verification gap as Slices 7-8 above applies to Slice 9
-  as well (the perk picker is a real UI screen).
+### Slice 10 (LAN Discovery) — designed via `/think` 2026-09-03, NOT STARTED
+
+Confirmed by the human owner (unchanged from the original design pass):
+
+- UDP broadcast beacon (host) + listener (client), isolated from the
+  ENet gameplay connection entirely, surfaced as a live room list on
+  Slice 7's Join screen with manual-IP fallback always available.
+  Flagged, not resolved: broadcast reliability inside this dev
+  environment's WSL2→LAN path is unverified; Slice 10 must degrade to
+  manual-IP join if it doesn't work, not block anything else.
+- Same visual-verification gap as Slices 7-9 above.
 
 ## MVP Status
 
