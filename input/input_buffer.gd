@@ -4,8 +4,8 @@ extends RefCounted
 ## per-character jitter buffer (drained via pop_next) and the client's own
 ## unacked-prediction buffer (trimmed via discard_acked, replayed via
 ## pending). Pattern inherited from amazing-nauts'
-## input/input_buffer.gd, scoped down to Phase 2b (no block/ability
-## fields yet -- those arrive with later phases).
+## input/input_buffer.gd, scoped down to Phase 3 (no block yet -- that
+## arrives with a later phase).
 
 
 class Sample:
@@ -20,10 +20,39 @@ class Sample:
 	## an already-cast skillshot.
 	var aim_direction: Vector2 = Vector2.RIGHT
 	var skillshot_pressed: bool = false
+	var ability_q_pressed: bool = false
+	var ability_e_pressed: bool = false
 	var delta: float = 0.0
 
 
 var _samples: Array[Sample] = []
+
+
+## Packs this Sample's 4 ability press flags into one bitmask int --
+## individual bool RPC params would have pushed
+## CharacterController._rpc_send_input() past gdlint's function-arg cap,
+## same reasoning amazing-nauts' own pack_ability_flags() documents.
+## Bit order: attack, skillshot, ability_q, ability_e. Pure, testable
+## without an RPC round trip.
+static func pack_ability_flags(sample: Sample) -> int:
+	var flags := 0
+	if sample.attack_pressed:
+		flags |= 1 << 0
+	if sample.skillshot_pressed:
+		flags |= 1 << 1
+	if sample.ability_q_pressed:
+		flags |= 1 << 2
+	if sample.ability_e_pressed:
+		flags |= 1 << 3
+	return flags
+
+
+## Inverse of pack_ability_flags() -- mutates `sample` in place.
+static func unpack_ability_flags(sample: Sample, flags: int) -> void:
+	sample.attack_pressed = flags & (1 << 0) != 0
+	sample.skillshot_pressed = flags & (1 << 1) != 0
+	sample.ability_q_pressed = flags & (1 << 2) != 0
+	sample.ability_e_pressed = flags & (1 << 3) != 0
 
 
 func push(sample: Sample) -> void:
