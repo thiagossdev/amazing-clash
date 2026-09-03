@@ -133,16 +133,29 @@ func _maybe_dev_hooks() -> void:
 			_on_mode_selected(MatchState.MatchMode.FREE_FOR_ALL)
 		if "--dev-room-friendly-fire" in args:
 			_on_friendly_fire_toggled(true)
-		for arg in args:
-			if arg.begins_with("--dev-switch-team="):
-				var target_id := arg.trim_prefix("--dev-switch-team=").to_int()
-				await get_tree().create_timer(0.2).timeout
-				LobbyState.set_team(target_id, 1 - LobbyState.get_team_id(target_id))
+		if "--dev-switch-team" in args:
+			_await_and_switch_first_client_team()
 	else:
 		if "--dev-ready" in args:
 			LobbyState.set_local_ready(true)
 	if _is_host and "--dev-autostart" in args:
 		_await_and_autostart()
+
+
+## Peer ids are ENet-assigned and not predictable ahead of time (not a
+## small sequential int -- confirmed live, see memory/gotchas.md), so
+## this can't take a literal target id the way --simulate-* flags
+## targeting the LOCAL peer's own input can. Polls for the first
+## currently-registered non-host peer instead, same bounded-wait
+## reasoning as _await_and_autostart().
+func _await_and_switch_first_client_team() -> void:
+	var max_wait_ticks := 40
+	for _i in max_wait_ticks:
+		for peer_id in LobbyState.player_class_ids:
+			if peer_id != _host_peer_id():
+				LobbyState.set_team(peer_id, 1 - LobbyState.get_team_id(peer_id))
+				return
+		await get_tree().create_timer(0.5).timeout
 
 
 ## Polls (rather than a fixed delay, which proved unreliable in Phase
