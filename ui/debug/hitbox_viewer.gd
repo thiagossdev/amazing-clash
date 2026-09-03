@@ -75,11 +75,11 @@ func _draw_hurtbox(character: CharacterController) -> void:
 
 
 func _draw_hitbox_if_active(character: CharacterController) -> void:
-	if character.action_fsm.current_move != character.debug_attack_move:
+	if character.action_fsm.current_move != character.attack_move:
 		return
 	if not character.action_fsm.is_hitbox_active():
 		return
-	for hit in character.debug_attack_move.hit_definitions:
+	for hit in character.attack_move.hit_definitions:
 		var rect := HitDetection.hitbox_rect(
 			character.global_position, character.get_aim_direction(), hit
 		)

@@ -12,8 +12,8 @@ radius = 20.0
 [node name="Character" type="CharacterBody2D"]
 collision_layer = 2
 script = ExtResource("1_ctrlr")
-debug_attack_move = ExtResource("2_atkmv")
-debug_skillshot_move = ExtResource("3_sklmv")
+attack_move = ExtResource("2_atkmv")
+skillshot_move = ExtResource("3_sklmv")
 ability_q = ExtResource("4_abqq")
 ability_e = ExtResource("5_abee")
 

@@ -36,11 +36,11 @@ func _physics_process(_delta: float) -> void:
 func _resolve_attacker(attacker: Node, roster: Array) -> void:
 	if not attacker is CharacterController:
 		return
-	_resolve_melee(attacker, roster, attacker.action_fsm, attacker.debug_attack_move)
+	_resolve_melee(attacker, roster, attacker.action_fsm, attacker.attack_move)
 	_maybe_launch_projectile(
 		attacker,
 		attacker.action_fsm,
-		attacker.debug_skillshot_move,
+		attacker.skillshot_move,
 		"skillshot",
 		attacker.pending_skillshot_direction
 	)
@@ -160,7 +160,7 @@ func _rpc_spawn_projectile(
 func _get_move_for_slot(caster: CharacterController, slot_name: String) -> MoveDefinition:
 	match slot_name:
 		"skillshot":
-			return caster.debug_skillshot_move
+			return caster.skillshot_move
 		"ability_q":
 			return caster.ability_q.move if caster.ability_q else null
 		"ability_e":

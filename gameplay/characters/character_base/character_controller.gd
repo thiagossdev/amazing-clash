@@ -31,14 +31,15 @@ const MAX_VISUAL_POSITION_ERROR := 48.0
 ## Which child node's local `position` absorbs the reconciliation-
 ## smoothing offset.
 @export var visual_path: NodePath = ^"Visual"
-## Single generic test move for Phase 2a's action layer -- not a hero
-## moveset yet (Phase 4). Named debug_*: CharacterBody2D already has
-## test_move().
-@export var debug_attack_move: MoveDefinition
-## Single generic test skillshot for Phase 2b -- fires a Projectile in
-## pending_skillshot_direction (real mouse-aim, captured at cast time)
-## rather than an unaimed melee swing.
-@export var debug_skillshot_move: MoveDefinition
+## The character's melee move (LMB). Character.tscn (the generic GUT
+## test fixture) assigns placeholder debug data; Phase 4's real class
+## scenes (Vanguard.tscn, RangedMage.tscn) assign their own kit move.
+@export var attack_move: MoveDefinition
+## The character's skillshot move (RMB) -- always fires a Projectile in
+## pending_skillshot_direction (real mouse-aim, captured at cast time),
+## unlike the ability slots below, which pick melee or projectile per
+## their own AbilityResource.is_projectile.
+@export var skillshot_move: MoveDefinition
 ## Phase 3's 2 independent test ability slots -- Q and E, each its own
 ## cooldown, castable while melee/skillshot are on cooldown or vice
 ## versa. R/F/T InputMap actions already exist for Phase 4+ content;
@@ -400,11 +401,11 @@ func apply_input(sample: InputBuffer.Sample) -> void:
 	fsm.advance(sample.move_vector, sample.dash_pressed, sample.delta)
 	velocity = fsm.velocity
 	var can_start_move := action_fsm.state == ActionFsm.State.NEUTRAL
-	if sample.attack_pressed and can_start_move and debug_attack_move:
-		action_fsm.start_move(debug_attack_move)
-	elif sample.skillshot_pressed and can_start_move and debug_skillshot_move:
+	if sample.attack_pressed and can_start_move and attack_move:
+		action_fsm.start_move(attack_move)
+	elif sample.skillshot_pressed and can_start_move and skillshot_move:
 		pending_skillshot_direction = _normalized_aim(sample.aim_direction)
-		action_fsm.start_move(debug_skillshot_move)
+		action_fsm.start_move(skillshot_move)
 	else:
 		action_fsm.advance_frame()
 	var q_result := _advance_ability_slot(
