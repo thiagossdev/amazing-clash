@@ -256,3 +256,17 @@ func test_no_action_and_no_recent_hit_is_neutral_modulate() -> void:
 	var character := _spawn_character()
 	character._update_visual_feedback()
 	assert_eq(character.get_node(character.visual_path).modulate, character.NEUTRAL_MODULATE)
+
+
+func test_position_at_tick_reads_from_recorded_history() -> void:
+	var character := _spawn_character()
+	character._position_history = [
+		{"tick": 100, "position": Vector2(10, 10)}, {"tick": 105, "position": Vector2(20, 20)}
+	]
+	assert_eq(character.position_at_tick(102), Vector2(10, 10))
+
+
+func test_position_at_tick_falls_back_to_live_position_when_history_is_empty() -> void:
+	var character := _spawn_character()
+	character.global_position = Vector2(50, 50)
+	assert_eq(character.position_at_tick(5), Vector2(50, 50))

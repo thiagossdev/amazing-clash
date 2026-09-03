@@ -97,7 +97,7 @@ phase independently playable/demoable even if the next never lands):
     timestamp (from `NetworkManager.get_peer_rtt_ms()`), not their
     live current position, bounded to a max compensation window.
     Closes the gap `docs/research/networking-architecture-inspiration/`
-    flagged. **Not started** — scope below.
+    flagged. **Done** — see Slice 11 below.
 12. Spawn layout generalized beyond the 4 hardcoded `SPAWN_POSITIONS`
     points to a computed `(team_id, index_within_team, team_count)`
     layout, so a real 5v5 (or any confirmed team-size combination)
@@ -758,26 +758,54 @@ to scoped roadmap phases, not new post-MVP scope).
   player count only.
 - Same visual-verification gap as Slices 7-9 above.
 
-### Slice 11 (Lag Compensation) — NOT STARTED
+### Slice 11 (Lag Compensation) — DONE
 
-Confirmed by the human owner 2026-09-03 (no real fork of approach --
-the single reasonable shape, already researched in
-`docs/research/networking-architecture-inspiration/`):
-
-- Server-only, per-character position-history ring buffer (~20 ticks,
-  ~333ms @60Hz), appended every `_physics_step_authoritative` tick.
-- `HitDetection` gains a pure lookup function: given a history buffer
-  and a target tick, return the position at-or-before that tick (GUT-
-  testable without a live character/network).
-- `CombatResolver._resolve_melee`/`_resolve_projectile_hit` resolve
-  against the defender's *compensated* position (rewound by the
-  attacker's estimated one-way latency, `NetworkManager.
-  get_peer_rtt_ms(attacker_peer_id) / 2`, converted to a tick count),
-  not `defender.global_position` live -- bounded to a max compensation
-  window (~200ms / 12 ticks) so a very high-latency attacker can't
-  reach arbitrarily far into the past.
-- No client-visible change: this only affects what the server accepts
-  as a hit, not movement/prediction.
+- **Built exactly as scoped**: `_position_history` (24-entry ring
+  buffer, ~400ms @60Hz -- generous headroom over the compensation
+  window itself, which is the real limiting factor) added to
+  `CharacterController`, recorded every `_physics_step_authoritative`
+  tick via `_record_position_history()`, regardless of whether the
+  character actually moved that tick (a frozen/locked character's
+  position still matters for compensation). New pure
+  `HitDetection.position_at_or_before(history, target_tick, fallback)`
+  -- history-shape-agnostic, GUT-testable without a live character.
+  New `CharacterController.position_at_tick()`/`current_tick()` public
+  getters wrap the private history/tick-counter access, keeping
+  `CombatResolver`'s own code to one call:
+  `_compensated_defender_position(attacker, defender)`, used by both
+  `_resolve_melee` and `_resolve_projectile_hit` in place of
+  `defender.global_position`. `MAX_COMPENSATION_TICKS` (12, ~200ms)
+  bounds how far back a high-latency attacker can reach;
+  `NetworkManager.get_peer_rtt_ms()` already returns 0 for a
+  non-remote-peer id, correctly zero-compensating the server's own
+  listen-server player.
+- **Tests**: 4 new `HitDetection.position_at_or_before()` cases (exact
+  match, latest-strictly-before match, falls back when every entry is
+  newer, falls back on empty history) + 2 new
+  `CharacterController.position_at_tick()` cases (reads recorded
+  history; falls back to live position when history is empty) -- 127
+  total GUT tests project-wide (was 121). Written TDD-first: confirmed
+  both new test files' additions failed with real parse errors
+  (`position_at_or_before()`/`position_at_tick()` didn't exist yet)
+  before implementing.
+- **Verify**: `gdformat`/`gdlint` clean. Live 2-process regression
+  (melee + skillshot + ability_q all firing, one peer moving) --  zero
+  engine errors, confirming the changed hot path (every hit resolution
+  now goes through the compensation lookup) doesn't break anything.
+  **Honest scope of what this proves**: this dev environment's
+  loopback connections measure ~0ms RTT, so `compensation_ticks`
+  always computes to 0 here -- mathematically identical to the old
+  `defender.global_position` behavior (confirmed by code-path
+  ordering: `CombatResolver` is wired as `TestArena`'s LAST child, so
+  every character's own `_record_position_history()` for the current
+  tick has already run by the time a hit resolves against it, meaning
+  `position_at_tick(current_tick)` returns exactly the position that
+  was just recorded, i.e. the live one). A genuine non-zero-latency
+  compensation-in-action demonstration isn't practical to force in
+  this environment (no way to inflate real measured ENet RTT, as
+  distinct from `NetworkManager.artificial_latency_ms`, which only
+  delays local side-effects, not the wire round-trip itself) --
+  documented here rather than claimed.
 
 ### Slice 12 (Spawn Layout Generalization) — DONE
 

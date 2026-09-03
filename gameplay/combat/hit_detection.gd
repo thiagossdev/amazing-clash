@@ -40,3 +40,20 @@ static func projectile_hitbox_rect(projectile_position: Vector2, hitbox_size: Ve
 ## hurtbox right now?
 static func query(hitbox: Rect2, hurtbox: Rect2) -> bool:
 	return hitbox.intersects(hurtbox)
+
+
+## Phase 11 (lag compensation): the latest recorded position at or
+## before target_tick from `history` -- an Array of
+## `{"tick": int, "position": Vector2}` entries in ascending tick order
+## (CharacterController._position_history's own shape; see that file's
+## position_at_tick()). Pure and history-shape-agnostic on purpose, so
+## it's unit-testable without a live character/network. Falls back to
+## `fallback` when every entry is newer than target_tick (a very fresh
+## spawn) or history is empty.
+static func position_at_or_before(history: Array, target_tick: int, fallback: Vector2) -> Vector2:
+	var result := fallback
+	for entry in history:
+		if entry["tick"] > target_tick:
+			break
+		result = entry["position"]
+	return result
