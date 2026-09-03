@@ -18,8 +18,12 @@ skeleton — done and tactically verified 2026-09-02** (see
 classes) — done and tactically verified 2026-09-03** (see
 `memory/verify.md`'s Phase 4 section). **Phase 5 (match modes) — done
 and tactically verified 2026-09-03** (see `memory/verify.md`'s Phase 5
-section). **Phase 6 (3rd class + free-for-all) is next.** Full design
-is in
+section). **Phase 6 (3rd class + free-for-all) — done and tactically
+verified 2026-09-03** (see `memory/verify.md`'s Phase 6 section). **All
+6 roadmap phases are now complete -- this is the MVP per
+`docs/blueprint/04-mvp-scope.md`'s roadmap-level criteria** (see
+"MVP Status" below for what's genuinely done vs. what the fuller
+`docs/blueprint/` MVP proposal still leaves open). Full design is in
 `docs/blueprint/` (start at
 `docs/blueprint/README.md`), grounded in
 `docs/research/eslabong-inspiration/` and
@@ -64,7 +68,8 @@ phase independently playable/demoable even if the next never lands):
 5. Match modes: team mode (2v2 default), friendly-fire toggle, win
    condition, minimal lobby/HUD/match flow. **Done** — see Slice 5 below.
 6. 3rd class (support/control archetype) + free-for-all mode —
-   completes `docs/blueprint/04-mvp-scope.md`'s MVP criteria. **Next.**
+   completes `docs/blueprint/04-mvp-scope.md`'s MVP criteria. **Done**
+   — see Slice 6 below.
 
 Post-MVP backlog: `docs/blueprint/06-post-mvp-backlog.md`, not started
 until Phase 6 ships.
@@ -345,22 +350,105 @@ until Phase 6 ships.
   differs, ruling out a false-positive from a missed/out-of-range
   attack). See `memory/verify.md`'s Phase 5 section for full evidence.
 
+### Slice 6 (Phase 6): 3rd class (Warden) + free-for-all mode — DONE
+
+- **WinCondition generalized from 2 fixed teams to N teams**: the core
+  architectural fact this phase turned on. `determine()`'s signature
+  changed from `(team0_alive, team1_alive, team0_ever, team1_ever)` to
+  `(alive_team_ids: Array, teams_ever_present: int)` -- team mode is
+  now just the N=2 case of "how many distinct teams still have someone
+  alive," not a separate code path from free-for-all's N>2 case.
+  Re-verified every prior 2-team test case still holds under the new
+  signature before adding the N>2 cases (8 tests total, was 5).
+  `MatchRules` rewritten from 2 hardcoded locals to a `Dictionary`
+  keyed by team id -- same tick-by-tick, change-only-broadcast
+  behavior, now team-count-agnostic.
+- **Free-for-all mode "just works" once team assignment generalizes**:
+  new `MatchState.match_mode` (`TEAM`/`FREE_FOR_ALL`, default `TEAM`,
+  set via a new `--free-for-all` `dev_bootstrap` flag, same
+  server-startup-only pattern as `--friendly-fire`). `PlayerSpawner`
+  assigns `team = index` (unique per player) in FFA instead of
+  `index % 2` -- no other code needed a mode branch: `CombatResolver`'s
+  friendly-fire check and `MatchRules`/`WinCondition`'s elimination
+  logic are completely unchanged and correct under FFA purely because
+  every FFA player's team id is unique (a same-team hit can now only
+  ever be a self-hit, already excluded upstream).
+- **MatchHud made mode-aware**: `team_alive_counts` grew from a fixed
+  2-element array to a variable-length one indexed by team id (dense,
+  0-filled for any team id with no current members). The HUD reads
+  `MatchState.match_mode` to decide whether to show "Team 0: X | Team
+  1: Y" or "N players alive," and "TEAM X WINS" vs "PLAYER X WINS."
+- **Warden** (support/control, `max_health` 100, between Vanguard's
+  120 and Ranged Mage's 80): Guard Poke (LMB, 6 dmg, weak self-defense
+  melee), Binding Bolt (RMB skillshot, 8 dmg projectile but 35-frame
+  hitstun -- more than 2x Ranged Mage's Arcane Bolt), Stagger Strike
+  (Q, melee, 10 dmg, 30-frame hitstun, 80f cooldown -- a frequent CC
+  poke), Overwhelm (E, projectile, 15 dmg, 50-frame hitstun -- the
+  longest in the game -- 200f cooldown, the longest cooldown in the
+  game). Deliberately the lowest-damage class: "control" is expressed
+  entirely as an oversized hitstun-to-damage ratio using the existing
+  `HitDefinition` vocabulary unchanged -- no heal/shield/buff mechanic
+  exists in `DamagePipeline`/`HitDefinition`, and adding one was
+  explicitly out of scope for "one more orthogonal class." Third entry
+  in `PlayerSpawner.CLASS_SCENES`; the 2-vs-3 modulus mismatch with
+  team assignment's own `index % 2` is intentional (team composition
+  varies instead of every team getting an identical class pairing).
+- **Tests**: `test_win_condition.gd` regenerated for the new signature
+  plus 3 new FFA cases (8 total, was 5); 2 new tests in
+  `test_character_classes.gd` (Warden's kit wiring, and an explicit
+  assertion that Warden's E has strictly more hitstun than either
+  other class's E, so a future balance pass can't silently erode the
+  archetype's reason to exist) -- 70 total project-wide (was 65).
+- **Verify**: live 3-process team-mode test confirmed team (index % 2)
+  and class (index % 3) assignment remain independently correct with
+  a 3rd class scene added. Multiple live free-for-all scenarios (2 and
+  3 real connections, various elimination orders) confirmed unique
+  per-player team assignment, correct "must have >=2 teams ever
+  connected" gating interacting correctly with an elimination that
+  happens before the 2nd player even joins, and the win RPC reaching
+  a client that joined after the match had already ended (the Phase 5
+  late-joiner catch-up path, confirmed still correct here). See
+  `memory/verify.md`'s Phase 6 section for full evidence.
+
+## MVP Status
+
+All 6 roadmap phases (`memory/plan.md`'s own roadmap above, confirmed
+with the human owner this session) are complete: networking skeleton,
+melee + skillshot combat core, the ability framework, 2 real classes,
+2v2 team mode with a friendly-fire toggle and an elimination win
+condition, and a 3rd class + free-for-all mode. Two players (or 2+
+headless processes for local verification) can connect, get assigned a
+class and a side automatically, fight with server-authoritative hit
+resolution in either team or free-for-all mode, and reach a clear win/
+draw result reflected in a minimal HUD.
+
+This satisfies the roadmap's own phase-by-phase criteria, but is
+narrower than the fuller MVP proposal in `docs/blueprint/04-mvp-scope.md`,
+which additionally describes a minimal pre-match loadout/build-depth
+system and a real lobby/character-select flow -- neither exists yet
+(see Deferred below); `docs/blueprint/05-open-questions.md`'s
+build-depth split remains the single highest-priority item for the
+human owner to confirm before that gap is closed.
+
 ## Deferred / Out of Scope
 
 - Matchmaking/dedicated-server infrastructure — Phase 1 targets direct
   local-network connect only.
 - The full persistent build-investment layer (unlocks, node tree,
-  respec economy) — Phase 3 only seeds the data schema.
+  respec economy) — Phase 3 only seeds the data schema. This is the
+  single biggest gap between "roadmap done" and the fuller MVP
+  proposal in `docs/blueprint/04-mvp-scope.md` (see MVP Status above).
 - Rollback netcode reconsideration — deferred until Phase 2's real
   entity counts exist to evaluate against.
-- A 3rd class (support/control archetype) — Phase 6, alongside
-  free-for-all mode. Only 2 classes exist after Phase 4 (Vanguard,
-  Ranged Mage), both damage-dealer archetypes; no support/control kit
-  exists yet.
-- Character-select UI / lobby — Phase 4/5 both auto-assign class and
-  team by connection order only; a real pick screen (and the network
-  handshake to support a connect-then-select flow) needs its own
-  design pass, not decided this session.
+- Character-select UI / lobby, and a mode-select UI (team vs.
+  free-for-all) — class, team, and match mode are all still assigned
+  by connection order or a server-startup flag (Phases 4-6); a real
+  pick screen (and the network handshake to support a connect-then-
+  select flow) needs its own design pass, not decided this session.
+- Per-team-of-one HUD breakdown for free-for-all — `MatchHud` shows a
+  single "N players alive" line instead; a per-player list (names,
+  individual health bars) needs a display-name system that doesn't
+  exist yet.
 - A reconnect/grace-period system for a mid-match disconnect — a
   disconnect currently resolves as an immediate forfeit for that
   team (see Slice 5 above), matching the docs' own "online matches
@@ -383,7 +471,8 @@ until Phase 6 ships.
 
 ## Open Questions
 
-Tracked in full at `docs/blueprint/05-open-questions.md`. Still open,
-not blocking Phase 1: exact friendly-fire toggle scope, loadout
-cadence, persistent-tree size/gating, setting/tone, monetization.
-Resolved this session: presentation is 2D top-down (see above).
+Tracked in full at `docs/blueprint/05-open-questions.md`. Still open:
+team size beyond 2v2, loadout cadence, persistent-tree size/gating,
+setting/tone, monetization. Resolved this session: presentation is 2D
+top-down (see above); friendly-fire toggle scope (Phase 5 — gates all
+damage, since no splash/AoE ability type exists to distinguish).
