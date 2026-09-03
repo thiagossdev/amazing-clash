@@ -138,7 +138,7 @@ func test_cooldown_multiplier_shortens_ability_cooldown() -> void:
 	assert_eq(
 		character.ability_q_fsm.current_move,
 		character.ability_q.move,
-		"a 0.5 cooldown_multiplier (e.g. the Adept perk) should let Q recast after half its normal cooldown"
+		"a 0.5 cooldown_multiplier (e.g. Adept) should let Q recast after half its normal cooldown"
 	)
 	assert_ne(character.ability_q_fsm.state, ActionFsm.State.NEUTRAL)
 
