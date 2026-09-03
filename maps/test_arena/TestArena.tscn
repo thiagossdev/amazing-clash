@@ -4,7 +4,7 @@
 [ext_resource type="Script" uid="uid://ba17ie54glhmw" path="res://net/player_spawner.gd" id="2_spwn"]
 [ext_resource type="Script" uid="uid://dv3xq8nh2eqdl" path="res://ui/hud/network_stats_overlay.gd" id="3_stats"]
 [ext_resource type="PackedScene" uid="uid://bers5infe7f36" path="res://camera/ArenaCamera.tscn" id="4_cam"]
-[ext_resource type="PackedScene" path="res://ui/debug/HitboxViewer.tscn" id="5_cshv"]
+[ext_resource type="PackedScene" uid="uid://dj1qj2m8u4qig" path="res://ui/debug/HitboxViewer.tscn" id="5_cshv"]
 [ext_resource type="Script" uid="uid://5dxic7kxfvkc" path="res://gameplay/combat/combat_resolver.gd" id="6_cmbtr"]
 [ext_resource type="Script" uid="uid://d0sc5sg4putp8" path="res://ui/hud/match_hud.gd" id="7_mhud"]
 [ext_resource type="Script" uid="uid://ck2n3c3bjxrcr" path="res://gameplay/match/match_rules.gd" id="8_mrule"]
