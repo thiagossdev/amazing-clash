@@ -120,6 +120,7 @@ func start_listening() -> void:
 	var err := socket.bind(DISCOVERY_PORT)
 	if err != OK:
 		push_warning("LanDiscovery: bind failed (%s) -- LAN list disabled, use manual IP." % err)
+		GameLog.warn("lan_discovery_bind_failed", {"error": err})
 		return
 	_listen_socket = socket
 	discovered_rooms.clear()

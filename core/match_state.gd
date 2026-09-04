@@ -206,6 +206,7 @@ func _apply_dev_intermission_overrides() -> void:
 func _on_peer_connected(peer_id: int) -> void:
 	if not NetworkManager.is_server():
 		return
+	GameLog.info("peer_connected", {"peer_id": peer_id})
 	if current_phase == Phase.IN_PROGRESS:
 		_rpc_enter_in_progress.rpc_id(peer_id, match_mode)
 	elif current_phase == Phase.POST_GAME:
@@ -220,6 +221,7 @@ func _on_peer_connected(peer_id: int) -> void:
 func _on_peer_disconnected(peer_id: int) -> void:
 	if not NetworkManager.is_server():
 		return
+	GameLog.info("peer_disconnected", {"peer_id": peer_id})
 	if current_phase != Phase.LOADING:
 		return
 	_loaded_peer_ids.erase(peer_id)
@@ -244,6 +246,7 @@ func enter_loading(mode: MatchMode) -> void:
 	current_phase = Phase.LOADING
 	match_mode = mode
 	_loaded_peer_ids.clear()
+	GameLog.info("round_loading", {"round": current_round, "mode": mode})
 	_rpc_enter_loading.rpc(mode)
 
 
@@ -295,6 +298,7 @@ func _all_connected_peers_loaded() -> bool:
 ## (direct-connect flow, which skips LOADING entirely).
 func enter_in_progress() -> void:
 	current_phase = Phase.IN_PROGRESS
+	GameLog.info("round_in_progress", {"round": current_round})
 	_rpc_enter_in_progress.rpc(match_mode)
 
 
@@ -318,6 +322,7 @@ func enter_post_game(winning: int) -> void:
 		return
 	current_phase = Phase.POST_GAME
 	winning_team = winning
+	GameLog.info("match_ended", {"winner": winning, "round_wins": round_wins})
 	_rpc_enter_post_game.rpc(winning, match_mode, round_wins)
 
 
@@ -351,6 +356,18 @@ func resolve_round_result(result: int) -> void:
 	var completed_round := current_round
 	if not outcome["is_draw"]:
 		current_round += 1
+	(
+		GameLog
+		. info(
+			"round_ended",
+			{
+				"completed_round": completed_round,
+				"winner": outcome["winner"],
+				"is_draw": outcome["is_draw"],
+				"round_wins": round_wins,
+			}
+		)
+	)
 	_rpc_round_ended.rpc(outcome["winner"], round_wins, completed_round)
 	_begin_round_intermission()
 
@@ -395,6 +412,7 @@ func _rpc_round_ended(winner: int, wins: Dictionary, completed_round: int) -> vo
 func _begin_round_intermission() -> void:
 	current_phase = Phase.ROUND_INTERMISSION
 	player_loadout_confirmed.clear()
+	GameLog.info("round_intermission_started", {"next_round": current_round})
 	_rpc_enter_round_intermission.rpc()
 	_intermission_generation += 1
 	_intermission_start_ticks_msec = Time.get_ticks_msec()

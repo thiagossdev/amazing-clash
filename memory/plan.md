@@ -175,8 +175,8 @@ phase independently playable/demoable even if the next never lands):
     `push_error`/`push_warning` today. **Known limitation to
     document, not solve**: only captures errors the code explicitly
     routes through this helper — it does not intercept the engine's
-    own native `push_error` output or crashes. **Not started** —
-    scope below.
+    own native `push_error` output or crashes. **Done** — see Slice
+    18 below.
 19. Replay recording. Separate file from the log above:
     `user://replays/<timestamp>.replay`. Header: mode, friendly-fire,
     round target, **`sim_seed`** (new field, reserved now for
@@ -1622,6 +1622,102 @@ built exactly as scoped, no deviation.
   pre-existing `LOADING` catch-up gap); same "no way to screenshot
   Godot's real renderer" gap every UI-adjacent phase has flagged since
   Phase 1.
+
+### Slice 18 (Match Log: `GameLog`) — DONE
+
+Confirmed by the human owner via `/think` 2026-09-03/04, built exactly
+as scoped, no deviation.
+
+- **Built on `feature/phase18-game-log`**: a new `GameLog` autoload
+  (`net/game_log.gd`) -- `info(event, data)`/`warn(event, data)`/
+  `error(event, data)`, each appending one JSON object per line
+  (JSONL) to `user://logs/<timestamp>_pid<N>_<counter>.jsonl`, opened
+  once and kept open for the whole process lifetime. Server-only by
+  design: every call internally gates on `NetworkManager.is_server()`
+  and is a silent no-op on a client, per the human owner's own request
+  ("o host deve fazer log de tudo") -- every call site below calls
+  `info()`/`warn()`/`error()` unconditionally, no per-site server
+  check needed. `format_line()` is a pure `static func`, directly
+  unit-tested with no I/O.
+- **A real robustness gap found and fixed before it could ever bite**:
+  the filename's timestamp only has 1-second granularity -- 2 server
+  processes started in the same wall-clock second (a real risk in this
+  project's own 2-headless-process dev testing pattern) would compute
+  the IDENTICAL path and silently clobber each other's log
+  (`FileAccess.WRITE` truncates on open). Fixed by folding in
+  `OS.get_process_id()` and a per-instance open-count into the
+  filename -- this also incidentally made `reset_for_testing()` safe
+  to call more than once within the same test process.
+- **Wired at every event boundary the roadmap item specified**:
+  `core/match_state.gd` (peer connect/disconnect, every phase
+  transition -- `round_loading`/`round_in_progress`/`round_ended`/
+  `round_intermission_started`/`match_ended`, each carrying the
+  relevant round-score context), `net/lobby_state.gd` (each registered
+  peer's final class/team/weapon/boot/perk choice, logged ONCE at
+  `_start_match()`, not on every intermediate Room Config dropdown
+  change), `net/player_spawner.gd` (grace period started on disconnect,
+  a successful reconnect reclaim, grace period expiring as a forfeit).
+  Every pre-existing `push_error()`/`push_warning()` call site in the
+  project (`net/dev_bootstrap.gd` ×2, `net/lan_discovery.gd`,
+  `net/player_spawner.gd`) got a paired `GameLog.error()`/`.warn()`
+  call alongside it -- additive, the console output itself is
+  untouched and still useful on its own.
+- **Known limitation, documented not solved, exactly as scoped**:
+  `GameLog` only captures what code explicitly routes through it. It
+  does NOT intercept the engine's own native `push_error()` console
+  output, and captures nothing from a process that crashes hard enough
+  to never reach a call site.
+- **Tests**: `tests/unit/test_game_log.gd` (new, 6 tests) -- pure
+  `format_line()` JSON round-trip, the server-only no-op gate (nulling
+  `multiplayer.multiplayer_peer`, same established pattern
+  `test_match_state.gd` already uses), a real write-then-read-back
+  round trip via `reset_for_testing()` pointed at a scratch directory
+  (never the real `user://logs/`), warn/error using their own level,
+  multiple calls appending to the same file, and a reset opening a
+  distinct file. `test_match_state.gd` (+2 tests, on a fresh
+  `MatchStateScript.new()` instance, never the shared autoload, same
+  isolation every test in that file already uses): a decisive
+  non-final round logs `round_ended` without `match_ended`; reaching
+  `ROUND_TARGET` logs `match_ended` too. `test_lobby_state.gd` (+1
+  test): `_log_final_loadouts()` logs one `player_loadout` line per
+  registered peer with the correct fields. 201/201 GUT tests passing
+  project-wide (was 192).
+- **`/check`**: async background dispatch from inside this isolated
+  worker fork skipped entirely this time (Phases 15/16/17's own forks
+  already confirmed it doesn't work) -- went straight to inline
+  adversarial self-review of the full diff against `main`. Found no
+  additional issues.
+- **Verify**: `gdformat`/`gdlint`/`markdownlint-cli2` all clean
+  project-wide. A new `--dev-print-log-path` dev flag prints
+  `GAME_LOG_PATH:<path>` so a live process's actual on-disk log content
+  can be inspected. **2 separate live 2-process tests**: (1) a direct-
+  connect run confirmed `round_in_progress` then `peer_connected` land
+  in order, and the client process's own `GAME_LOG_PATH:` printed
+  empty -- confirming the server-only gate holds under real
+  networking, not just in a unit test with a nulled peer; (2) a
+  `--dev-kick-after`-adjacent real-disconnect run (killed the client
+  process outright, `--dev-grace-period=3`) confirmed the FULL event
+  chain end-to-end in the server's actual on-disk file: `peer_connected`
+  → `peer_disconnected` → `disconnect_grace_period_started` →
+  `disconnect_grace_period_expired_forfeit` → `round_ended` (the
+  forfeit decided the round) → `round_intermission_started`, all 7
+  lines in the correct order, zero engine errors on either side, and
+  the client wrote no log file. `round_ended`/`match_ended`/
+  `player_loadout` are additionally covered by the deterministic unit
+  tests above rather than a 2nd live race -- deliberately avoided
+  driving a full best-of-3 sequence via `--simulate-self-eliminate` in
+  THIS phase's own live test, since the server's own near-instant
+  direct-connect `IN_PROGRESS` entry races the client's connection time
+  in a way that isn't reliably winnable (a live instance of this
+  project's own "2 independent processes have no shared clock"
+  gotcha) -- Slice 17's own live test avoided the same trap by putting
+  `--simulate-self-eliminate` on the CLIENT instead of the server.
+- **Known, deliberately unverified gap**: no automated check that a
+  REAL disk-full or permission failure (`FileAccess.open()` returning
+  null) degrades gracefully beyond "silently stops logging" -- `_write()`
+  already no-ops safely if `_file` is null, but this was reasoned
+  through, not live-reproduced (deliberately out of this phase's scope
+  to simulate).
 
 ## MVP Status
 

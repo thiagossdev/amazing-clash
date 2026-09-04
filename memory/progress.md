@@ -695,12 +695,38 @@ changed but this file wasn't updated.
   identical results on both peers each time. See `memory/plan.md`'s
   Slice 17 block, `memory/gotchas.md`, and `memory/verify.md`'s Phase
   17 section for full evidence.
+- [x] **Phase 18 (Match Log: `GameLog`) implemented, live-verified, on
+  `feature/phase18-game-log`**: a new `GameLog` autoload --
+  `info()`/`warn()`/`error()`, one JSON line per call to
+  `user://logs/<timestamp>_pid<N>_<counter>.jsonl`, server-only (a
+  silent no-op on a client). Found and fixed a real robustness gap
+  before it could ever bite: the filename's 1-second timestamp
+  granularity meant 2 server processes started in the same wall-clock
+  second (a real risk in this project's own 2-headless-process dev
+  testing) would silently clobber each other's log file -- fixed by
+  folding the process id and an open-count into the filename. Wired at
+  every event boundary the roadmap item specified: peer connect/
+  disconnect and every match phase transition (`core/match_state.gd`),
+  each registered peer's final loadout choice logged once at match
+  start (`net/lobby_state.gd`), and the reconnect grace-period/reclaim
+  flow (`net/player_spawner.gd`); every pre-existing `push_error()`/
+  `push_warning()` call site in the project got a paired
+  `GameLog.error()`/`.warn()` call alongside it. 9 new GUT tests (201
+  total, was 192). **2 separate live 2-process tests**: a direct-
+  connect run confirmed event ordering and the server-only gate under
+  real networking; a real-disconnect run (killed the client process
+  outright) confirmed the FULL event chain end-to-end in the server's
+  actual on-disk file -- connect → disconnect → grace period started →
+  grace period expired (forfeit) → round ended → intermission started,
+  all 7 lines in order, zero engine errors, client wrote no log file.
+  See `memory/plan.md`'s Slice 18 block and `memory/verify.md`'s Phase
+  18 section for full evidence.
 
 ## Backlog (next up)
 
-- [ ] **Phases 18-20 (match log, replay recording, replay playback) —
-  scope confirmed via `/think` 2026-09-03/04, running now via `/loop` +
-  `/ship-phase`, one phase at a time. Phases 14-17 are DONE, see the
+- [ ] **Phases 19-20 (replay recording, replay playback) — scope
+  confirmed via `/think` 2026-09-03/04, running now via `/loop` +
+  `/ship-phase`, one phase at a time. Phases 14-18 are DONE, see the
   Completed entries above.** See
   `memory/plan.md`'s roadmap list (items 14-20) for the full decided
   scope of each, including the exact inter-round loadout-countdown

@@ -672,4 +672,27 @@ func _rpc_receive_countdown(value: float) -> void:
 func _start_match() -> void:
 	LanDiscovery.stop_advertising()
 	MatchState.friendly_fire_enabled = room_friendly_fire
+	_log_final_loadouts()
 	MatchState.enter_loading(room_match_mode as MatchState.MatchMode)
+
+
+## Phase 18: logs each registered peer's final Room Config choices once,
+## at the moment the match actually starts -- not on every intermediate
+## dropdown change (those already broadcast live via _broadcast_room_
+## state(), no need to also log every keystroke of indecision).
+func _log_final_loadouts() -> void:
+	for peer_id in player_class_ids:
+		(
+			GameLog
+			. info(
+				"player_loadout",
+				{
+					"peer_id": peer_id,
+					"class": player_class_ids[peer_id],
+					"team": player_team_ids.get(peer_id, -1),
+					"weapon": player_weapon_ids.get(peer_id, ""),
+					"boot": player_boot_ids.get(peer_id, ""),
+					"perk": player_perk_ids.get(peer_id, ""),
+				}
+			)
+		)
