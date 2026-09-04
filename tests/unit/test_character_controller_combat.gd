@@ -25,12 +25,34 @@ func _spawn_character_with_perk(peer_id: int, perk_id: String) -> CharacterContr
 	return character
 
 
+## Phase 16: same LIVE-singleton-registration pattern as
+## _spawn_character_with_perk() above, for weapon/boot -- a fully
+## independent loadout axis, not a substitute for it.
+func _spawn_character_with_weapon(peer_id: int, weapon_id: String) -> CharacterController:
+	LobbyState.player_weapon_ids[peer_id] = weapon_id
+	var character := CHARACTER_SCENE.instantiate()
+	character.name = str(peer_id)
+	add_child_autofree(character)
+	LobbyState.player_weapon_ids.erase(peer_id)
+	return character
+
+
+func _spawn_character_with_boot(peer_id: int, boot_id: String) -> CharacterController:
+	LobbyState.player_boot_ids[peer_id] = boot_id
+	var character := CHARACTER_SCENE.instantiate()
+	character.name = str(peer_id)
+	add_child_autofree(character)
+	LobbyState.player_boot_ids.erase(peer_id)
+	return character
+
+
 func _sample(
 	attack_pressed: bool = false,
 	ability_q_pressed: bool = false,
 	ability_e_pressed: bool = false,
 	ability_r_pressed: bool = false,
-	ability_f_pressed: bool = false
+	ability_f_pressed: bool = false,
+	boot_active_pressed: bool = false
 ) -> InputBuffer.Sample:
 	var sample := InputBuffer.Sample.new()
 	sample.attack_pressed = attack_pressed
@@ -38,6 +60,7 @@ func _sample(
 	sample.ability_e_pressed = ability_e_pressed
 	sample.ability_r_pressed = ability_r_pressed
 	sample.ability_f_pressed = ability_f_pressed
+	sample.boot_active_pressed = boot_active_pressed
 	sample.delta = 1.0 / 60.0
 	return sample
 
@@ -279,6 +302,97 @@ func test_restoring_a_predicted_checkpoint_preserves_ability_r_current_move() ->
 		"restoring a checkpoint must bring back the ability's current_move, not just state/move_frame"
 	)
 	character.ability_r_fsm.advance_frame()  # must not throw
+
+
+## Phase 16: boot_active mirrors ability_r/ability_f exactly -- own FSM,
+## own cooldown, independent of every other slot -- except its
+## AbilityResource comes from the player's boot pick (see
+## test_boot_active_resolves_from_lobby_state_boot_pick below), not a
+## fixed per-class @export. Coverage here is the same deliberate subset
+## Phase 15 used for R/F, not the full Q/E set.
+func test_boot_active_pressed_starts_its_own_move() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, false, false, false, false, true))
+	assert_ne(character.boot_active_fsm.state, ActionFsm.State.NEUTRAL)
+	assert_eq(character.boot_active_fsm.current_move, character.boot_active.move)
+
+
+func test_boot_active_stays_on_cooldown_after_its_move_ends() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, false, false, false, false, true))
+	var move := character.boot_active.move
+	var total_frames := move.startup_frames + move.active_frames + move.recovery_frames
+	for _i in range(total_frames):
+		character.apply_input(_sample())
+	assert_eq(character.boot_active_fsm.state, ActionFsm.State.NEUTRAL)
+	character.apply_input(_sample(false, false, false, false, false, true))
+	assert_eq(
+		character.boot_active_fsm.state,
+		ActionFsm.State.NEUTRAL,
+		"pressing the boot's active again immediately after it ends should be blocked by cooldown"
+	)
+
+
+func test_boot_active_is_independent_of_the_4_class_ability_slots() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, true, true, true, true, true))
+	assert_ne(character.ability_q_fsm.state, ActionFsm.State.NEUTRAL)
+	assert_ne(character.ability_e_fsm.state, ActionFsm.State.NEUTRAL)
+	assert_ne(character.ability_r_fsm.state, ActionFsm.State.NEUTRAL)
+	assert_ne(character.ability_f_fsm.state, ActionFsm.State.NEUTRAL)
+	assert_ne(character.boot_active_fsm.state, ActionFsm.State.NEUTRAL)
+
+
+func test_is_any_action_active_includes_boot_active() -> void:
+	var character := _spawn_character()
+	character.boot_active_fsm.state = ActionFsm.State.ACTIVE
+	assert_true(character._is_any_action_active())
+
+
+## Same live-found reconciliation gap as ability_r/e/q/f (see
+## memory/gotchas.md) -- boot_active is new in Phase 16, so this
+## confirms its own Checkpoint field was added correctly the first
+## time, not found broken later.
+func test_restoring_a_predicted_checkpoint_preserves_boot_active_current_move() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, false, false, false, false, true))
+	var checkpoint := character._capture_predicted_state(1)
+	character.boot_active_fsm.current_move = null
+	character._restore_predicted_state(checkpoint)
+	assert_eq(
+		character.boot_active_fsm.current_move,
+		character.boot_active.move,
+		"restoring a checkpoint must bring back boot_active's current_move too"
+	)
+	character.boot_active_fsm.advance_frame()  # must not throw
+
+
+## Phase 16: attack_move/skillshot_move are no longer fixed per-class
+## @export values -- resolved at runtime from the player's Room Config
+## weapon pick, same "every peer's own _ready(), never PlayerSpawner"
+## pattern as perk (see _apply_weapon_from_lobby_state()'s own doc
+## comment).
+func test_weapon_resolves_attack_and_skillshot_move_from_lobby_state() -> void:
+	var character := _spawn_character_with_weapon(929292, "warhammer")
+	assert_eq(character.attack_move.move_name, "Crushing Blow")
+	assert_eq(character.skillshot_move.move_name, "Ground Slam Wave")
+
+
+func test_unregistered_peer_falls_back_to_the_first_canonical_weapon() -> void:
+	var character := _spawn_character()
+	assert_eq(character.attack_move.move_name, "Debug Attack")
+	assert_eq(character.skillshot_move.move_name, "Debug Skillshot")
+
+
+func test_boot_active_resolves_from_lobby_state_boot_pick() -> void:
+	var character := _spawn_character_with_boot(939393, "tumbling_boots")
+	assert_eq(character.boot_active.ability_name, "Rolling Strike")
+	assert_true(character.boot_active.is_projectile)
+
+
+func test_unregistered_peer_falls_back_to_the_first_canonical_boot() -> void:
+	var character := _spawn_character()
+	assert_eq(character.boot_active.ability_name, "Quick Kick")
 
 
 func test_apply_perk_from_lobby_state_scales_stats_on_ready() -> void:

@@ -166,6 +166,8 @@ func test_reset_room_clears_every_previous_rooms_state() -> void:
 	lobby.player_class_ids[1] = "vanguard"
 	lobby.player_team_ids[1] = 0
 	lobby.player_perk_ids[1] = "swift"
+	lobby.player_weapon_ids[1] = "warhammer"
+	lobby.player_boot_ids[1] = "tumbling_boots"
 	lobby.player_ready[1] = true
 	lobby.room_match_mode = MatchState.MatchMode.FREE_FOR_ALL
 	lobby.room_friendly_fire = true
@@ -173,6 +175,8 @@ func test_reset_room_clears_every_previous_rooms_state() -> void:
 	assert_true(lobby.player_class_ids.is_empty())
 	assert_true(lobby.player_team_ids.is_empty())
 	assert_true(lobby.player_perk_ids.is_empty())
+	assert_true(lobby.player_weapon_ids.is_empty())
+	assert_true(lobby.player_boot_ids.is_empty())
 	assert_true(lobby.player_ready.is_empty())
 	assert_eq(lobby.room_match_mode, MatchState.MatchMode.TEAM)
 	assert_false(lobby.room_friendly_fire)
@@ -300,4 +304,89 @@ func test_registering_again_does_not_reset_an_already_chosen_perk() -> void:
 	lobby.player_perk_ids[42] = "adept"
 	lobby._apply_registration(42, "warden")
 	assert_eq(lobby.player_perk_ids[42], "adept")
+	lobby.free()
+
+
+## Phase 16: weapon and boot are a 2nd/3rd fully independent loadout
+## axis alongside perk (confirmed 2026-09-03: not a replacement for
+## it) -- same resolve/get/default-on-registration shape as perk above.
+func test_valid_weapon_id_passes_through() -> void:
+	assert_eq(LobbyState.resolve_weapon_id("warhammer"), "warhammer")
+
+
+func test_unknown_weapon_id_falls_back_to_first_canonical_weapon() -> void:
+	assert_eq(LobbyState.resolve_weapon_id("not_a_weapon"), LobbyState.WEAPON_IDS[0])
+
+
+func test_empty_weapon_id_falls_back_to_first_canonical_weapon() -> void:
+	assert_eq(LobbyState.resolve_weapon_id(""), LobbyState.WEAPON_IDS[0])
+
+
+func test_get_weapon_id_returns_fallback_for_unregistered_peer() -> void:
+	var lobby := LobbyStateScript.new()
+	assert_eq(lobby.get_weapon_id(42, "iron_sword"), "iron_sword")
+	lobby.free()
+
+
+func test_get_weapon_id_returns_registered_choice() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby.player_weapon_ids[42] = "warhammer"
+	assert_eq(lobby.get_weapon_id(42, "iron_sword"), "warhammer")
+	lobby.free()
+
+
+func test_registering_a_class_defaults_weapon_to_first_canonical_weapon() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby._apply_registration(42, "warden")
+	assert_eq(lobby.player_weapon_ids[42], LobbyState.WEAPON_IDS[0])
+	lobby.free()
+
+
+func test_registering_again_does_not_reset_an_already_chosen_weapon() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby._apply_registration(42, "warden")
+	lobby.player_weapon_ids[42] = "warhammer"
+	lobby._apply_registration(42, "warden")
+	assert_eq(lobby.player_weapon_ids[42], "warhammer")
+	lobby.free()
+
+
+func test_valid_boot_id_passes_through() -> void:
+	assert_eq(LobbyState.resolve_boot_id("tumbling_boots"), "tumbling_boots")
+
+
+func test_unknown_boot_id_falls_back_to_first_canonical_boot() -> void:
+	assert_eq(LobbyState.resolve_boot_id("not_a_boot"), LobbyState.BOOT_IDS[0])
+
+
+func test_empty_boot_id_falls_back_to_first_canonical_boot() -> void:
+	assert_eq(LobbyState.resolve_boot_id(""), LobbyState.BOOT_IDS[0])
+
+
+func test_get_boot_id_returns_fallback_for_unregistered_peer() -> void:
+	var lobby := LobbyStateScript.new()
+	assert_eq(lobby.get_boot_id(42, "swift_boots"), "swift_boots")
+	lobby.free()
+
+
+func test_get_boot_id_returns_registered_choice() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby.player_boot_ids[42] = "tumbling_boots"
+	assert_eq(lobby.get_boot_id(42, "swift_boots"), "tumbling_boots")
+	lobby.free()
+
+
+func test_registering_a_class_defaults_boot_to_first_canonical_boot() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby._apply_registration(42, "warden")
+	assert_eq(lobby.player_boot_ids[42], LobbyState.BOOT_IDS[0])
+	lobby.free()
+
+
+func test_registering_again_does_not_reset_an_already_chosen_boot() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby._apply_registration(42, "warden")
+	lobby.player_boot_ids[42] = "tumbling_boots"
+	lobby._apply_registration(42, "warden")
+	assert_eq(lobby.player_boot_ids[42], "tumbling_boots")
 	lobby.free()

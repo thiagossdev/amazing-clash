@@ -12,6 +12,18 @@ excluded_directories:
 max-file-lines: 2000
 # Default (20) is tuned for production classes; GUT's one-test-per-
 # method convention means a growing test file legitimately exceeds it
-# (test_chassis.gd was already at 20 before this bump). 40 gives real
-# headroom without going unlimited.
-max-public-methods: 40
+# (test_chassis.gd was already at 20 before the first bump to 40).
+# Phase 16 pushed test_lobby_state.gd to 49 (perk/weapon/boot loadout
+# tests keep growing that one file in parallel) -- bumped again rather
+# than split, matching the same "growing test file, not a design
+# smell" reasoning as the first bump. If this keeps recurring across
+# Phases 17-20, splitting test_lobby_state.gd's loadout-axis tests
+# (perk/weapon/boot) into their own file is worth revisiting.
+max-public-methods: 60
+# Default (6) is tuned for arbitrary branchy logic; CombatResolver.
+# _get_move_for_slot()'s `match` is a flat slot-name -> MoveDefinition
+# lookup (skillshot + 4 class ability slots + Phase 16's boot_active +
+# a default = 7 branches), not deep/tangled control flow -- 8 gives one
+# slot of headroom without going unlimited, same "growing but still
+# flat" reasoning as the max-public-methods bumps above.
+max-returns: 8

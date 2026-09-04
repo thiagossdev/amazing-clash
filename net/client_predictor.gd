@@ -56,6 +56,14 @@ class Checkpoint:
 	var ability_f_move_frame: int = 0
 	var ability_f_cooldown_frames: int = 0
 	var ability_f_move: MoveDefinition
+	## Phase 16: the boot's own T-bound active slot -- same
+	## reconciliation treatment as every ability slot above, including
+	## *_move (see this class's own doc comment on why that field is
+	## required, not optional).
+	var boot_active_state: int = 0
+	var boot_active_move_frame: int = 0
+	var boot_active_cooldown_frames: int = 0
+	var boot_active_move: MoveDefinition
 
 
 var _buffer := InputBuffer.new()

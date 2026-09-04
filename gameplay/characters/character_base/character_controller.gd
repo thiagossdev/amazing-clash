@@ -51,21 +51,12 @@ const POSITION_HISTORY_MAX_ENTRIES := 24
 ## Which child node's local `position` absorbs the reconciliation-
 ## smoothing offset.
 @export var visual_path: NodePath = ^"Visual"
-## The character's melee move (LMB). Character.tscn (the generic GUT
-## test fixture) assigns placeholder debug data; Phase 4's real class
-## scenes (Vanguard.tscn, RangedMage.tscn) assign their own kit move.
-@export var attack_move: MoveDefinition
-## The character's skillshot move (RMB) -- always fires a Projectile in
-## pending_skillshot_direction (real mouse-aim, captured at cast time),
-## unlike the ability slots below, which pick melee or projectile per
-## their own AbilityResource.is_projectile.
-@export var skillshot_move: MoveDefinition
 ## Phase 3's 2 independent test ability slots -- Q and E, each its own
 ## cooldown, castable while melee/skillshot are on cooldown or vice
 ## versa. Phase 15 adds ability_r/ability_f below, mirroring these 2
-## exactly -- 4 class-owned slots total. T is reserved for Phase 16's
-## boot-driven 5th slot (owned by the player's loadout pick, not the
-## class), not added here.
+## exactly -- 4 class-owned slots total, still @export (fixed per
+## class, unlike attack_move/skillshot_move/boot_active below, which
+## Phase 16 made loadout-resolved instead).
 @export var ability_q: AbilityResource
 @export var ability_e: AbilityResource
 @export var ability_r: AbilityResource
@@ -82,6 +73,27 @@ const POSITION_HISTORY_MAX_ENTRIES := 24
 
 var fsm := LocomotionFsm.new()
 var action_fsm := ActionFsm.new()
+## The character's melee move (LMB). NOT @export as of Phase 16 --
+## resolved at runtime from the player's Room Config weapon pick (see
+## _apply_weapon_from_lobby_state()), no longer a fixed per-class
+## value. Through Phase 15 this was wired directly in each class's own
+## .tscn (Character.tscn's debug data, Vanguard/RangedMage/Warden's own
+## kit move); a weapon is now a shared, class-independent pick
+## (confirmed 2026-09-03: not per-class), so a scene-level @export
+## would silently be clobbered every _ready() and read as dead state.
+var attack_move: MoveDefinition
+## The character's skillshot move (RMB) -- always fires a Projectile in
+## pending_skillshot_direction (real mouse-aim, captured at cast time),
+## unlike the ability slots below, which pick melee or projectile per
+## their own AbilityResource.is_projectile. Same Phase 16 runtime-
+## resolved treatment as attack_move above.
+var skillshot_move: MoveDefinition
+## Phase 16: the boot's own T-bound 5th ability-like slot -- owned by
+## the player's Room Config boot pick (_apply_boot_from_lobby_state()),
+## not the class, so NOT @export, same runtime-resolved treatment as
+## attack_move/skillshot_move above rather than ability_q/e/r/f's
+## scene-fixed treatment.
+var boot_active: AbilityResource
 ## Independent of action_fsm and of each other: pressing Q doesn't lock
 ## out melee/skillshot or E, only Q's own cooldown gates it again. A
 ## deliberate Phase 3 simplification -- whether a real ability should
@@ -91,6 +103,9 @@ var ability_q_fsm := ActionFsm.new()
 var ability_e_fsm := ActionFsm.new()
 var ability_r_fsm := ActionFsm.new()
 var ability_f_fsm := ActionFsm.new()
+## Phase 16: the boot's own T-bound slot -- same independence as the 4
+## class ability slots above.
+var boot_active_fsm := ActionFsm.new()
 var control_mode: ControlMode = ControlMode.PREDICTED
 ## Never predicted -- the server is sole authority over damage taken,
 ## set directly from CharacterSnapshot.health on receipt, same category
@@ -112,6 +127,7 @@ var pending_ability_q_direction: Vector2 = Vector2.RIGHT
 var pending_ability_e_direction: Vector2 = Vector2.RIGHT
 var pending_ability_r_direction: Vector2 = Vector2.RIGHT
 var pending_ability_f_direction: Vector2 = Vector2.RIGHT
+var pending_boot_active_direction: Vector2 = Vector2.RIGHT
 ## Real mouse-aim, refreshed every tick from the current input sample --
 ## what get_aim_direction() (melee's hitbox rotation) reads. Corrected
 ## from LocomotionFsm.facing_direction (last movement direction) after
@@ -190,6 +206,7 @@ var _ability_q_cooldown_frames: int = 0
 var _ability_e_cooldown_frames: int = 0
 var _ability_r_cooldown_frames: int = 0
 var _ability_f_cooldown_frames: int = 0
+var _boot_active_cooldown_frames: int = 0
 ## Server-only (AUTHORITATIVE): a short ring buffer of this character's
 ## own recent positions, keyed by _server_sim.tick_count(), for lag-
 ## compensated hit resolution (see position_at_tick() and
@@ -213,6 +230,8 @@ func _ready() -> void:
 		if camera:
 			camera.target = self
 	_apply_perk_from_lobby_state()
+	_apply_weapon_from_lobby_state()
+	_apply_boot_from_lobby_state()
 	_previous_health_for_flash = current_health
 
 
@@ -242,6 +261,30 @@ func _apply_perk_from_lobby_state() -> void:
 	max_health *= perk.max_health_multiplier
 	fsm.move_speed_multiplier = perk.move_speed_multiplier
 	cooldown_multiplier = perk.cooldown_multiplier
+
+
+## Phase 16: same "every peer's own _ready(), never PlayerSpawner"
+## reasoning as _apply_perk_from_lobby_state() above -- attack_move/
+## skillshot_move are read during client-side PREDICTION too. Unlike
+## perk (a no-op default), a weapon is REQUIRED for melee/skillshot to
+## function at all, so an unregistered peer (net/dev_bootstrap.gd's
+## headless flow, which never touches LobbyState) falls back to
+## WEAPON_IDS[0] rather than leaving these null -- get_weapon_id()'s
+## own fallback param handles that directly, so the lookup below always
+## resolves to a valid index.
+func _apply_weapon_from_lobby_state() -> void:
+	var weapon_id := LobbyState.get_weapon_id(str(name).to_int(), LobbyState.WEAPON_IDS[0])
+	var weapon := LobbyState.WEAPON_RESOURCES[LobbyState.WEAPON_IDS.find(weapon_id)]
+	attack_move = weapon.attack_move
+	skillshot_move = weapon.skillshot_move
+
+
+## Same reasoning and fallback shape as _apply_weapon_from_lobby_state()
+## above, for the boot's own T-bound active slot.
+func _apply_boot_from_lobby_state() -> void:
+	var boot_id := LobbyState.get_boot_id(str(name).to_int(), LobbyState.BOOT_IDS[0])
+	var boot := LobbyState.BOOT_RESOURCES[LobbyState.BOOT_IDS.find(boot_id)]
+	boot_active = boot.active_ability
 
 
 func _physics_process(delta: float) -> void:
@@ -370,6 +413,7 @@ func _sample_local_input(delta: float) -> InputBuffer.Sample:
 	sample.ability_e_pressed = InputManager.is_action_pressed(&"ability_e")
 	sample.ability_r_pressed = InputManager.is_action_pressed(&"ability_r")
 	sample.ability_f_pressed = InputManager.is_action_pressed(&"ability_f")
+	sample.boot_active_pressed = InputManager.is_action_pressed(&"ability_t")
 	sample.delta = delta
 	return sample
 
@@ -503,6 +547,10 @@ func _capture_predicted_state(sequence: int) -> ClientPredictor.Checkpoint:
 	checkpoint.ability_f_move_frame = ability_f_fsm.move_frame
 	checkpoint.ability_f_cooldown_frames = _ability_f_cooldown_frames
 	checkpoint.ability_f_move = ability_f_fsm.current_move
+	checkpoint.boot_active_state = boot_active_fsm.state
+	checkpoint.boot_active_move_frame = boot_active_fsm.move_frame
+	checkpoint.boot_active_cooldown_frames = _boot_active_cooldown_frames
+	checkpoint.boot_active_move = boot_active_fsm.current_move
 	return checkpoint
 
 
@@ -531,6 +579,10 @@ func _restore_predicted_state(checkpoint: ClientPredictor.Checkpoint) -> void:
 	ability_f_fsm.move_frame = checkpoint.ability_f_move_frame
 	_ability_f_cooldown_frames = checkpoint.ability_f_cooldown_frames
 	ability_f_fsm.current_move = checkpoint.ability_f_move
+	boot_active_fsm.state = checkpoint.boot_active_state as ActionFsm.State
+	boot_active_fsm.move_frame = checkpoint.boot_active_move_frame
+	_boot_active_cooldown_frames = checkpoint.boot_active_cooldown_frames
+	boot_active_fsm.current_move = checkpoint.boot_active_move
 
 
 func _begin_visual_correction_smoothing(pre_correction_position: Vector2) -> void:
@@ -577,6 +629,7 @@ func _is_any_action_active() -> bool:
 		or ability_e_fsm.state == ActionFsm.State.ACTIVE
 		or ability_r_fsm.state == ActionFsm.State.ACTIVE
 		or ability_f_fsm.state == ActionFsm.State.ACTIVE
+		or boot_active_fsm.state == ActionFsm.State.ACTIVE
 	)
 
 
@@ -680,6 +733,12 @@ func apply_input(sample: InputBuffer.Sample) -> void:
 	_ability_f_cooldown_frames = f_result.cooldown_frames
 	if f_result.started and ability_f and ability_f.is_projectile:
 		pending_ability_f_direction = _normalized_aim(sample.aim_direction)
+	var boot_result := _advance_ability_slot(
+		boot_active_fsm, boot_active, sample.boot_active_pressed, _boot_active_cooldown_frames
+	)
+	_boot_active_cooldown_frames = boot_result.cooldown_frames
+	if boot_result.started and boot_active and boot_active.is_projectile:
+		pending_boot_active_direction = _normalized_aim(sample.aim_direction)
 
 
 ## Starts `resource`'s move if pressed, NEUTRAL, and off cooldown;

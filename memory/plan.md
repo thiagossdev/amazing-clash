@@ -154,7 +154,7 @@ phase independently playable/demoable even if the next never lands):
     replaced or touched). A peer that never goes through Room Config
     (`net/dev_bootstrap.gd` headless flow) falls back to weapon/boot
     index 0, same convention as the existing class fallback.
-    **Not started** — scope below.
+    **Done** — see Slice 16 below.
 17. Rounds: best of 3. First to 2 round wins takes the match. Between
     rounds: a loadout-adjustment window reusing Slice 14's "ready set"
     mechanism (weapon/boot/perk only — team and class stay fixed for
@@ -1367,6 +1367,109 @@ as scoped, no deviation.
   not a new one. Also the same "no way to screenshot Godot's real
   renderer" visual-verification gap every phase since Phase 1 has
   flagged.
+
+### Slice 16 (Loadout: Weapon + Boot) — DONE
+
+Confirmed by the human owner via `/think` 2026-09-03/04 (2 blocking
+questions asked and answered: shared pool not per-class; weapon+boot
+ADDITIONAL to Phase 9's perk, not a replacement), built exactly as
+scoped, no deviation.
+
+- **Built on `feature/phase16-weapon-boot-loadout`**: `WeaponResource`
+  (`weapon_name`, `attack_move`, `skillshot_move` -- no `is_projectile`
+  field, since attack is unconditionally melee and skillshot
+  unconditionally a projectile, same dispatch CombatResolver has used
+  since Phase 2b) and `BootResource` (`boot_name`, `active_ability: AbilityResource`
+  -- reuses `AbilityResource` outright rather than duplicating its
+  move/cooldown/is_projectile shape, since a boot's active is
+  mechanically identical to a class ability slot). A shared pool of 3
+  weapons (Iron Sword, Twin Daggers, Warhammer) and 3 boots (Swift
+  Boots, Warded Greaves, Tumbling Boots) in `data/weapons/`/`data/boots/`
+  -- any class can equip any of them.
+- **`CharacterController.attack_move`/`skillshot_move` stopped being
+  `@export` fields wired per-class in each `.tscn`** -- resolved every
+  `_ready()` from the player's Room Config weapon pick
+  (`_apply_weapon_from_lobby_state()`), same "every peer's own
+  instance, never `PlayerSpawner`" pattern Phase 9's perk multipliers
+  already established (`MultiplayerSpawner` replication creates
+  separate node instances for the AUTHORITATIVE/PREDICTED/INTERPOLATED
+  copies of a character; a value set only server-side never reaches
+  the other 2). Unlike perk's "no-op default," an unregistered peer
+  falls back to `WEAPON_IDS[0]`/`BOOT_IDS[0]` rather than leaving these
+  null, since melee/skillshot can't function without a real move.
+  `boot_active` is a genuinely new 5th ability-like slot on T (own
+  `ActionFsm`, cooldown, pending-direction var, `Checkpoint` fields --
+  including `.current_move`, Phase 15's own live-found gap, not
+  repeated here), dispatched through `CombatResolver.
+  _resolve_ability_slot()`'s existing generic path unchanged.
+- **Content cleanup**: the old per-class attack/skillshot move files
+  (`vanguard_attack.tres`, `warden_binding_bolt.tres`, etc. -- 6 files)
+  became orphaned once weapon replaced them; verified unreferenced
+  anywhere else (`grep`), then deleted rather than left as dead
+  content. Iron Sword (weapon index 0, the fallback) literally
+  references the pre-existing `debug_attack.tres`/`debug_skillshot.tres`
+  by `ExtResource` rather than duplicating their numbers, so every
+  pre-Phase-16 test relying on `_spawn_character()`'s unregistered
+  default kept passing unchanged.
+- **`LobbyState`**: `player_weapon_ids`/`player_boot_ids` +
+  `WEAPON_IDS`/`BOOT_IDS`/`WEAPON_RESOURCES`/`BOOT_RESOURCES` +
+  `resolve_weapon_id()`/`resolve_boot_id()`/`get_weapon_id()`/
+  `get_boot_id()`/`set_local_weapon()`/`set_local_boot()`, mirroring
+  `player_perk_ids`'s exact shape (self-service, default-on-
+  registration, cleared by `reset_room()`/peer-disconnect, broadcast
+  in the same RPC payload). Room Config (`ui/lobby/lobby.gd`) gained 2
+  more self-service `OptionButton` dropdowns per row, shown by each
+  resource's own display name (not the raw id).
+- **1 real gap found via self-review, before it could recur**:
+  `net/dev_bootstrap.gd`'s `--simulate-ability-q/e/r/f` flags had no
+  `boot_active` sibling -- a `grep` sweep for every file referencing
+  `ability_r` (the pattern this phase extends) caught it before
+  merge. Added `--simulate-boot-active`, mirroring the existing
+  pattern exactly.
+- **Tests**: 24 new (182 total, was 158 after Phase 15).
+  `test_lobby_state.gd` (+14: weapon/boot resolve/get/default-on-
+  registration, mirroring perk's own tests exactly),
+  `test_character_controller_combat.gd` (+9: `boot_active` start/
+  cooldown/independence/`_is_any_action_active()`/checkpoint-restore,
+  the same deliberate Phase-15-style subset of Q/E's exhaustive
+  coverage, plus weapon/boot resolution and the shared-unregistered-
+  fallback case), `test_character_classes.gd` (removed 6 now-invalid
+  per-class attack/skillshot assertion lines from existing tests,
+  added 1 new test confirming all 3 classes share the same fallback
+  weapon instead), `test_input_buffer.gd` (extended the existing
+  pack/unpack round-trip test to the 7th flag, no new test function).
+  Bumped `.gdlintrc` twice: `max-public-methods` 40->60
+  (`test_lobby_state.gd` hit the cap again at 49 functions, same
+  "growing test file" reasoning as the first bump) and `max-returns`
+  6->8 (`CombatResolver._get_move_for_slot()`'s flat slot-lookup
+  `match` gained a 7th branch).
+- **Verify**: `gdformat`/`gdlint` clean project-wide. Live 2-process
+  test through the REAL Room Config flow (not `net/dev_bootstrap.gd`'s
+  raw TestArena-direct-connect, which spawns before any registration
+  RPC could land -- the same race Phase 13b hit; Room Config's
+  registration-before-start guarantee sidesteps it entirely):
+  `--dev-class=vanguard --dev-host --dev-weapon=warhammer --dev-boot=tumbling_boots --dev-ready`
+  / `--dev-class=ranged_mage --dev-join=127.0.0.1 --dev-weapon=twin_daggers
+  --dev-boot=swift_boots --dev-ready`, temporary `print()` trace in
+  both `_apply_*_from_lobby_state()` methods, removed before the final
+  commit: confirmed **identical resolved weapon/boot/move names for
+  BOTH peers, logged on BOTH the server's and the client's own
+  process** -- direct proof the per-peer resolution holds across a
+  real network boundary, same evidence bar Phase 9's own perk
+  verification used. Zero engine errors on either side.
+- **`/check`**: attempting an async background dispatch from inside
+  this isolated worker fork failed the same way Phase 15's fork found
+  (no task-id retrievable) -- skipped straight to inline adversarial
+  self-review this time instead of re-discovering the same dead end.
+  Found and fixed the `--simulate-boot-active` gap above; confirmed no
+  other file referencing the extended pattern needed the same
+  treatment.
+- **Known, deliberately unverified gaps**: same pre-existing Phase 3
+  limitation as every ability slot before it -- `boot_active_fsm`
+  state isn't replicated to a remote `INTERPOLATED` peer. Weapon/boot
+  numbers (the 3 new weapons' damage/frames, the 3 boots' cooldowns)
+  are a first pass, not playtested. Same "no way to screenshot Godot's
+  real renderer" gap every UI-adjacent phase has flagged since Phase 1.
 
 ## MVP Status
 

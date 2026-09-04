@@ -639,13 +639,36 @@ changed but this file wasn't updated.
   when no specialist sub-agents were available. See `memory/plan.md`'s
   Slice 15 block, `memory/gotchas.md`, and `memory/verify.md`'s Phase 15
   section for full evidence.
+- [x] **Phase 16 (Loadout: Weapon + Boot) implemented, live-verified, on
+  `feature/phase16-weapon-boot-loadout`**: a shared pool of 3 weapons
+  (Iron Sword, Twin Daggers, Warhammer) and 3 boots (Swift Boots,
+  Warded Greaves, Tumbling Boots) -- any class can equip any of them.
+  `CharacterController.attack_move`/`skillshot_move` stopped being
+  fixed per-class `@export` values, now resolved every `_ready()` from
+  the player's weapon pick (same "every peer's own instance, never
+  `PlayerSpawner`" pattern as Phase 9's perk). `boot_active` is a new
+  5th ability-like slot on T, dispatched through the existing generic
+  ability-slot machinery unchanged. `LobbyState` gained
+  `player_weapon_ids`/`player_boot_ids` mirroring `player_perk_ids`
+  exactly -- class + weapon + boot + perk are 4 fully independent
+  choices, perk untouched. Removed 6 now-orphaned per-class attack/
+  skillshot move files (verified unreferenced first). Found and fixed
+  1 gap via self-review: `net/dev_bootstrap.gd` had no
+  `--simulate-boot-active` flag alongside its existing R/F ones. 24
+  new GUT tests (182 total, was 158). Live 2-process test through the
+  REAL Room Config flow (not `dev_bootstrap.gd`'s direct-connect,
+  which would race the same way Phase 13b did): both peers' resolved
+  weapon/boot/move names matched identically on BOTH the server's and
+  the client's own process, zero engine errors. See `memory/plan.md`'s
+  Slice 16 block and `memory/verify.md`'s Phase 16 section for full
+  evidence.
 
 ## Backlog (next up)
 
-- [ ] **Phases 16-20 (weapon+boot loadout, best-of-3 rounds, match log,
-  replay recording, replay playback) — scope confirmed via `/think`
-  2026-09-03/04, running now via `/loop` + `/ship-phase`, one phase at
-  a time. Phases 14-15 are DONE, see the Completed entries above.** See
+- [ ] **Phases 17-20 (best-of-3 rounds, match log, replay recording,
+  replay playback) — scope confirmed via `/think` 2026-09-03/04,
+  running now via `/loop` + `/ship-phase`, one phase at a time.
+  Phases 14-16 are DONE, see the Completed entries above.** See
   `memory/plan.md`'s roadmap list (items 14-20) for the full decided
   scope of each, including the exact inter-round loadout-countdown
   timing (15s pick/confirm window, 5s or 3s start countdown depending
@@ -664,13 +687,17 @@ changed but this file wasn't updated.
   a STUN/TURN server don't exist in this project yet, and need their
   own hosting/provider decisions via a future `/think` before this is
   scheduled.
-- [ ] **/check's background-dispatch mechanism didn't work from inside
-  an isolated worker fork** (Phase 15) -- no task-id was returned, and
-  no `TaskList`/`TaskOutput` access was available to retrieve a result
-  even if one existed. Not a blocker (inline self-review is an accepted
-  fallback, same as Phase 13b), but worth the human owner's attention:
-  if this recurs across Phases 16-20, every one of them will be doing
-  self-review instead of the dedicated multi-persona `/check` pass.
+- [ ] **`/check`'s background-dispatch mechanism doesn't work from
+  inside an isolated worker fork -- confirmed recurring, not a one-off**
+  (Phase 15, then Phase 16 skipped even attempting it, going straight
+  to inline self-review per Phase 15's own documented finding): no
+  task-id is returned, and no `TaskList`/`TaskOutput` access is
+  available to retrieve a result even if one existed. Not a blocker
+  (inline adversarial self-review is an accepted fallback, same as
+  Phase 13b, and has caught real issues both times), but worth the
+  human owner's attention: Phases 17-20 will all be doing self-review
+  instead of the dedicated multi-persona `/check` pass unless this gets
+  fixed.
 - [ ] LAN discovery: Linux still can't discover a Windows-hosted room
   even after confirming `ufw allow 7777/udp` + `7778/udp` (the 7777
   fix DID resolve the separate "join hangs forever" symptom -- this is

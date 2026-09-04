@@ -1,19 +1,19 @@
-[gd_resource type="Resource" script_class="MoveDefinition" format=3 uid="uid://dtgc3qerdhn0s"]
+[gd_resource type="Resource" script_class="MoveDefinition" format=3]
 
 [ext_resource type="Script" uid="uid://cd477043vqcmb" path="res://gameplay/combat/hit_definition.gd" id="1_hit"]
 [ext_resource type="Script" uid="uid://bd2x61v2cbx7h" path="res://gameplay/combat/move_resource.gd" id="2_move"]
 
 [sub_resource type="Resource" id="Resource_hit1"]
 script = ExtResource("1_hit")
-damage = 22.0
+damage = 20.0
 hitstun_frames = 16
-hitbox_size = Vector2(26, 26)
+hitbox_size = Vector2(30, 30)
 hitstop_frames = 5
 
 [resource]
 script = ExtResource("2_move")
-move_name = "Arcane Bolt"
-startup_frames = 10
-active_frames = 1
-recovery_frames = 18
+move_name = "Ground Slam Wave"
+startup_frames = 14
+active_frames = 2
+recovery_frames = 20
 hit_definitions = Array[ExtResource("1_hit")]([SubResource("Resource_hit1")])

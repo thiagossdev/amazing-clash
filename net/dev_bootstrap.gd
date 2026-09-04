@@ -18,7 +18,13 @@ extends Node
 ## specific aim). `-- --simulate-ability-q` / `-- --simulate-ability-e` /
 ## `-- --simulate-ability-r` / `-- --simulate-ability-f` fire one press
 ## each ~1.6s/~1.8s/~2.0s/~2.2s in, same reasoning, to prove Phase 3's
-## (and Phase 15's) independent ability slots. `-- --friendly-fire` sets
+## (and Phase 15's) independent ability slots. `-- --simulate-boot-
+## active` fires one press ~2.4s in, same reasoning, for Phase 16's
+## boot_active slot -- this peer never goes through Room Config here,
+## so it always casts whichever ability the fallback boot (index 0)
+## grants, not a specific boot pick (see ui/lobby/lobby.gd's own
+## --dev-boot=<id> for testing an actual boot CHOICE instead of just
+## the cast mechanic). `-- --friendly-fire` sets
 ## MatchState.friendly_fire_enabled -- a per-match server setting
 ## decided at startup, not a live-togglable console command (who's
 ## allowed to change a match rule mid-game is a separate authority
@@ -118,6 +124,10 @@ func _ready() -> void:
 	if "--simulate-ability-f" in args:
 		await get_tree().create_timer(2.2).timeout
 		Input.action_press(&"ability_f")
+
+	if "--simulate-boot-active" in args:
+		await get_tree().create_timer(2.4).timeout
+		Input.action_press(&"ability_t")
 
 	if "--simulate-self-eliminate" in args:
 		await get_tree().create_timer(1.0).timeout
