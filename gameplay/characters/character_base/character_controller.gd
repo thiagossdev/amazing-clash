@@ -386,6 +386,21 @@ func _physics_step_predicted(delta: float) -> void:
 ## character (current_health <= 0) freezes in place permanently, same
 ## reasoning as the lock but never expiring -- MatchRules reads this
 ## same current_health to resolve the match's win condition.
+## Phase 20 (replay playback): net/replay_driver.gd's own offline
+## equivalent of a live server tick -- pushes ONE recorded sample
+## directly into _server_sim, then runs the exact same authoritative
+## step every real tick already runs. Only ever called on a character
+## the replay driver itself spawned (controlling_peer_id offset by
+## ReplayDriver.CONTROLLING_PEER_ID_OFFSET so is_owned_by_me() is
+## always false here -- see that constant's own doc comment for why
+## that offset is load-bearing, not cosmetic: without it,
+## _physics_step_authoritative()'s own is_owned_by_me() branch below
+## would push a SECOND bogus sample into the same tick's buffer).
+func replay_step_authoritative(sample: InputBuffer.Sample) -> void:
+	_server_sim.record_input(sample)
+	_physics_step_authoritative(sample.delta)
+
+
 func _physics_step_authoritative(delta: float) -> void:
 	if is_owned_by_me():
 		_server_sim.record_input(_sample_local_input(delta))
