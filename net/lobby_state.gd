@@ -27,6 +27,13 @@ extends Node
 ## Config screen listens to this to redraw itself.
 signal room_state_changed
 
+## Fired on every peer whenever the countdown's own broadcast value
+## changes (Phase 14) -- see countdown_seconds_remaining's own doc
+## comment below. Kept separate from room_state_changed so
+## ui/lobby/lobby.gd can update just the countdown label without
+## rebuilding its whole player-row list every second.
+signal countdown_changed
+
 ## Canonical class id strings, in the same order as
 ## net/player_spawner.gd's CLASS_SCENES -- CharacterSelect and
 ## PlayerSpawner both key off these, never a raw index, so adding a
@@ -57,6 +64,24 @@ const PERK_RESOURCES: Array[PerkResource] = [
 	preload("res://data/perks/balanced.tres"),
 ]
 
+## Team id -> display label. team_id itself stays a plain int (0/1)
+## everywhere else -- this is a label-only change (Phase 14, the human
+## owner's own request), not a data model change.
+const TEAM_LABELS: Array[String] = ["Red", "Blue"]
+
+## Phase 14: server-only countdown that starts once is_room_ready_to_
+## start() goes true, and auto-triggers the match the same way the old
+## host-only Start button used to. countdown_seconds_remaining (below)
+## is the one client-visible piece of it -- -1.0 whenever nothing is
+## counting down (either the room isn't ready yet, or it's still inside
+## the silent PRE_DELAY_SECONDS grace window before the visible
+## countdown appears). _countdown_generation is server-only bookkeeping:
+## bumped by _cancel_countdown()/_run_countdown() so an in-flight
+## coroutine can tell it's been superseded and exit cleanly instead of
+## fighting a newer one or a cancellation.
+const PRE_DELAY_SECONDS := 2.0
+const COUNTDOWN_SECONDS := 5.0
+
 ## Set locally by CharacterSelect before ever connecting; read once,
 ## right after a successful host()/join(), by register_local_player().
 ## Not itself replicated -- only the registered outcome is.
@@ -85,28 +110,66 @@ var player_team_ids: Dictionary = {}
 ## registration, same "always valid, never missing" treatment as team.
 var player_perk_ids: Dictionary = {}
 
-## Server-authoritative peer_id -> ready flag, for every peer EXCEPT
-## the host. The host's own id is never a meaningful key here --
-## pressing Start on the host's own client is the host's readiness
-## signal, no separate checkbox for them (see ui/lobby/lobby.gd).
+## Server-authoritative peer_id -> ready flag, for every registered
+## peer INCLUDING the host (Phase 14: readying up is symmetric now --
+## there is no more host-only Start button, see ui/lobby/lobby.gd).
 var player_ready: Dictionary = {}
 
-## Room-level settings, staged in Room Config before Start and applied
-## to MatchState.match_mode/friendly_fire_enabled the moment Start is
-## pressed (see lobby.gd._on_start_pressed). Broadcast continuously so
-## every peer's Room Config screen reflects the host's current choice
-## live; only the host can change them (read-only on other clients).
-## Stored as plain int (not MatchState.MatchMode) purely so the RPC
-## payload's type stays a primitive -- callers compare against
-## MatchState.MatchMode's own enum values.
+## Room-level settings, staged in Room Config and applied to
+## MatchState.match_mode/friendly_fire_enabled the moment the room
+## actually starts (see _start_match() below, now triggered
+## automatically by the ready countdown rather than a host-only Start
+## button press). Broadcast continuously so every peer's Room Config
+## screen reflects the host's current choice live; only the host can
+## change them (read-only on other clients). Stored as plain int (not
+## MatchState.MatchMode) purely so the RPC payload's type stays a
+## primitive -- callers compare against MatchState.MatchMode's own
+## enum values.
 var room_match_mode: int = MatchState.MatchMode.TEAM
 var room_friendly_fire: bool = false
+
+## Client-visible: seconds remaining in the countdown, or -1.0 when
+## nothing is counting down. See PRE_DELAY_SECONDS/COUNTDOWN_SECONDS'
+## own doc comment above.
+var countdown_seconds_remaining: float = -1.0
+
+## Overridable for live dev testing (--dev-countdown-pre-delay=/
+## --dev-countdown-seconds=, see _apply_dev_countdown_overrides()) --
+## same "const default + overridable var" shape net/player_spawner.gd
+## already uses for GRACE_PERIOD_SECONDS/_grace_period_seconds, so a
+## real 2s+5s wait doesn't have to be eaten by every live headless test.
+var _pre_delay_seconds: float = PRE_DELAY_SECONDS
+var _countdown_seconds_config: float = COUNTDOWN_SECONDS
+var _countdown_generation: int = 0
 
 var _next_team_index: int = 0
 
 
 func _ready() -> void:
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+	_apply_dev_countdown_overrides()
+
+
+## Same convention as net/player_spawner.gd's own --dev-grace-period=
+## handling: read OS.get_cmdline_user_args() directly here rather than
+## routing through net/dev_bootstrap.gd, and guard with is_valid_float()
+## -- a malformed value silently falling back to the production default
+## was a real bug found by /check on that exact flag (see
+## memory/gotchas.md), not repeating it here.
+func _apply_dev_countdown_overrides() -> void:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--dev-countdown-pre-delay="):
+			var value := arg.trim_prefix("--dev-countdown-pre-delay=")
+			if value.is_valid_float():
+				_pre_delay_seconds = value.to_float()
+		elif arg.begins_with("--dev-countdown-seconds="):
+			var value := arg.trim_prefix("--dev-countdown-seconds=")
+			if value.is_valid_float():
+				_countdown_seconds_config = value.to_float()
+
+
+func team_label(team_id: int) -> String:
+	return TEAM_LABELS[resolve_team_id(team_id)]
 
 
 ## Pure: maps an arbitrary requested class id to a valid one, falling
@@ -159,14 +222,17 @@ func is_ready(peer_id: int) -> bool:
 	return player_ready.get(peer_id, false)
 
 
-## Pure: true once every currently-registered peer other than the host
-## has marked itself ready. A peer that has registered a class but not
-## yet reported ready counts as not ready (a missing entry means
-## false, it is never skipped).
-func all_non_host_ready(host_peer_id: int) -> bool:
+## Pure: true once every currently-registered peer, INCLUDING the host
+## (Phase 14 -- replaces the old all_non_host_ready(), which
+## deliberately skipped peer 1 back when only the host had a Start
+## button instead of a ready toggle), has marked itself ready. A peer
+## that has registered a class but not yet reported ready counts as not
+## ready (a missing entry means false, never skipped). False with no
+## one registered at all -- an empty room is never "ready."
+func all_ready() -> bool:
+	if player_class_ids.is_empty():
+		return false
 	for peer_id in player_class_ids:
-		if peer_id == host_peer_id:
-			continue
 		if not player_ready.get(peer_id, false):
 			return false
 	return true
@@ -190,6 +256,19 @@ func has_valid_team_split() -> bool:
 	return distinct_teams.size() >= 2
 
 
+## Pure: the countdown's own start condition -- everyone ready, AND
+## either the mode is free-for-all (no team-split concept applies) or
+## the current team split is actually valid. Extracted as its own named
+## predicate (rather than inlined in the countdown coroutine) so it's
+## unit-testable without any Node/multiplayer context, same reasoning
+## as has_valid_team_split()/all_ready() above.
+func is_room_ready_to_start() -> bool:
+	return (
+		all_ready()
+		and (room_match_mode == MatchState.MatchMode.FREE_FOR_ALL or has_valid_team_split())
+	)
+
+
 ## Called locally by the connecting peer (host or client) right after
 ## NetworkManager.host()/join() succeeds, to register local_chosen_
 ## class_id under this peer's own id.
@@ -202,10 +281,9 @@ func register_local_player() -> void:
 		_rpc_register.rpc_id(1, local_chosen_class_id)
 
 
-## Called locally by any peer to set their OWN ready flag. The host
-## never needs to call this for itself (see player_ready's own doc
-## comment) -- ui/lobby/lobby.gd simply never draws a ready control on
-## the host's own row.
+## Called locally by any peer, including the host, to set their OWN
+## ready flag (Phase 14: symmetric now, see player_ready's own doc
+## comment -- there is no more host-only Start button).
 func set_local_ready(ready: bool) -> void:
 	var peer_id := multiplayer.get_unique_id()
 	if NetworkManager.is_server():
@@ -343,6 +421,10 @@ func _apply_perk(peer_id: int, perk_id: String) -> void:
 	player_perk_ids[peer_id] = resolve_perk_id(perk_id)
 
 
+## Server-only: every mutation above (registration, ready, team, perk,
+## mode, friendly-fire, and disconnect) already funnels through this
+## one function, so it's the single choke point to re-evaluate the
+## countdown from -- no call site needs to remember to do it itself.
 func _broadcast_room_state() -> void:
 	_rpc_receive_room_state.rpc(
 		player_class_ids,
@@ -352,6 +434,7 @@ func _broadcast_room_state() -> void:
 		room_match_mode,
 		room_friendly_fire
 	)
+	_recompute_countdown()
 
 
 @rpc("authority", "reliable", "call_local")
@@ -370,3 +453,75 @@ func _rpc_receive_room_state(
 	room_match_mode = mode
 	room_friendly_fire = friendly_fire
 	room_state_changed.emit()
+
+
+## Server-only. Starts a fresh countdown coroutine if the room just
+## became ready and none is already running; cancels an in-flight one
+## the instant the room stops being ready (someone un-readied, a new
+## peer joined and hasn't readied yet, or the team split broke) --
+## peers who were already ready never need to re-click anything, the
+## countdown simply restarts from PRE_DELAY_SECONDS once the full
+## ready-set re-forms. A no-op on a client (only the server ever calls
+## _broadcast_room_state(), but this stays defensive in case that ever
+## changes).
+func _recompute_countdown() -> void:
+	if not NetworkManager.is_server():
+		return
+	if not is_room_ready_to_start():
+		_cancel_countdown()
+		return
+	if _countdown_generation > 0:
+		return
+	_run_countdown()
+
+
+func _cancel_countdown() -> void:
+	if _countdown_generation == 0:
+		return
+	_countdown_generation = 0
+	_set_countdown_remaining(-1.0)
+
+
+## The 2s PRE_DELAY_SECONDS window is deliberately silent (no broadcast)
+## -- only the visible COUNTDOWN_SECONDS phase is shown to players, per
+## the human owner's own spec ("2s after all ready, inicia um countdown
+## de 5s"). _countdown_generation is bumped once up front and captured
+## locally so a later _cancel_countdown()/_run_countdown() call from a
+## DIFFERENT ready-state change can't be confused with this one -- each
+## `await` below re-checks both the generation and is_room_ready_to_
+## start() before continuing, since either can change while suspended.
+func _run_countdown() -> void:
+	_countdown_generation += 1
+	var my_generation := _countdown_generation
+	await get_tree().create_timer(_pre_delay_seconds).timeout
+	if my_generation != _countdown_generation or not is_room_ready_to_start():
+		return
+	var remaining := _countdown_seconds_config
+	while remaining > 0.0:
+		_set_countdown_remaining(remaining)
+		await get_tree().create_timer(1.0).timeout
+		if my_generation != _countdown_generation or not is_room_ready_to_start():
+			return
+		remaining -= 1.0
+	_set_countdown_remaining(-1.0)
+	_start_match()
+
+
+func _set_countdown_remaining(value: float) -> void:
+	countdown_seconds_remaining = value
+	_rpc_receive_countdown.rpc(value)
+
+
+@rpc("authority", "reliable", "call_local")
+func _rpc_receive_countdown(value: float) -> void:
+	countdown_seconds_remaining = value
+	countdown_changed.emit()
+
+
+## Replaces ui/lobby/lobby.gd's old host-only _on_start_pressed() --
+## the countdown above is what decides WHEN to call this now, no button
+## press involved.
+func _start_match() -> void:
+	LanDiscovery.stop_advertising()
+	MatchState.friendly_fire_enabled = room_friendly_fire
+	MatchState.enter_loading(room_match_mode as MatchState.MatchMode)
