@@ -339,6 +339,20 @@ func _rpc_reassign_controller(new_peer_id: int) -> void:
 			camera.target = self
 
 
+## Phase 17: the MatchState.Phase.IN_PROGRESS guard on the RPC send
+## below (added this phase) is load-bearing, not cosmetic -- found
+## live: a round transition's own scene reload can free the SERVER's
+## old character node (and, with it, that node's own `multiplayer`
+## resolution) while a client's still-in-flight _rpc_send_input from
+## the round that just ended is still queued to arrive, crashing with
+## "Cannot call method 'get_remote_sender_id' on a null value" the
+## instant it's delivered to an already-detached node. Nothing
+## previously stopped a client from continuing to send input for its
+## old character all through ROUND_INTERMISSION right up until the
+## reload -- this guard makes it stop the moment the round itself ends,
+## well before any reload can race it. Local prediction/movement itself
+## is deliberately left ungated (out of this phase's own scope; the
+## round-intermission overlay already visually covers the arena).
 func _physics_step_predicted(delta: float) -> void:
 	var sample := _sample_local_input(delta)
 	if current_health > 0.0:
@@ -346,7 +360,10 @@ func _physics_step_predicted(delta: float) -> void:
 		move_and_slide()
 	_client_predictor.record_predicted_input(sample, _capture_predicted_state(sample.sequence))
 	_decay_visual_position_error(delta)
-	if multiplayer.has_multiplayer_peer():
+	if (
+		multiplayer.has_multiplayer_peer()
+		and MatchState.current_phase == MatchState.Phase.IN_PROGRESS
+	):
 		NetworkManager.with_artificial_latency(
 			func():
 				_rpc_send_input.rpc_id(
@@ -428,6 +445,17 @@ func _rpc_send_input(
 	delta: float
 ) -> void:
 	if not NetworkManager.is_server():
+		return
+	# Phase 17: belt-and-suspenders alongside _physics_step_predicted()'s
+	# own send-side IN_PROGRESS guard above -- an already-in-flight
+	# packet sent just before a round ended can still arrive after this
+	# exact node has been detached by a round-transition reload
+	# (is_inside_tree() false), at which point `multiplayer` itself
+	# resolves to null and get_remote_sender_id() would crash. This is
+	# an expected, benign race for a character whose round is already
+	# over, not a bug to surface -- silently dropping a stale input
+	# sample for it is the correct behavior, not a swallowed error.
+	if not is_inside_tree():
 		return
 	if controlling_peer_id != multiplayer.get_remote_sender_id():
 		return

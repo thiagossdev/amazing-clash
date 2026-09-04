@@ -166,7 +166,7 @@ phase independently playable/demoable even if the next never lands):
     unconfirmed peer currently has selected and run a 3s "round
     starting" countdown instead. Either countdown ends by triggering
     the same round-start transition automatically, no button press.
-    **Not started** — scope below.
+    **Done** — see Slice 17 below.
 18. Match log (`GameLog` autoload, new, separate file from the replay
     below per the human owner's own suggestion 2026-09-03). JSONL to
     `user://logs/<timestamp>.jsonl`: room-config choices, connect/
@@ -1470,6 +1470,158 @@ scoped, no deviation.
   numbers (the 3 new weapons' damage/frames, the 3 boots' cooldowns)
   are a first pass, not playtested. Same "no way to screenshot Godot's
   real renderer" gap every UI-adjacent phase has flagged since Phase 1.
+
+### Slice 17 (Rounds: Best of 3) — DONE
+
+Confirmed by the human owner via `/think` 2026-09-03/04, exact
+inter-round timing confirmed 2026-09-04 (see roadmap item 17 above),
+built exactly as scoped, no deviation.
+
+- **Built on `feature/phase17-best-of-3-rounds`**: `MatchState` gains a
+  new `ROUND_INTERMISSION` phase (between `IN_PROGRESS` and
+  `POST_GAME`), `round_wins`/`current_round`, `ROUND_TARGET := 2`, and
+  `resolve_round_result(result)` -- called by `gameplay/match/
+  match_rules.gd` INSTEAD of `enter_post_game()` directly now, since a
+  single `WinCondition.determine()` result might mean "this round is
+  over" rather than "the match is over." `decide_round_outcome(result,
+  wins)` is a pure `static func` (round win/draw/match-end branching,
+  never mutates its input dict) split out specifically so it's
+  unit-testable with no RPC/multiplayer context, same separation
+  `WinCondition.determine()` itself already gets from `MatchRules`'
+  own Node orchestration. A draw does NOT advance `round_wins` OR
+  `current_round` (the same round simply replays); a decisive
+  non-final round advances both and broadcasts `EventBus.round_ended`.
+- **Inter-round loadout-adjustment window**: a new
+  `ui/hud/round_intermission_overlay.gd` (`RoundIntermissionOverlay`,
+  a new `CanvasLayer` sibling of `MatchHud` in `TestArena.tscn`) shows
+  the round result/score and lets each peer re-pick weapon/boot/perk
+  via the SAME self-service `LobbyState` setters Room Config itself
+  uses (never team/class, which stay fixed for the whole match), then
+  press Confirm. The confirm-set/countdown timing itself lives on
+  `MatchState` (`player_loadout_confirmed`,
+  `all_loadout_confirmed()`/`is_early_confirm()` -- pure-ish,
+  unit-tested directly, mirroring `net/lobby_state.gd`'s own
+  `all_ready()`/`is_room_ready_to_start()`), mirroring Slice 14's
+  ready-countdown SHAPE but with 2 independent triggers instead of
+  one: `_maybe_finish_intermission_early()` fires the moment the
+  confirm-set completes with `INTERMISSION_EARLY_THRESHOLD_SECONDS`
+  (13s) or less elapsed (a 5s "starting" countdown);
+  `_run_intermission_window()`'s own 15s timer fires regardless
+  (a 3s countdown) if that never happens -- a confirm-set that
+  completes LATE (13-15s) still waits out the full 15s window before
+  the 3s countdown starts, exactly as specified, not an early exit at
+  a lower reward. Starting the next round reuses `enter_loading()`
+  outright -- the exact same `LOADING`->`IN_PROGRESS` cycle Room
+  Config's own first round start already triggers, which gives every
+  character a full, already-proven reset via `TestArena.tscn`'s own
+  fresh scene load and re-resolves each peer's CURRENT weapon/boot/
+  perk/class/team from `LobbyState` on respawn for free (Phase 9/16's
+  own pattern) -- no separate "reset stats in place" path needed.
+  `RoundIntermissionOverlay` itself is what reloads `TestArena.tscn`
+  when `Phase.LOADING` fires again while it's visible, mirroring
+  `ui/lobby/lobby.gd`'s own reload-on-`LOADING` listener (it isn't
+  even loaded once the match has started, so it can't be the one
+  doing this a 2nd time). `ui/hud/match_hud.gd`'s final banner now
+  shows the round score too (e.g. "RED WINS THE MATCH 2-1"), using
+  `LobbyState.team_label()` for consistency with Room Config's own
+  Red/Blue labels instead of the raw "TEAM 0" wording it used before.
+- **2 real bugs found live, not anticipated by the original design**:
+  1. `CharacterController._rpc_send_input()` (server-side) crashed
+     ("Cannot call method 'get_remote_sender_id' on a null value")
+     during a live 2-process round-transition test: nothing previously
+     stopped a client from continuing to send input for its
+     about-to-be-replaced character all through `ROUND_INTERMISSION`,
+     and an already-in-flight packet could still arrive after a
+     round-transition reload had already detached that exact node
+     (`multiplayer` resolves to `null` on a detached node, same
+     off-tree-node lesson this phase's own tests hit, see below).
+     Fixed with 2 guards: `_physics_step_predicted()` now only sends
+     `_rpc_send_input` while `MatchState.current_phase ==
+     Phase.IN_PROGRESS` (stops new sends the instant a round ends,
+     well before any reload could race one), and `_rpc_send_input()`
+     itself now also checks `is_inside_tree()` as a belt-and-suspenders
+     guard against an already-in-flight packet arriving after the node
+     is gone. Confirmed fixed across 3 repeated live runs (0/3 crashes)
+     after the fix, versus a crash on the very first attempt before it.
+  2. A separate, lower-severity, ENGINE-level (not GDScript-level)
+     warning reproduces consistently on the client during every round
+     transition: `ERROR: Condition "!pinfo.recv_nodes.has(net_id)" is
+     true. Returning: ERR_UNAUTHORIZED`, from Godot's own
+     `MultiplayerSpawner` replication interface. Root cause: the
+     server's OLD `MultiplayerSpawner` (part of the round-just-ended
+     scene) automatically broadcasts a despawn notification for its
+     own tracked characters as they get freed during the reload --
+     but the client's own OLD replication tracking may already be
+     discarded (from the CLIENT's own, independently-timed reload) by
+     the time that notification arrives, so the client's own replication
+     interface no longer recognizes the network id being despawned.
+     **Confirmed non-fatal, not a fix**: reproduced on 3/3 live runs,
+     and every one of those 3 runs still reached the CORRECT round 2
+     result and the CORRECT final `POST_GAME` score on both peers --
+     this is Godot's own replication layer failing to apply a
+     notification for state that's already being discarded anyway, not
+     a corruption that persists or affects subsequent gameplay. A real
+     fix would mean redesigning the round-transition sequencing so the
+     server's own despawn-and-acknowledge completes before any client
+     is told to reload -- explicitly deferred as a bigger change than
+     this phase's own scope, left for the human owner to decide whether
+     it's worth the investment (this is a strictly milder version of
+     the same underlying "scene reload races live replication" family
+     the Phase 13b reconnect gotchas already describe, not a new class
+     of risk).
+- **Tests**: `tests/unit/test_match_state.gd` (new, 10 tests):
+  `decide_round_outcome()` (draw doesn't change wins, decisive round
+  increments the winner, below/at `ROUND_TARGET` branching, never
+  mutates its input dict), `all_loadout_confirmed()` (false with no
+  peer, false before the local peer confirms, true once it does with
+  no remote peers -- required `add_child_autofree()` rather than a
+  bare `MatchStateScript.new()`, since `Node.multiplayer` only
+  resolves once a node is actually inside the `SceneTree`, a new
+  lesson this project hadn't hit before touching `multiplayer` from an
+  off-autoload test instance), `is_early_confirm()` (below/at the
+  threshold). 192/192 GUT tests passing project-wide (was 182).
+- **`/check`**: attempting an async background dispatch from inside
+  this isolated worker fork failed the same way Phases 15/16's own
+  forks already found -- skipped straight to inline adversarial
+  self-review instead of re-attempting the same dead end. Found no
+  additional issues beyond the 2 live bugs above.
+- **Verify**: `gdformat`/`gdlint` clean project-wide. **Live 2-process
+  test through the real headless flow** (`godot4 --headless
+  res://maps/test_arena/TestArena.tscn -- ...` -- note this project's
+  main scene is `MainMenu.tscn` as of Phase 7, so a bare `godot4
+  --headless -- --server` no longer reaches `net/dev_bootstrap.gd` at
+  all; the scene must be passed explicitly, a real gap in this file's
+  own doc comment fixed as part of this phase's own verification, not
+  a code bug): with `--dev-intermission-window=3
+  --dev-intermission-early-threshold=2 --dev-intermission-early-
+  seconds=1 --dev-intermission-late-seconds=1
+  --dev-auto-confirm-intermission` on both peers and
+  `--simulate-self-eliminate` on the client only (generalized this
+  phase from a one-shot timer to a repeating
+  `EventBus.match_state_changed` listener specifically so ONE flag can
+  drive a full best-of-3 sequence in one continuous run -- see
+  `net/dev_bootstrap.gd`'s own doc comment), a full 2-round best-of-3
+  sequence completed correctly end-to-end 3 times in a row: round 1
+  decided 1-0, `ROUND_INTERMISSION` opened and closed automatically,
+  round 2 started with characters fully reset, round 2 decided 2-0,
+  `POST_GAME` reached with the correct final score -- confirmed
+  identical on both the server's and the client's own process every
+  time, via temporary `[VERIFY]` `print()` instrumentation in
+  `core/match_state.gd`/`gameplay/match/match_rules.gd`, removed
+  before the final commit.
+- **Known, deliberately unverified gaps**: the `ERR_UNAUTHORIZED`
+  despawn race documented above (confirmed non-fatal, fix deferred);
+  whether an un-confirm should be able to CANCEL an already-started
+  early final countdown (the current implementation lets it run to
+  completion once started -- a deliberate reading of the human owner's
+  own spec, which only describes cancel/restart behavior for Slice
+  14's original ready-countdown, not this one, not re-litigated here);
+  a peer connecting DURING an active `ROUND_INTERMISSION` gets no
+  catch-up RPC for it (documented directly in `MatchState._on_peer_
+  connected()`'s own doc comment, same class of accepted gap as the
+  pre-existing `LOADING` catch-up gap); same "no way to screenshot
+  Godot's real renderer" gap every UI-adjacent phase has flagged since
+  Phase 1.
 
 ## MVP Status
 

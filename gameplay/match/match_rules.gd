@@ -8,6 +8,14 @@ extends Node
 ## Wired as TestArena's LAST child, after CombatResolver, so a hit this
 ## same tick has already applied before this node reads current_health.
 ##
+## Phase 17: a decided result is handed to MatchState.
+## resolve_round_result() instead of enter_post_game() directly -- a
+## single WinCondition.determine() result might mean "this round is
+## over" (best-of-3 not yet decided) rather than "the match is over,"
+## and MatchState is what knows which. This file's own job (count alive
+## members, decide win/draw/none) is unaware of round/match distinction
+## by design -- that branching lives entirely on the MatchState side.
+##
 ## Team-count-agnostic since Phase 6 (a Dictionary keyed by team id,
 ## not 2 hardcoded locals): 2v2 team mode and free-for-all (where
 ## PlayerSpawner assigns each player their own unique team id) are the
@@ -72,7 +80,7 @@ func _physics_process(_delta: float) -> void:
 		MatchState.broadcast_team_status(_counts_array(alive_by_team))
 	var result := WinCondition.determine(alive_by_team.keys(), _ever_present_teams.size())
 	if result != WinCondition.NONE:
-		MatchState.enter_post_game(result)
+		MatchState.resolve_round_result(result)
 
 
 ## Converts the sparse alive_by_team Dictionary into a dense array

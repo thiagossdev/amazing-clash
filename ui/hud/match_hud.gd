@@ -1,7 +1,8 @@
 extends CanvasLayer
 ## Minimal match-status display: live status during IN_PROGRESS, a
-## terminal "TEAM X WINS"/"PLAYER X WINS"/"DRAW" banner once the match
-## reaches POST_GAME. Reads only MatchState's already-client-visible
+## terminal "TEAM X WINS THE MATCH 2-1"/"DRAW" banner once the match
+## reaches POST_GAME (Phase 17: round score included). Reads only
+## MatchState's already-client-visible
 ## aggregate fields (team_alive_counts, winning_team, match_mode) --
 ## never a per-character team lookup, since individual characters' team
 ## assignments are never replicated to clients (see
@@ -85,12 +86,37 @@ func _alive_for_team(team_id: int) -> int:
 	return counts[team_id] if team_id < counts.size() else 0
 
 
+## Phase 17: also shows the final round score (e.g. "RED WINS THE
+## MATCH 2-1") -- MatchState.round_wins is already caught up by the
+## time POST_GAME's own EventBus.match_state_changed fires (see
+## MatchState._rpc_enter_post_game()'s own round_wins parameter).
 func _show_banner() -> void:
 	var winning := MatchState.winning_team
 	if winning == WinCondition.DRAW:
 		_banner_label.text = "DRAW"
 	elif MatchState.match_mode == MatchState.MatchMode.FREE_FOR_ALL:
-		_banner_label.text = "PLAYER %d WINS" % winning
+		_banner_label.text = "PLAYER %d WINS THE MATCH %s" % [winning, _round_score_text()]
 	else:
-		_banner_label.text = "TEAM %d WINS" % winning
+		_banner_label.text = (
+			"%s WINS THE MATCH %s"
+			% [LobbyState.team_label(winning).to_upper(), _round_score_text()]
+		)
 	_banner_label.visible = true
+
+
+## "2-1" -- the winner's own round count first, then every other team/
+## player's, in ascending key order (stable, deterministic display; the
+## exact tie-break among non-winners doesn't matter for a 2-participant
+## match, which is this HUD's only supported shape today).
+func _round_score_text() -> String:
+	var winning := MatchState.winning_team
+	var wins := MatchState.round_wins
+	var winner_score: int = wins.get(winning, 0)
+	var other_scores: Array[int] = []
+	for key in wins:
+		if key != winning:
+			other_scores.append(wins[key])
+	other_scores.sort()
+	if other_scores.is_empty():
+		return "%d-0" % winner_score
+	return "%d-%d" % [winner_score, other_scores[-1]]
