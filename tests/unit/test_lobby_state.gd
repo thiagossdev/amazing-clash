@@ -10,10 +10,16 @@ const LobbyStateScript := preload("res://net/lobby_state.gd")
 ## every test in this file at a scratch dir, same reasoning
 ## test_match_state.gd's own before_each/after_each already uses.
 const GAME_LOG_TEST_DIR := "user://test_game_log_lobby_state"
+## Phase 19: _apply_weapon()/_apply_boot()/_apply_perk() now call
+## ReplayRecorder.record_loadout_change() while MatchState.current_
+## phase == ROUND_INTERMISSION -- same reasoning as GAME_LOG_TEST_DIR
+## above.
+const REPLAY_TEST_DIR := "user://test_replay_lobby_state"
 
 
 func before_each() -> void:
 	GameLog.reset_for_testing(GAME_LOG_TEST_DIR)
+	ReplayRecorder.reset_for_testing(REPLAY_TEST_DIR)
 
 
 func after_each() -> void:
@@ -23,6 +29,12 @@ func after_each() -> void:
 			dir.remove(file_name)
 	GameLog.reset_for_testing()
 	DirAccess.remove_absolute(GAME_LOG_TEST_DIR)
+	var replay_dir := DirAccess.open(REPLAY_TEST_DIR)
+	if replay_dir:
+		for file_name in replay_dir.get_files():
+			replay_dir.remove(file_name)
+	ReplayRecorder.reset_for_testing()
+	DirAccess.remove_absolute(REPLAY_TEST_DIR)
 
 
 func test_valid_class_id_passes_through() -> void:
@@ -429,3 +441,87 @@ func test_log_final_loadouts_logs_one_player_loadout_line_per_registered_peer() 
 	assert_eq(data["boot"], "tumbling_boots")
 	assert_eq(data["perk"], "swift")
 	lobby.free()
+
+
+func test_gather_loadouts_for_replay_returns_one_entry_per_registered_peer() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby._apply_registration(42, "warden")
+	lobby.player_team_ids[42] = 1
+	lobby.player_weapon_ids[42] = "warhammer"
+	lobby.player_boot_ids[42] = "tumbling_boots"
+	lobby.player_perk_ids[42] = "swift"
+	var loadouts := lobby._gather_loadouts_for_replay()
+	lobby.free()
+	assert_eq(loadouts.size(), 1)
+	assert_eq(loadouts[0]["peer_id"], 42)
+	assert_eq(loadouts[0]["class"], "warden")
+	assert_eq(loadouts[0]["weapon"], "warhammer")
+	assert_eq(loadouts[0]["boot"], "tumbling_boots")
+	assert_eq(loadouts[0]["perk"], "swift")
+
+
+func _read_replay_lines(path: String) -> Array:
+	var file := FileAccess.open(path, FileAccess.READ)
+	var lines := []
+	while not file.eof_reached():
+		var line := file.get_line()
+		if not line.is_empty():
+			lines.append(JSON.parse_string(line))
+	file.close()
+	return lines
+
+
+## Phase 19: a loadout change made DURING an active match's
+## ROUND_INTERMISSION gets its own replay record -- Room Config's own
+## initial pick (before MatchState.current_phase ever leaves LOBBY) is
+## already captured once in the replay header instead (see
+## net/replay_recorder.gd's own start_recording() doc comment), so
+## re-recording every Room Config dropdown change too would be
+## redundant.
+func test_apply_weapon_records_loadout_change_during_round_intermission() -> void:
+	ReplayRecorder.start_recording(MatchState.MatchMode.TEAM, false, 2, [])
+	var original_phase := MatchState.current_phase
+	MatchState.current_phase = MatchState.Phase.ROUND_INTERMISSION
+	var lobby := LobbyStateScript.new()
+	lobby._apply_registration(42, "warden")
+	lobby._apply_weapon(42, "warhammer")
+	MatchState.current_phase = original_phase
+	lobby.free()
+	var lines := _read_replay_lines(ReplayRecorder.current_replay_path())
+	assert_eq(lines.size(), 2, "header + 1 loadout_change")
+	assert_eq(lines[1]["type"], "loadout_change")
+	assert_eq(lines[1]["peer_id"], 42)
+	assert_eq(lines[1]["weapon"], "warhammer")
+
+
+func test_apply_weapon_does_not_record_loadout_change_outside_round_intermission() -> void:
+	ReplayRecorder.start_recording(MatchState.MatchMode.TEAM, false, 2, [])
+	var original_phase := MatchState.current_phase
+	MatchState.current_phase = MatchState.Phase.LOBBY
+	var lobby := LobbyStateScript.new()
+	lobby._apply_registration(42, "warden")
+	lobby._apply_weapon(42, "warhammer")
+	MatchState.current_phase = original_phase
+	lobby.free()
+	var lines := _read_replay_lines(ReplayRecorder.current_replay_path())
+	assert_eq(lines.size(), 1, "only the header -- Room Config picks are not re-recorded")
+
+
+## Deliberate subset, not exhaustive duplication -- _apply_boot()/
+## _apply_perk() route through the exact same gate as _apply_weapon()
+## above, already proven correct; this just confirms both are wired to
+## it at all.
+func test_apply_boot_and_apply_perk_also_record_loadout_change_during_intermission() -> void:
+	ReplayRecorder.start_recording(MatchState.MatchMode.TEAM, false, 2, [])
+	var original_phase := MatchState.current_phase
+	MatchState.current_phase = MatchState.Phase.ROUND_INTERMISSION
+	var lobby := LobbyStateScript.new()
+	lobby._apply_registration(7, "vanguard")
+	lobby._apply_boot(7, "swift_boots")
+	lobby._apply_perk(7, "adept")
+	MatchState.current_phase = original_phase
+	lobby.free()
+	var lines := _read_replay_lines(ReplayRecorder.current_replay_path())
+	assert_eq(lines.size(), 3, "header + boot change + perk change")
+	assert_eq(lines[1]["boot"], "swift_boots")
+	assert_eq(lines[2]["perk"], "adept")
