@@ -1986,6 +1986,25 @@ batch -- see the note at the end of this block.
   phase's own ~6-second live test was never measured -- flagged, not
   solved, per this roadmap item's own accepted MVP tradeoff.
 
+**Follow-up fix (2026-09-04, found live via `/hunt`)**: replayed
+matches never actually resolved combat -- `ReplayPlayer.tscn` was
+missing the `CombatResolver`/`Projectiles` nodes `TestArena.tscn` uses
+for ALL projectile spawning and hit resolution (a structurally
+separate system from `CharacterController`'s own replayed movement),
+so no projectiles ever spawned and no damage ever applied during
+playback, even though ticks/rounds/winner all reconstructed correctly
+from the recorded structural data alone (which is why Phase 20's own
+live verification missed it). Fixed by adding those 2 nodes (matching
+`TestArena.tscn`'s wiring exactly), plus an adjacent bug in the same
+code path (`net/replay_driver.gd`'s `load_replay()` parsed the
+header's `friendly_fire` field but never applied it to `MatchState`).
+Also added the F1 debug hitbox viewer to replay playback per the human
+owner's own request, folded into the same fix. 5 new regression tests
+(`tests/unit/test_replay_player_scene.gd`, new file, +1 in
+`test_replay_driver.gd`), confirmed red (stashed the fix, re-ran) then
+green. 236/236 GUT passing. See `memory/verify.md`'s Phase 20 follow-up
+section and `memory/gotchas.md` for full detail.
+
 **This closes the entire Phases 14-20 batch** (Room Config UX, Q/E/R/F
 ability framework, weapon+boot loadout, best-of-3 rounds, match log,
 replay recording, replay playback), all designed via `/think`

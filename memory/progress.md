@@ -772,6 +772,21 @@ changed but this file wasn't updated.
   (health, position) plausible with no phantom characters after the
   fix. See `memory/plan.md`'s Slice 20 block and `memory/verify.md`'s
   Phase 20 section for full evidence.
+- [x] **Follow-up fix (2026-09-04, `/hunt`): replayed matches never
+  actually resolved combat.** `ui/replay/ReplayPlayer.tscn` was missing
+  the `CombatResolver`/`Projectiles` nodes `TestArena.tscn` uses for
+  ALL projectile spawning and hit resolution -- ticks/rounds/winner
+  still reconstructed correctly (copied from the file's own recorded
+  structural data), which is why Phase 20's own live verification
+  missed it, but no projectile ever spawned and no damage ever applied
+  during playback. Fixed by adding those 2 nodes, plus an adjacent bug
+  in the same code path (`replay_driver.gd` parsed the header's
+  `friendly_fire` field but never applied it to `MatchState`). Also
+  added the F1 debug hitbox viewer to replay playback, per request.
+  5 new regression tests, confirmed red then green. 236/236 GUT
+  passing. See `memory/plan.md`'s Slice 20 follow-up note,
+  `memory/verify.md`'s Phase 20 follow-up section, and
+  `memory/gotchas.md` for full evidence.
 
 ## Backlog (next up)
 

@@ -14,6 +14,7 @@ func after_each() -> void:
 		for file_name in dir.get_files():
 			dir.remove(file_name)
 		DirAccess.remove_absolute(TEST_REPLAY_DIR)
+	MatchState.friendly_fire_enabled = false  # shared autoload; don't leak state
 
 
 func _write_replay(filename: String, lines: Array) -> String:
@@ -228,6 +229,34 @@ func test_load_replay_counts_only_tick_records_as_total_ticks() -> void:
 	var driver := _driver_with_characters()
 	assert_true(driver.load_replay(path))
 	assert_eq(driver.total_ticks(), 3, "round_end/match_end/header must not count as ticks")
+
+
+## Found live 2026-09-04 (see memory/gotchas.md): CombatResolver's own
+## melee/ability hit resolution skips a same-team hit unless
+## MatchState.friendly_fire_enabled is true -- load_replay() parsed the
+## header's own "friendly_fire" field into _header but never applied it
+## to MatchState, so replaying a friendly-fire match silently resolved
+## hits as if friendly fire were off.
+func test_load_replay_applies_the_headers_friendly_fire_flag_to_match_state() -> void:
+	var path := _write_replay(
+		"friendly_fire.replay",
+		[
+			{
+				"type": "header",
+				"mode": 0,
+				"friendly_fire": true,
+				"round_target": 2,
+				"sim_seed": 1,
+				"loadouts": [],
+			},
+		]
+	)
+	var driver := _driver_with_characters()
+	assert_true(driver.load_replay(path))
+	assert_true(
+		MatchState.friendly_fire_enabled,
+		"the header's friendly_fire: true must reach MatchState for CombatResolver to respect it"
+	)
 
 
 func test_seek_to_frame_zero_after_playing_resets_ticks_processed() -> void:

@@ -1610,13 +1610,10 @@ in `progress.md`. No exceptions.
   same protection Phase 14's own `/check` finding already built for
   the "Leave Room -> re-host" case. No new guard added; confirmed the
   existing one already covers this.
-- [x] **Not merged into `main`** -- built on
-  `feature/phase20-replay-playback` from a fork's own isolated
-  worktree; the same hard sandbox boundary every prior fork-built phase
-  hit applies here too. The orchestrating session needs to run `git
-  merge --no-ff feature/phase20-replay-playback` from
-  `/mnt/c/var/workspaces/godot/amazing-clash`, then `godot4 --headless
-  --import` before trusting a post-merge GUT run.
+- [x] **Merged into `main`** (`git merge --no-ff
+  feature/phase20-replay-playback`), followed by `godot4 --headless
+  --import` and a full re-verification (231/231 GUT, lint clean) on
+  the primary checkout.
 - [ ] **Known, deliberately unverified gaps**: same "no way to
   screenshot Godot's real renderer in this headless environment"
   limitation every UI-adjacent phase since Phase 7 has flagged -- the
@@ -1625,3 +1622,60 @@ in `progress.md`. No exceptions.
   verified directly. No automated test drives the scrubber's own drag
   UI interaction. From-scratch reseek performance on a much longer
   match than this phase's own ~6-second live test was never measured.
+
+#### Follow-up fix: replayed combat never actually happened (2026-09-04)
+
+Found live via `/hunt` (human owner: "reproduzir replay não renderiza
+os projéteis"). See `memory/gotchas.md` for the full root-cause writeup.
+
+- [x] **Root cause**: `ui/replay/ReplayPlayer.tscn` never instantiated
+  a `CombatResolver` node or a `Projectiles` container -- both siblings
+  of `Characters` in `maps/test_arena/TestArena.tscn` -- so ALL
+  projectile spawning and melee/ability hit resolution (entirely owned
+  by `CombatResolver`, a structurally separate system from
+  `CharacterController.replay_step_authoritative()`) silently never
+  ran during playback. Phase 20's own live verification never caught
+  this because it only compared `ticks_processed`/`is_finished`/
+  `final_winner`/`round_wins` -- all copied straight from the replay
+  file's own recorded structural records, not derived from live combat
+  resolution during reconstruction.
+- [x] **Fix**: added `Projectiles` (`Node2D`) and `CombatResolver`
+  (script `gameplay/combat/combat_resolver.gd`, default paths) to
+  `ui/replay/ReplayPlayer.tscn`, matching `TestArena.tscn`'s own
+  wiring exactly.
+- [x] **Adjacent bug found and fixed the same way**: `net/
+  replay_driver.gd`'s `load_replay()` parsed the header's own
+  `friendly_fire` field into `_header` but never applied it to
+  `MatchState.friendly_fire_enabled`, which `CombatResolver` reads
+  directly -- replaying a friendly-fire match would have silently
+  resolved every same-team hit as if friendly fire were off. Fixed:
+  `load_replay()` now sets `MatchState.friendly_fire_enabled =
+  _header["friendly_fire"]`.
+- [x] **Feature request folded in**: F1 debug hitbox viewer
+  (`ui/debug/HitboxViewer.tscn`, default paths) added to
+  `ReplayPlayer.tscn` alongside the fix -- same missing-node pattern,
+  same one-line scene addition.
+- [x] **TDD**: 4 new tests in `tests/unit/test_replay_player_scene.gd`
+  (new file) -- 3 structural (`CombatResolver`/`Projectiles`/
+  `HitboxViewer` present as children), 1 a direct integration check
+  (`test_a_held_skillshot_actually_spawns_a_projectile_during_playback`):
+  drives real playback tick-by-tick (`ReplayDriver._physics_process()`
+  then `CombatResolver._physics_process()`, the same pairing/order the
+  real engine's own frame loop produces once both are siblings) with a
+  held skillshot input past `iron_sword`'s own `debug_skillshot.tres`
+  `startup_frames` (8), confirms a real `Projectile` spawns into
+  `Projectiles`. Plus 1 new test in `tests/unit/test_replay_driver.gd`
+  for the `friendly_fire` fix. All 5 confirmed red (temporarily
+  stashed the fix, re-ran -- 0/4 in the new file, including 3 real
+  engine errors from `get_node()` failing on the missing nodes) then
+  green after restoring it.
+- [x] **Live evidence for the recording side**: a real 2-process run
+  (host: `ranged_mage`, `--dev-host --dev-ready --dev-print-replay-path`;
+  client: `vanguard`, `--dev-join=127.0.0.1 --dev-ready
+  --simulate-skillshot`) through the real Room Config flow produced a
+  genuine `.replay` file (1172 tick records, `skillshot_pressed: true`
+  held from tick 525 onward) -- confirmed the recording pipeline itself
+  (Phase 19) was never the problem, isolating the defect to playback's
+  own scene composition.
+- [x] `gdformat`/`gdlint`/`markdownlint-cli2` clean. Full GUT suite:
+  236/236 passing (was 231, 5 new).

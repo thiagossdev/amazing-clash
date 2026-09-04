@@ -93,6 +93,12 @@ func load_replay(path: String) -> bool:
 		return false
 	_header = _records[0]
 	_roster = _header["loadouts"]
+	# CombatResolver reads this directly (server-only, never replicated)
+	# to decide whether a same-team hit lands -- without setting it here,
+	# replaying a friendly-fire match silently resolved every hit as if
+	# friendly fire were off, since MatchState is a shared autoload that
+	# otherwise keeps whatever value a previous match/replay left it at.
+	MatchState.friendly_fire_enabled = _header["friendly_fire"]
 	_reset_playback_state()
 	return true
 

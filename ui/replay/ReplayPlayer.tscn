@@ -1,8 +1,10 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://ui/replay/replay_player.gd" id="1_player"]
 [ext_resource type="Script" path="res://net/replay_driver.gd" id="2_driver"]
 [ext_resource type="PackedScene" uid="uid://bers5infe7f36" path="res://camera/ArenaCamera.tscn" id="3_cam"]
+[ext_resource type="Script" uid="uid://5dxic7kxfvkc" path="res://gameplay/combat/combat_resolver.gd" id="4_cmbtr"]
+[ext_resource type="PackedScene" uid="uid://dj1qj2m8u4qig" path="res://ui/debug/HitboxViewer.tscn" id="5_cshv"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_horiz"]
 size = Vector2(1200, 32)
@@ -33,11 +35,18 @@ shape = SubResource("RectangleShape2D_vert")
 
 [node name="Characters" type="Node2D" parent="."]
 
+[node name="Projectiles" type="Node2D" parent="."]
+
 [node name="ArenaCamera" parent="." instance=ExtResource("3_cam")]
 position = Vector2(600, 400)
 
 [node name="ReplayDriver" type="Node" parent="."]
 script = ExtResource("2_driver")
+
+[node name="CombatResolver" type="Node" parent="."]
+script = ExtResource("4_cmbtr")
+
+[node name="HitboxViewer" parent="." instance=ExtResource("5_cshv")]
 
 [node name="Controls" type="CanvasLayer" parent="."]
 

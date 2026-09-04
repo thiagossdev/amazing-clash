@@ -656,6 +656,37 @@ Format:
   every other phase's own temporary live-test instrumentation) since
   GUT's own runner already solves this bootstrapping problem correctly.
 
+- **2026-09-04** — Found live via `/hunt` (human owner: "reproduzir
+  replay não renderiza os projéteis"): `ui/replay/ReplayPlayer.tscn`
+  (Phase 20) never instantiated a `CombatResolver` node or a
+  `Projectiles` container, both present as siblings of `Characters` in
+  every real match's scene (`maps/test_arena/TestArena.tscn`).
+  `CharacterController.replay_step_authoritative()` only advances a
+  character's own movement/ability-FSM state -- ALL projectile
+  spawning (`_maybe_launch_projectile()`), projectile advancement, and
+  melee/ability hit-damage resolution live entirely in `CombatResolver`
+  (`gameplay/combat/combat_resolver.gd`'s own doc comment: "wired as
+  TestArena's LAST child"), a structurally separate system. Since
+  Phase 20's own live verification only compared `ticks_processed`/
+  `is_finished`/`final_winner`/`round_wins` (all copied straight from
+  the replay file's own recorded `round_end`/`match_end` records, not
+  derived from live combat resolution during playback), it never
+  actually observed that no combat was happening during reconstruction
+  -- a real gap in that phase's own test coverage that only surfaced
+  once someone watched a replay expecting to actually SEE a fight.
+  → **Rule**: when reconstructing a scene/subsystem in a NEW context
+  (a replay driver, a test harness, a preview mode), diff its node
+  composition against the REAL scene it's meant to reproduce, not just
+  its script/data layer -- a missing sibling node is invisible to any
+  test that only checks recorded/structural outcomes (round count,
+  winner) rather than actually exercising the live subsystem the new
+  context is supposed to run. A second, adjacent bug found the same
+  way: `net/replay_driver.gd`'s `load_replay()` parsed the header's own
+  `friendly_fire` field but never applied it to
+  `MatchState.friendly_fire_enabled` (which `CombatResolver` reads
+  directly) -- same root pattern, a header field that looked wired in
+  because it was PARSED, but was never actually APPLIED anywhere.
+
 <!--
 Examples:
 
