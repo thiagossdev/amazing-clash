@@ -853,10 +853,11 @@ changed but this file wasn't updated.
 - [x] ~~Generalize `PlayerSpawner`'s team assignment~~ — resolved by
   Phase 8 (manual team placement in Room Config) and Phase 12 (spawn
   *positions* generalized beyond the old 4 hardcoded points) together.
-- [ ] Decide how many ability slots a real class kit should have (R/F/T
-  are reserved in the InputMap but unwired on all 3 classes) — a
-  content/balance decision for whenever the roster grows past 3.
-- [ ] Decide how (or whether) to replicate ability_q/e `ActionFsm`
+- [x] ~~Decide how many ability slots a real class kit should have~~ —
+  resolved by Phase 15 (Q/E/R/F, 4 class-owned slots) and Phase 16 (T
+  is boot_active, a 5th slot owned by the player's boot pick, not the
+  class). All 5 previously-reserved InputMap actions are now wired.
+- [ ] Decide how (or whether) to replicate ability_q/e/r/f `ActionFsm`
   state to remote `INTERPOLATED` peers — the snapshot RPC is at a
   practical parameter-count limit; likely needs a packed-int
   restructure before a 4th+ ability slot makes this worse.
@@ -869,28 +870,28 @@ changed but this file wasn't updated.
   2-process headless testing was possible. Manual IP entry
   (`ui/host_join/`) is the guaranteed fallback if it doesn't work on
   the human owner's actual network.
-- [ ] Give the Room Config Start button an explanation of why it's
-  disabled (not-ready vs. invalid team split) — a small UX follow-up
-  from Phase 8, not done there since it wasn't asked for and doesn't
-  affect correctness.
+- [x] ~~Give the Room Config Start button an explanation of why it's
+  disabled~~ — moot: Phase 14 replaced the host-only Start button
+  entirely with a symmetric ready/unready toggle + automatic countdown
+  for every player, so this specific control no longer exists in the
+  form this item described.
 - [x] ~~A real reconnect/grace-period system~~ — resolved by Slices
   13a+13b (grace-period freeze + token-based reconnect), see the
   Completed entries above. This line was stale, left over from before
   those slices shipped.
-- [ ] The persistent build-investment layer (unlocks, respec economy)
-  and a minimal pre-match loadout draft — now scoped by the confirmed
-  decision (2026-09-03): **small, per-character, currency-gated** (not
-  PoE2's ~1,500-node scale). Still the single biggest gap between
-  "roadmap done" (this session) and the fuller MVP proposal in
-  `docs/blueprint/04-mvp-scope.md`, but no longer blocked on the
-  build-depth-split question — that's resolved.
-- [ ] A "round" structure for matches — needed to support the confirmed
-  loadout cadence decision (2026-09-03: loadout is adjustable between
-  rounds/rematches, Battlerite Rites-style). Matches currently run once
-  to a single win condition (Phase 5/6, `WinCondition`/`MatchRules`)
-  with no concept of consecutive rounds within one match/session; this
-  is new structural work, not a small addition to the existing win
-  condition.
+- [x] ~~A minimal pre-match loadout draft~~ — resolved by Phase 16
+  (weapon + boot + perk, a shared 3+3 pool, class + all 3 independently
+  pickable). **Still open**: the full PERSISTENT, account-level
+  build-investment layer (unlocks, respec economy, currency-gated —
+  confirmed scope 2026-09-03: small, per-character, not PoE2's
+  ~1,500-node scale) — Phase 16 built the bounded in-match draft the
+  persistent layer would eventually feed, not the persistent layer
+  itself. Still the single biggest gap between "roadmap done" and the
+  fuller MVP proposal in `docs/blueprint/04-mvp-scope.md`.
+- [x] ~~A "round" structure for matches~~ — resolved by Phase 17
+  (best-of-3, with the confirmed loadout-cadence decision built in: a
+  timed inter-round window lets every player re-pick weapon/boot/perk,
+  Battlerite Rites-style, before the next round auto-starts).
 
 ## Blocked
 
