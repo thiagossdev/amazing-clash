@@ -1397,3 +1397,118 @@ in `progress.md`. No exceptions.
   `_file` is null after `_ensure_file_open()`, but this was reasoned
   through from the code, not live-reproduced (deliberately out of this
   phase's own scope to simulate a disk-full condition).
+
+### Phase 19: Replay Recording (`ReplayRecorder`)
+
+- [x] `tests/unit/test_replay_recorder.gd` (new, 10 tests): pure
+  `sample_to_dict()` converts every `InputBuffer.Sample` field
+  correctly (Vector2 fields become `[x, y]` arrays); `start_recording()`
+  is a no-op when not server; a header line carries mode/friendly-fire/
+  round_target/a reserved `sim_seed`/loadouts; `record_loadout_change()`
+  is a no-op before `start_recording()` and writes correctly after;
+  samples for the SAME tick batch into one record, flushed only once a
+  later tick's first sample arrives (not before); `record_match_end()`
+  flushes a still-pending tick record then writes `match_end`;
+  `record_round_end()` writes a line; `record_match_end()` stops all
+  further writes (idempotent past the first call); `reset_for_testing()`
+  opens a genuinely distinct file. Scratch `user://test_replay_recorder/`
+  directory, mirroring `test_game_log.gd`'s own established injection
+  pattern.
+- [x] `tests/unit/test_lobby_state.gd` (+6 tests, scratch `ReplayRecorder`
+  dir added to this file's existing `before_each`/`after_each`): the
+  pure `_gather_loadouts_for_replay()` returns one entry per registered
+  peer with every field; `_apply_weapon()` records a `loadout_change`
+  while `MatchState.current_phase == ROUND_INTERMISSION` and does NOT
+  while `LOBBY` (confirmed by directly manipulating the real
+  `MatchState` singleton's `current_phase`, restored after each test);
+  `_apply_boot()`/`_apply_perk()` also route through the same gate
+  (a deliberate subset, not exhaustive duplication -- the gate logic
+  itself is already proven correct by the weapon test).
+- [x] `tests/unit/test_match_state.gd` (+2 tests, on a fresh
+  `MatchStateScript.new()` instance, never the shared autoload): a
+  decisive non-final round records `round_end` without `match_end`;
+  reaching `ROUND_TARGET` records BOTH `round_end` and `match_end` --
+  confirming the match-ending round gets its own `round_end` too, not
+  just an implicit absence of one (a real behavior difference from
+  `GameLog`'s own `round_ended` event, which only fires on the
+  non-final branch).
+- [x] `gdformat --check` / `gdlint` clean on every changed/new file
+  (`core/match_state.gd`, `gameplay/characters/character_base/
+  character_controller.gd`, `net/dev_bootstrap.gd`, `net/lobby_state.gd`,
+  `net/replay_recorder.gd` (new), `project.godot`, `tests/unit/
+  test_lobby_state.gd`, `tests/unit/test_match_state.gd`, `tests/unit/
+  test_replay_recorder.gd` (new)). 217/217 GUT tests total project-wide
+  (was 201).
+- [x] **A real design risk found and avoided during implementation
+  (not a live bug -- caught by reasoning through Phase 17's own round-
+  transition design before writing the tick-recording hook)**:
+  `ServerSim.tick_count()` looked like the obvious per-tick key, but
+  it's PER-CHARACTER and resets to 0 for any character freshly spawned
+  by a round transition (Phase 17's own `enter_loading()` reload) --
+  using it would have produced colliding tick numbers across rounds in
+  a multi-round replay. Used `Engine.get_physics_frames()` instead (a
+  single monotonic counter for the whole process, identical across
+  every character's own `_physics_process()` call within the same
+  frame) -- confirmed strictly increasing with zero collisions across
+  a real round transition in the live test below (tick 446 through
+  630, no reset at the round boundary).
+- [x] **Live 2-process test through the REAL Room Config flow**
+  (same reasoning Phase 16's own test used: `net/dev_bootstrap.gd`'s
+  direct-connect flow races `peer_connected` against Room Config
+  registration, and `ReplayRecorder.start_recording()` only ever fires
+  from `_start_match()` in the first place): `godot4 --headless --
+  --dev-autoplay --dev-class=vanguard --dev-host --dev-weapon=warhammer
+  --dev-boot=tumbling_boots --dev-perk=vitality --dev-ready
+  --dev-intermission-window=3 --dev-intermission-early-threshold=2
+  --dev-intermission-early-seconds=1 --dev-intermission-late-seconds=1
+  --dev-auto-confirm-intermission
+  --dev-change-weapon-in-intermission=iron_sword
+  --dev-print-replay-path` (server) / `--dev-autoplay
+  --dev-class=ranged_mage --dev-join=127.0.0.1 --dev-weapon=twin_daggers
+  --dev-boot=swift_boots --dev-perk=swift --dev-ready
+  --simulate-self-eliminate --dev-auto-confirm-intermission` (client,
+  self-eliminating every round so the match reaches `ROUND_TARGET`
+  deterministically). Inspected the server's actual on-disk `.replay`
+  file (found via the printed `REPLAY_PATH:` line): 1 `header` with
+  both peers' real loadouts (correct class/team/weapon/boot/perk) and
+  a real non-zero `sim_seed`; 184 `tick` records, each containing both
+  peers' real samples (sequence numbers incrementing independently per
+  peer: 1→62 and 0→59, `delta` consistently ~0.0167, `aim_direction`
+  real non-default values) with tick numbers strictly increasing and
+  zero collisions across the round transition; exactly 1
+  `loadout_change` (peer 1's weapon → `iron_sword`, landing between
+  the 2 `round_end` records, confirming the intermission dev flag
+  fired exactly once as designed); 2 `round_end` records (round 1:
+  winner 0, `round_wins {0: 1}`; round 2: winner 0, `{0: 2}` --
+  confirming the match-ending round DOES get its own `round_end`
+  record, per the design decision above); exactly 1 `match_end`
+  (`{0: 2}`). The client process's own `user://replays/` directory was
+  confirmed empty -- the server-only design holds under real
+  networking. Zero engine errors on the server. The client reproduced
+  Phase 17's own already-documented, already-deferred non-fatal
+  `MultiplayerSpawner` despawn-ordering warning on the round
+  transition (`ERR_UNAUTHORIZED` in `on_despawn_receive`) -- confirmed
+  unrelated to this phase's own changes by cross-referencing that
+  phase's own `verify.md`/`gotchas.md` entries, which already document
+  it reproducing on every round transition regardless of what else is
+  running.
+- [x] **`/check`**: async background dispatch skipped entirely
+  (confirmed dead end by Phases 15/16/17/18's own forks) -- inline
+  adversarial self-review of the full diff against `main`. Confirmed
+  every `_apply_weapon()`/`_apply_boot()`/`_apply_perk()` call path is
+  server-only-gated (both the direct branch and the `@rpc("any_peer")`
+  handler check `NetworkManager.is_server()` before ever reaching
+  `_apply_*()`), so the loadout-change gate can never fire client-side.
+  No issues found beyond what TDD already caught.
+- [ ] **Not merged into `main`** -- built on
+  `feature/phase19-replay-recording` from a fork's own isolated
+  worktree; the same hard sandbox boundary every prior fork-built phase
+  hit applies here too. The orchestrating session needs to run `git
+  merge --no-ff feature/phase19-replay-recording` from
+  `/mnt/c/var/workspaces/godot/amazing-clash`, then `godot4 --headless
+  --import` before trusting a post-merge GUT run.
+- [ ] **Known, deliberately unverified gaps**: no automated check for a
+  disk-full/permission failure mid-recording, same class of gap
+  `GameLog` itself already left open. No playback, no reconstruction,
+  no UI, no Main Menu button -- entirely Phase 20's own separate scope,
+  not attempted here.

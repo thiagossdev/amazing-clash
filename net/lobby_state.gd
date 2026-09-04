@@ -530,14 +530,35 @@ func _apply_team(peer_id: int, team_id: int) -> void:
 
 func _apply_perk(peer_id: int, perk_id: String) -> void:
 	player_perk_ids[peer_id] = resolve_perk_id(perk_id)
+	_maybe_record_loadout_change(peer_id)
 
 
 func _apply_weapon(peer_id: int, weapon_id: String) -> void:
 	player_weapon_ids[peer_id] = resolve_weapon_id(weapon_id)
+	_maybe_record_loadout_change(peer_id)
 
 
 func _apply_boot(peer_id: int, boot_id: String) -> void:
 	player_boot_ids[peer_id] = resolve_boot_id(boot_id)
+	_maybe_record_loadout_change(peer_id)
+
+
+## Phase 19: a loadout pick made during an active match's
+## ROUND_INTERMISSION (Phase 17's own inter-round window, which reuses
+## these exact same setters) gets its own replay record -- Room
+## Config's own initial pick (still Phase.LOBBY here) is already
+## captured once in the replay header by _log_final_loadouts()/
+## _start_match() below, so this only fires for an actual mid-match
+## re-pick.
+func _maybe_record_loadout_change(peer_id: int) -> void:
+	if MatchState.current_phase != MatchState.Phase.ROUND_INTERMISSION:
+		return
+	ReplayRecorder.record_loadout_change(
+		peer_id,
+		player_weapon_ids.get(peer_id, ""),
+		player_boot_ids.get(peer_id, ""),
+		player_perk_ids.get(peer_id, "")
+	)
 
 
 ## Server-only: every mutation above (registration, ready, team, perk,
@@ -673,6 +694,9 @@ func _start_match() -> void:
 	LanDiscovery.stop_advertising()
 	MatchState.friendly_fire_enabled = room_friendly_fire
 	_log_final_loadouts()
+	ReplayRecorder.start_recording(
+		room_match_mode, room_friendly_fire, MatchState.ROUND_TARGET, _gather_loadouts_for_replay()
+	)
 	MatchState.enter_loading(room_match_mode as MatchState.MatchMode)
 
 
@@ -696,3 +720,26 @@ func _log_final_loadouts() -> void:
 				}
 			)
 		)
+
+
+## Pure: the replay header's own "loadouts" array, same source data as
+## _log_final_loadouts() above (one entry per registered peer) but
+## returned rather than logged, so it's directly unit-testable without
+## touching the filesystem.
+func _gather_loadouts_for_replay() -> Array:
+	var loadouts := []
+	for peer_id in player_class_ids:
+		(
+			loadouts
+			. append(
+				{
+					"peer_id": peer_id,
+					"class": player_class_ids[peer_id],
+					"team": player_team_ids.get(peer_id, -1),
+					"weapon": player_weapon_ids.get(peer_id, ""),
+					"boot": player_boot_ids.get(peer_id, ""),
+					"perk": player_perk_ids.get(peer_id, ""),
+				}
+			)
+		)
+	return loadouts

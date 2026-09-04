@@ -12,10 +12,15 @@ const MatchStateScript := preload("res://core/match_state.gd")
 ## the real user://logs/ location, even the ones below that don't
 ## themselves assert on log content.
 const GAME_LOG_TEST_DIR := "user://test_game_log_match_state"
+## Phase 19: resolve_round_result()/enter_post_game() now also call
+## ReplayRecorder.record_round_end()/record_match_end() -- same
+## scratch-dir isolation reasoning as GAME_LOG_TEST_DIR above.
+const REPLAY_TEST_DIR := "user://test_replay_match_state"
 
 
 func before_each() -> void:
 	GameLog.reset_for_testing(GAME_LOG_TEST_DIR)
+	ReplayRecorder.reset_for_testing(REPLAY_TEST_DIR)
 
 
 func after_each() -> void:
@@ -25,6 +30,12 @@ func after_each() -> void:
 			dir.remove(file_name)
 	GameLog.reset_for_testing()
 	DirAccess.remove_absolute(GAME_LOG_TEST_DIR)
+	var replay_dir := DirAccess.open(REPLAY_TEST_DIR)
+	if replay_dir:
+		for file_name in replay_dir.get_files():
+			replay_dir.remove(file_name)
+	ReplayRecorder.reset_for_testing()
+	DirAccess.remove_absolute(REPLAY_TEST_DIR)
 
 
 func test_decide_round_outcome_draw_does_not_change_wins() -> void:
@@ -129,3 +140,41 @@ func _logged_events() -> Array:
 			events.append((JSON.parse_string(line) as Dictionary)["event"])
 	file.close()
 	return events
+
+
+## Phase 19: a fresh instance, not the real MatchState autoload -- same
+## isolation reasoning every test above already uses.
+func test_resolve_round_result_records_round_end_for_a_decisive_non_final_round() -> void:
+	ReplayRecorder.start_recording(MatchStateScript.MatchMode.TEAM, false, 2, [])
+	var ms: Node = add_child_autofree(MatchStateScript.new())
+	ms.current_phase = MatchStateScript.Phase.IN_PROGRESS
+	ms.resolve_round_result(0)
+	var types := _replay_record_types()
+	assert_true(types.has("round_end"))
+	assert_false(types.has("match_end"), "1 round win is below ROUND_TARGET (2)")
+
+
+## Even the match-ending round gets its own round_end record (in
+## addition to match_end) -- resolve_round_result() records it BEFORE
+## branching on is_match_end, unlike GameLog's own "round_ended" event
+## above, which only ever fires on the non-final branch.
+func test_resolve_round_result_records_both_round_end_and_match_end_at_round_target() -> void:
+	ReplayRecorder.start_recording(MatchStateScript.MatchMode.TEAM, false, 2, [])
+	var ms: Node = add_child_autofree(MatchStateScript.new())
+	ms.current_phase = MatchStateScript.Phase.IN_PROGRESS
+	ms.round_wins = {0: 1}
+	ms.resolve_round_result(0)
+	var types := _replay_record_types()
+	assert_true(types.has("round_end"))
+	assert_true(types.has("match_end"))
+
+
+func _replay_record_types() -> Array:
+	var types: Array = []
+	var file := FileAccess.open(ReplayRecorder.current_replay_path(), FileAccess.READ)
+	while not file.eof_reached():
+		var line := file.get_line()
+		if not line.is_empty():
+			types.append((JSON.parse_string(line) as Dictionary)["type"])
+	file.close()
+	return types

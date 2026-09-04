@@ -59,7 +59,16 @@ extends Node
 ## to simulate a real dropdown/button click to exercise the confirm-set
 ## countdown deterministically; combine with core/match_state.gd's own
 ## --dev-intermission-*= overrides to avoid eating the real 15s/5s/3s
-## waits. `-- --dev-kick-after=<seconds>` (server
+## waits. `-- --dev-print-replay-path` (Phase 19) prints "REPLAY_PATH:
+## <path>" once net/lobby_state.gd's own _start_match() has opened
+## ReplayRecorder's file -- only meaningful through the real Room
+## Config flow (this peer's own direct-connect path above never calls
+## _start_match(), so this would always print an empty path there).
+## `-- --dev-change-weapon-in-intermission=<id>` changes this peer's
+## own weapon the instant ROUND_INTERMISSION begins, to exercise
+## ReplayRecorder.record_loadout_change() live -- combine with
+## --dev-auto-confirm-intermission to actually advance past the window
+## afterward. `-- --dev-kick-after=<seconds>` (server
 ## only, Slice 13b) force-disconnects the first connected client after
 ## the delay, simulating a real mid-match drop for live reconnect
 ## testing -- see this function's own trailing block. `-- --free-for-all` sets
@@ -127,6 +136,38 @@ func _ready() -> void:
 
 		if "--dev-print-log-path" in args:
 			print("GAME_LOG_PATH:%s" % GameLog.current_log_path())
+
+		# Phase 19: unlike GameLog (already open by this point, thanks to
+		# enter_in_progress()'s own GameLog.info() call above),
+		# ReplayRecorder only ever opens once net/lobby_state.gd's
+		# _start_match() runs -- this peer's own direct-connect flow
+		# above never calls it at all (see net/replay_recorder.gd's own
+		# start_recording() doc comment for why: no real Room Config
+		# loadout choice exists to record for a peer that skipped Room
+		# Config). Printing here would always be empty; wait for the
+		# LOADING transition _start_match() itself triggers instead, the
+		# same live-flow live testing already uses for weapon/boot
+		# (Phase 16's own verify.md section).
+		if "--dev-print-replay-path" in args:
+			EventBus.match_state_changed.connect(
+				func(new_phase: int):
+					if new_phase == MatchState.Phase.LOADING:
+						print("REPLAY_PATH:%s" % ReplayRecorder.current_replay_path())
+			)
+
+		# Phase 19 live-test hook: changes this peer's own weapon the
+		# instant ROUND_INTERMISSION begins, so a live run can exercise
+		# ReplayRecorder.record_loadout_change() deterministically --
+		# combine with --dev-auto-confirm-intermission to actually
+		# advance past the window afterward.
+		for arg in args:
+			if arg.begins_with("--dev-change-weapon-in-intermission="):
+				var new_weapon_id := arg.trim_prefix("--dev-change-weapon-in-intermission=")
+				EventBus.match_state_changed.connect(
+					func(new_phase: int):
+						if new_phase == MatchState.Phase.ROUND_INTERMISSION:
+							LobbyState.set_local_weapon(new_weapon_id)
+				)
 
 		if "--simulate-move" in args:
 			Input.action_press(&"move_right")

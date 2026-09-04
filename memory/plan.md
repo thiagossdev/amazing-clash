@@ -188,7 +188,7 @@ phase independently playable/demoable even if the next never lands):
     Body: one raw `InputBuffer.Sample` per connected peer per tick —
     **no calculated values** (position, health, damage results) are
     ever stored, confirmed buildable specifically because the sim has
-    no RNG to also capture. **Not started** — scope below.
+    no RNG to also capture. **Done** — see Slice 19 below.
 20. Replay playback. A "Replays" button on Main Menu, a list screen
     (scans `user://replays/`), and a player screen with Play/Pause/
     Skip/Back/a scrubber. Reconstruction: an offline, non-networked
@@ -1718,6 +1718,110 @@ as scoped, no deviation.
   already no-ops safely if `_file` is null, but this was reasoned
   through, not live-reproduced (deliberately out of this phase's scope
   to simulate).
+
+### Slice 19 (Replay Recording: `ReplayRecorder`) — DONE
+
+Confirmed by the human owner via `/think` 2026-09-03/04, built exactly
+as scoped, no deviation.
+
+- **Built on `feature/phase19-replay-recording`**: a new `ReplayRecorder`
+  autoload (`net/replay_recorder.gd`), a separate file/system from
+  `GameLog` per the human owner's own explicit request to keep them
+  split. Writes `user://replays/<timestamp>_pid<N>_<counter>.replay`
+  (JSONL, same on-disk convention `GameLog` already established) --
+  server-only, gated once at `start_recording()` rather than re-checked
+  on every call (`_recording` being false is the single source of
+  truth for "am I allowed to write" everywhere past that point, a
+  genuine lifecycle `GameLog`'s own simpler "append forever" shape
+  doesn't need).
+- **Record types**: a `header` (mode as the raw `MatchState.MatchMode`
+  int -- matching `GameLog`'s own convention, not a display string;
+  friendly-fire; `round_target`; a `sim_seed` reserved now for RNG the
+  human owner plans to add later, confirmed the sim has none today
+  outside the reconnect token; each registered peer's initial
+  class/team/weapon/boot/perk); `loadout_change` (a peer's weapon/boot/
+  perk re-pick made DURING an active `ROUND_INTERMISSION` only -- Room
+  Config's own initial pick is already in the header, so this only
+  fires for an actual mid-match change); `tick` (every currently-
+  authoritative character's raw `InputBuffer.Sample` for that tick,
+  batched into one record per tick -- **no calculated/derived value is
+  ever stored**, no position, health, or damage result); `round_end`
+  (recorded for EVERY round, including the match-ending one -- moved
+  `core/match_state.gd`'s own `completed_round` capture earlier so this
+  isn't limited to the non-final branch `GameLog`'s own `round_ended`
+  event already was); a final `match_end`, which also flushes any
+  still-pending tick record and closes the file.
+- **A real design risk found and avoided during implementation, not
+  live**: the natural-looking per-tick key `ServerSim.tick_count()` is
+  PER-CHARACTER and resets to 0 for any character freshly spawned by a
+  round transition (Phase 17's own reload-based reset) -- using it
+  would have produced colliding tick numbers across rounds in a
+  best-of-3 replay. Used `Engine.get_physics_frames()` instead (a
+  single monotonic per-process counter, identical across every
+  character's own `_physics_process()` call within the same frame) --
+  confirmed strictly increasing with zero collisions across a real
+  round transition in this phase's own live test below.
+- **Wired at**: `net/lobby_state.gd`'s `_start_match()` (the header,
+  via a new pure `_gather_loadouts_for_replay()` -- same source data as
+  `GameLog`'s own `_log_final_loadouts()`, returned instead of logged
+  so it's directly unit-testable) and `_apply_weapon()`/`_apply_boot()`/
+  `_apply_perk()` (the loadout-change gate, checking
+  `MatchState.current_phase == ROUND_INTERMISSION`);
+  `core/match_state.gd`'s `resolve_round_result()` (round_end) and
+  `enter_post_game()` (match_end); `CharacterController.
+  _physics_step_authoritative()` (the per-tick sample, right after the
+  same `_server_sim.next_input()` call every prior phase's own per-tick
+  logic already reads).
+- **Tests**: `tests/unit/test_replay_recorder.gd` (new, 10 tests) --
+  pure `sample_to_dict()` field/Vector2-to-array conversion, the
+  server-only no-op gate, header content, tick-batching (2 peers'
+  samples for the same tick land in ONE record, flushed only once a
+  later tick starts), `record_match_end()` flushing a still-pending
+  tick and stopping all further writes, `reset_for_testing()` opening a
+  distinct file. `test_lobby_state.gd` (+6 tests): the pure loadout-
+  gathering helper, the ROUND_INTERMISSION-only gate for all 3 setters
+  (positive and negative). `test_match_state.gd` (+2 tests): a decisive
+  non-final round records `round_end` without `match_end`; reaching
+  `ROUND_TARGET` records both. 217/217 GUT tests passing project-wide
+  (was 201).
+- **2 new dev flags** (`net/dev_bootstrap.gd`): `--dev-print-replay-path`
+  (prints `REPLAY_PATH:<path>` once the file is open -- only meaningful
+  through the real Room Config flow, since a direct-connect peer never
+  calls `_start_match()` at all) and
+  `--dev-change-weapon-in-intermission=<id>` (drives a real loadout
+  change during `ROUND_INTERMISSION` for live testing, combined with
+  the already-existing `--dev-auto-confirm-intermission`).
+- **`/check`**: async background dispatch skipped entirely (confirmed
+  dead end by Phases 15/16/17/18's own forks) -- inline adversarial
+  self-review of the full diff against `main`. Found no issues beyond
+  what TDD already caught.
+- **Verify**: `gdformat`/`gdlint`/full GUT suite all clean. **Live
+  2-process test through the real Room Config flow** (same reasoning
+  Phase 16's own test used: the direct-connect flow races
+  `peer_connected` against Room Config registration): host (Vanguard,
+  Warhammer/Tumbling Boots/Vitality) vs. client (Ranged Mage, Twin
+  Daggers/Swift Boots/Swift) played a full best-of-3 down to 2 rounds
+  (client self-eliminating each round via `--simulate-self-eliminate`),
+  changing weapon to Iron Sword during round 1's intermission via the
+  new dev flag. Inspected the server's actual on-disk `.replay` file:
+  1 `header` with both peers' real loadouts and a real `sim_seed`, 184
+  `tick` records with real per-peer samples (sequence numbers
+  incrementing independently per peer, ticks strictly increasing with
+  zero collisions across the round-transition reload -- 446 through
+  630, confirming `Engine.get_physics_frames()` never reset), 1
+  `loadout_change` (the Iron Sword swap, landing between the 2
+  `round_end` records), 2 `round_end` (round 1: winner 0, `{0: 1}`;
+  round 2: winner 0, `{0: 2}`, confirming even the match-ending round
+  got its own record), and exactly 1 `match_end` (`{0: 2}`). The client
+  process wrote no `.replay` file at all. Zero engine errors on the
+  server; the client reproduced Phase 17's own already-documented,
+  already-deferred non-fatal `MultiplayerSpawner` despawn-ordering
+  warning on the round transition (unrelated to this phase's own
+  changes -- see that phase's `verify.md` section).
+- **Known, deliberately unverified gaps**: no automated check for a
+  disk-full/permission failure mid-recording, same class of gap
+  `GameLog` itself already left open. No playback, no reconstruction,
+  no UI -- entirely Slice 20's own separate scope, not attempted here.
 
 ## MVP Status
 
