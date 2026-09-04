@@ -88,7 +88,9 @@ func _draw_hurtbox(character: CharacterController) -> void:
 ## was. Found again live during Phase 15's own self-review before it
 ## could repeat the same mistake for R/F -- this file needs updating
 ## every time CombatResolver gains an ability slot, since nothing
-## enforces the two stay in sync.
+## enforces the two stay in sync. Extended again for Phase 16's
+## boot_active while writing this exact doc comment, precisely because
+## it says to.
 func _draw_hitbox_if_active(character: CharacterController) -> void:
 	_draw_slot_hitbox_if_active(character, character.action_fsm, character.attack_move)
 	if character.ability_q and not character.ability_q.is_projectile:
@@ -99,6 +101,10 @@ func _draw_hitbox_if_active(character: CharacterController) -> void:
 		_draw_slot_hitbox_if_active(character, character.ability_r_fsm, character.ability_r.move)
 	if character.ability_f and not character.ability_f.is_projectile:
 		_draw_slot_hitbox_if_active(character, character.ability_f_fsm, character.ability_f.move)
+	if character.boot_active and not character.boot_active.is_projectile:
+		_draw_slot_hitbox_if_active(
+			character, character.boot_active_fsm, character.boot_active.move
+		)
 
 
 func _draw_slot_hitbox_if_active(

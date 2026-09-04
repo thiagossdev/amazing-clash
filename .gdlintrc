@@ -20,3 +20,10 @@ max-file-lines: 2000
 # Phases 17-20, splitting test_lobby_state.gd's loadout-axis tests
 # (perk/weapon/boot) into their own file is worth revisiting.
 max-public-methods: 60
+# Default (6) is tuned for arbitrary branchy logic; CombatResolver.
+# _get_move_for_slot()'s `match` is a flat slot-name -> MoveDefinition
+# lookup (skillshot + 4 class ability slots + Phase 16's boot_active +
+# a default = 7 branches), not deep/tangled control flow -- 8 gives one
+# slot of headroom without going unlimited, same "growing but still
+# flat" reasoning as the max-public-methods bumps above.
+max-returns: 8

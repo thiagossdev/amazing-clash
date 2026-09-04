@@ -1,8 +1,6 @@
 [gd_scene format=3 uid="uid://2vdodgraeiny"]
 
 [ext_resource type="Script" uid="uid://covub2j7g4lgb" path="res://gameplay/characters/character_base/character_controller.gd" id="1_ctrlr"]
-[ext_resource type="Resource" path="res://data/moves/warden_attack.tres" id="2_atkmv"]
-[ext_resource type="Resource" path="res://data/moves/warden_binding_bolt.tres" id="3_sklmv"]
 [ext_resource type="Resource" path="res://data/abilities/warden_stagger_strike.tres" id="4_abqq"]
 [ext_resource type="Resource" path="res://data/abilities/warden_overwhelm.tres" id="5_abee"]
 [ext_resource type="Resource" path="res://data/abilities/warden_restraining_web.tres" id="6_abrr"]
@@ -14,8 +12,6 @@ radius = 20.0
 [node name="Character" type="CharacterBody2D" unique_id=1411061080]
 collision_layer = 2
 script = ExtResource("1_ctrlr")
-attack_move = ExtResource("2_atkmv")
-skillshot_move = ExtResource("3_sklmv")
 ability_q = ExtResource("4_abqq")
 ability_e = ExtResource("5_abee")
 ability_r = ExtResource("6_abrr")

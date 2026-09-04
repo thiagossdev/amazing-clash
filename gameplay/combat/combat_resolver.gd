@@ -9,11 +9,16 @@ extends Node
 ## gameplay/projectiles/projectile.gd); only hit resolution is gated to
 ## the server. Pattern inherited from amazing-nauts'
 ## gameplay/combat/combat_resolver.gd. Melee, a single non-piercing
-## skillshot, and 4 independent ability slots (Q/E/R/F, Phase 15 grew
-## this from 2), each melee- or projectile-style per its own
+## skillshot, 4 independent class ability slots (Q/E/R/F, Phase 15 grew
+## this from 2), and Phase 16's boot_active (a 5th ability-like slot,
+## owned by the player's boot pick rather than the class) -- all 5
+## ability slots melee- or projectile-style per their own
 ## AbilityResource.is_projectile (no armor/buffs/VFX/objectives/piercing
-## -- none of that exists in this project's design yet). Phase 5: an
-## eliminated attacker
+## -- none of that exists in this project's design yet). attack_move/
+## skillshot_move are unconditionally melee/projectile respectively
+## (never AbilityResource-dispatched), same as always -- Phase 16 only
+## changed WHERE those 2 fields come from (the player's weapon pick),
+## not how CombatResolver resolves them. Phase 5: an eliminated attacker
 ## (current_health <= 0) can no longer land a hit, and a hit between
 ## same-team characters is skipped unless MatchState.friendly_fire_enabled
 ## is true.
@@ -64,6 +69,9 @@ func _resolve_attacker(attacker: Node, roster: Array) -> void:
 	_resolve_ability_slot(attacker, roster, attacker.ability_e, attacker.ability_e_fsm, "ability_e")
 	_resolve_ability_slot(attacker, roster, attacker.ability_r, attacker.ability_r_fsm, "ability_r")
 	_resolve_ability_slot(attacker, roster, attacker.ability_f, attacker.ability_f_fsm, "ability_f")
+	_resolve_ability_slot(
+		attacker, roster, attacker.boot_active, attacker.boot_active_fsm, "boot_active"
+	)
 
 
 ## Dispatches one ability slot to the melee or projectile resolution
@@ -99,6 +107,8 @@ func _pending_direction_for_slot(attacker: CharacterController, slot_name: Strin
 			return attacker.pending_ability_r_direction
 		"ability_f":
 			return attacker.pending_ability_f_direction
+		"boot_active":
+			return attacker.pending_boot_active_direction
 		_:
 			return Vector2.RIGHT
 
@@ -206,6 +216,8 @@ func _get_move_for_slot(caster: CharacterController, slot_name: String) -> MoveD
 			return caster.ability_r.move if caster.ability_r else null
 		"ability_f":
 			return caster.ability_f.move if caster.ability_f else null
+		"boot_active":
+			return caster.boot_active.move if caster.boot_active else null
 		_:
 			return null
 

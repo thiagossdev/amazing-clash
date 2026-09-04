@@ -25,18 +25,20 @@ class Sample:
 	## Phase 15: the 2 new class ability slots.
 	var ability_r_pressed: bool = false
 	var ability_f_pressed: bool = false
+	## Phase 16: the boot's own T-bound active slot.
+	var boot_active_pressed: bool = false
 	var delta: float = 0.0
 
 
 var _samples: Array[Sample] = []
 
 
-## Packs this Sample's 6 ability press flags into one bitmask int --
+## Packs this Sample's 7 ability press flags into one bitmask int --
 ## individual bool RPC params would have pushed
 ## CharacterController._rpc_send_input() past gdlint's function-arg cap,
 ## same reasoning amazing-nauts' own pack_ability_flags() documents.
 ## Bit order: attack, skillshot, ability_q, ability_e, ability_r,
-## ability_f. Pure, testable without an RPC round trip.
+## ability_f, boot_active. Pure, testable without an RPC round trip.
 static func pack_ability_flags(sample: Sample) -> int:
 	var flags := 0
 	if sample.attack_pressed:
@@ -51,6 +53,8 @@ static func pack_ability_flags(sample: Sample) -> int:
 		flags |= 1 << 4
 	if sample.ability_f_pressed:
 		flags |= 1 << 5
+	if sample.boot_active_pressed:
+		flags |= 1 << 6
 	return flags
 
 
@@ -62,6 +66,7 @@ static func unpack_ability_flags(sample: Sample, flags: int) -> void:
 	sample.ability_e_pressed = flags & (1 << 3) != 0
 	sample.ability_r_pressed = flags & (1 << 4) != 0
 	sample.ability_f_pressed = flags & (1 << 5) != 0
+	sample.boot_active_pressed = flags & (1 << 6) != 0
 
 
 func push(sample: Sample) -> void:
