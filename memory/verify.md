@@ -1288,3 +1288,112 @@ in `progress.md`. No exceptions.
   overlay's own dropdowns/labels are unverified visually, though their
   underlying logic (weapon/boot/perk resolution, confirm-set/countdown
   timing, round score) is exercised live above.
+
+### Phase 18: Match Log (`GameLog`)
+
+- [x] `tests/unit/test_game_log.gd` (new, 6 tests): `format_line()`
+  pure JSON round-trip; `info()` is a no-op when
+  `NetworkManager.is_server()` is false (nulling
+  `multiplayer.multiplayer_peer`, restored after -- the same
+  established pattern `test_match_state.gd` already uses); a real
+  write-then-read-back round trip through `reset_for_testing()` pointed
+  at a scratch `user://test_game_log/` directory (never the real
+  `user://logs/`); `warn()`/`error()` use their own level; 2 calls
+  append to the SAME file (not a new one each time); `reset_for_testing()`
+  opens a genuinely distinct file on a 2nd call.
+- [x] `tests/unit/test_match_state.gd` (+2 tests, on a fresh
+  `MatchStateScript.new()` instance via `add_child_autofree()`, never
+  the shared `MatchState` autoload -- zero risk of polluting any other
+  test's state): `resolve_round_result()` on a decisive, non-final
+  round logs a `round_ended` line and does NOT log `match_ended`;
+  reaching `ROUND_TARGET` logs `match_ended` too. A `before_each`/
+  `after_each` pair points every test in this file at a scratch
+  `GameLog` directory, cleaned up after each test.
+- [x] `tests/unit/test_lobby_state.gd` (+1 test): `_log_final_loadouts()`
+  on a manually-populated `LobbyStateScript.new()` instance logs
+  exactly one `player_loadout` line with the correct class/weapon/
+  boot/perk fields. Same scratch-directory `before_each`/`after_each`
+  pattern as `test_match_state.gd` above.
+- [x] `gdformat --check` / `gdlint` clean on every changed/new file
+  (`core/match_state.gd`, `net/dev_bootstrap.gd`, `net/game_log.gd`
+  (new), `net/lan_discovery.gd`, `net/lobby_state.gd`,
+  `net/player_spawner.gd`, `project.godot`, `tests/unit/
+  test_game_log.gd` (new), `tests/unit/test_lobby_state.gd`,
+  `tests/unit/test_match_state.gd`). 201/201 GUT tests total
+  project-wide (was 192).
+- [x] **A real robustness gap found and fixed before any live test,
+  by inspection**: the log filename's timestamp only has 1-second
+  granularity -- 2 server processes started in the same wall-clock
+  second (a real risk in this project's own 2-headless-process dev
+  testing pattern) would compute the IDENTICAL path and silently
+  clobber each other's log (`FileAccess.WRITE` truncates on open).
+  Fixed by folding `OS.get_process_id()` and a per-instance open-count
+  into the filename before writing any tests against it.
+- [x] **Live 2-process test #1** (direct-connect flow, `godot4
+  --headless res://maps/test_arena/TestArena.tscn -- --server
+  --simulate-self-eliminate --dev-auto-confirm-intermission
+  --dev-intermission-window=2 --dev-intermission-early-threshold=1
+  --dev-intermission-early-seconds=1 --dev-intermission-late-seconds=1
+  --dev-print-log-path` / `-- --join --dev-print-log-path`): confirmed
+  `round_in_progress` then `peer_connected` land in the server's real
+  on-disk file in the correct order, and the client process's own
+  `GAME_LOG_PATH:` printed empty -- the server-only gate holds under
+  real ENet networking, not just a unit test with a manually-nulled
+  peer. (This run's own `--simulate-self-eliminate` never reached a
+  decisive round -- see the deliberately-not-pursued note below.)
+- [x] **Live 2-process test #2** (real disconnect, `--dev-grace-period=3`
+  on the server, the CLIENT process killed outright with `kill -9`
+  ~6s after connecting, then waited ~20s for ENet's own disconnect
+  detection): the server's actual on-disk file contains the FULL event
+  chain end-to-end, in order, with zero engine errors on either side:
+  `peer_connected` → `peer_disconnected` → `disconnect_grace_period_started`
+  → `disconnect_grace_period_expired_forfeit` → `round_ended` (the
+  forfeit decided the round, 1-0) → `round_intermission_started` (next
+  round 2, since 1 win is below `ROUND_TARGET`). The client process
+  wrote no log file at all (confirmed via filename search by its own
+  pid). This is the strongest single piece of evidence for this
+  phase: 7 correctly-ordered lines from 6 different call sites across
+  3 files, produced by real ENet disconnect detection, not simulated.
+- [x] **Deliberately not pursued: driving a full best-of-3 sequence
+  live for `round_ended`/`match_ended` via `--simulate-self-eliminate`
+  on the server**, unlike Slice 17's own live test (which put
+  `--simulate-self-eliminate` on the CLIENT instead). Root cause
+  investigated, not just abandoned: the direct-connect flow calls
+  `MatchState.enter_in_progress()` synchronously at server startup,
+  before any client could possibly have connected yet, so the ~1s
+  self-eliminate timer races the client's own boot+connect time in a
+  way that isn't reliably winnable regardless of launch-delay tuning
+  -- a live instance of this project's own documented "2 independent
+  processes have no shared clock" gotcha. `round_ended`/`match_ended`
+  are instead covered by the deterministic unit tests above (which
+  exercise the EXACT SAME production code path, `resolve_round_result()`,
+  with no timing dependency at all), and `round_ended` is additionally
+  confirmed live via the disconnect-forfeit chain in test #2.
+- [x] **Self-review** (adversarial, in place of `/check`'s multi-persona
+  pass -- the async dispatch attempt was skipped entirely this time,
+  per Phases 15/16/17's own documented dead end for isolated worker
+  forks): `git diff main...feature/phase18-game-log` read in full.
+  Re-swept `push_error`/`push_warning` project-wide to confirm all 4
+  real sites (2 in `net/dev_bootstrap.gd`, 1 each in
+  `net/lan_discovery.gd`/`net/player_spawner.gd`) got a paired
+  `GameLog` call -- none missed. Considered whether `data`'s mutable
+  `{}` default parameter could leak state across calls (no --
+  `format_line()` never mutates it, only reads it into a new dict
+  literal) and whether non-JSON-serializable data could reach
+  `JSON.stringify()` (every call site only ever passes int/String/bool/
+  Dictionary-of-primitives, matching the "no calculated values" spirit
+  anyway). No additional issues found.
+- [ ] **Not merged into `main`** -- built on `feature/phase18-game-log`
+  from a fork's own isolated worktree; the same hard sandbox boundary
+  every prior fork-built phase (13b/14/15/16/17) hit applies here too.
+  The orchestrating session needs to run `git merge --no-ff
+  feature/phase18-game-log` from `/mnt/c/var/workspaces/godot/
+  amazing-clash`, then `godot4 --headless --import` before trusting a
+  post-merge GUT run.
+- [ ] **Known, deliberately unverified gap**: no automated or live
+  check that a REAL disk-full or permission failure
+  (`FileAccess.open()` returning null) degrades gracefully beyond
+  "silently stops logging" -- `_write()` already no-ops safely if
+  `_file` is null after `_ensure_file_open()`, but this was reasoned
+  through from the code, not live-reproduced (deliberately out of this
+  phase's own scope to simulate a disk-full condition).
