@@ -861,6 +861,18 @@ changed but this file wasn't updated.
   call. New regression test in `tests/unit/
   test_character_controller_combat.gd`, confirmed red then green.
   250/250 GUT passing. See `memory/gotchas.md` for the full mechanism.
+- [x] **Replay camera zoom now matches the real player's, not an
+  invented spectator view (2026-09-04, human owner's own follow-up:
+  "o zoom deve ser o mesmo usado pelo jogador").** `ArenaCamera`'s
+  zoom in `ReplayPlayer.tscn`, bumped to 1.4 earlier the same day to
+  fit the whole arena on screen at once, is reverted to Camera2D's
+  engine default (1.0) -- confirmed `maps/test_arena/TestArena.tscn`'s
+  own `ArenaCamera` sets no zoom override either, so 1.0 is exactly
+  what a real player's camera used during the actual match. The arena
+  extending past the default ~1152x648 viewport at that zoom is now
+  the free camera's own pan (arrow keys) to solve, not a wider default
+  zoom. 250/250 GUT passing (no test asserted on the removed zoom
+  value).
 
 ## Backlog (next up)
 

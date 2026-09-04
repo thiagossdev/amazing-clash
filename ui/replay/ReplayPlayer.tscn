@@ -39,7 +39,6 @@ shape = SubResource("RectangleShape2D_vert")
 
 [node name="ArenaCamera" parent="." instance=ExtResource("3_cam")]
 position = Vector2(600, 400)
-zoom = Vector2(1.4, 1.4)
 
 [node name="ReplayDriver" type="Node" parent="."]
 script = ExtResource("2_driver")

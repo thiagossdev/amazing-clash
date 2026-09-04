@@ -19,15 +19,19 @@ extends Node2D
 ## mismatch as memory/gotchas.md's 2026-09-02 ui_cancel entry) decouple
 ## into a freely-moved camera, Tab re-couples.
 ## Starts decoupled (ARENA_CENTER, matching this scene's own pre-Tab
-## parked position) so the very first frame still shows the whole arena,
-## not an arbitrary player. `ArenaCamera`'s own zoom in `ReplayPlayer.
-## tscn` was bumped from the default 1.0 to 1.4 at the same time: at 1.0
-## and this project's default ~1152x648 viewport, the arena's own
-## 1200x800 Walls extend past every edge of the visible area -- the
-## human owner's own suspicion ("senti falta do colision debug da
-## arena... mas pode ter sido só falta de enquadramento da câmera") was
-## exactly right, confirmed by the arena/viewport math, not just the
-## missing HitboxViewer node fixed separately the same day.
+## parked position) so the very first frame still shows something
+## reasonable, not an arbitrary player. `ArenaCamera`'s own zoom in
+## `ReplayPlayer.tscn` is left at Camera2D's engine default (1.0) --
+## deliberately NOT bumped to see the whole arena at once, per the
+## human owner's own 2026-09-04 follow-up ("o zoom deve ser o mesmo
+## usado pelo jogador"): the replay should show exactly what a real
+## player's camera showed during the actual match, not an invented
+## wider spectator view (which was this file's own first attempt,
+## since reverted). At this project's default ~1152x648 viewport, the
+## arena's own 1200x800 Walls do extend past the edges at zoom 1.0 --
+## the free camera's own pan (arrow keys, see below) is how a viewer
+## reaches the parts outside the initial framing, not a wider default
+## zoom.
 ##
 ## The replay's own path arrives via SceneTree meta (set by ui/replay/
 ## replay_list.gd right before change_scene_to_file(), the same
