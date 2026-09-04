@@ -801,6 +801,18 @@ changed but this file wasn't updated.
   `test_replay_driver.gd`). 246/246 GUT passing. See `memory/plan.md`'s
   Slice 20 2nd follow-up note and `memory/verify.md`'s Phase 20 section
   for full evidence.
+- [x] **"Back to List" once a replay finishes (2026-09-04, human
+  owner's own request).** Play/Pause is a dead-looking control once
+  playback ends (`ReplayDriver.play()` is already a no-op past the
+  end) -- repurposed into a "Back to List" button (relabeled, grabs
+  keyboard focus) instead of adding a 2nd, redundant back button next
+  to the existing one. 2 new tests in `tests/unit/test_replay_player.gd`
+  (relabel + focus-grab); a 3rd test that also pressed the button was
+  dropped after it triggered a real `change_scene_to_file()` mid-suite
+  and left orphan nodes -- not something worth exercising in a unit
+  test, matching this project's existing convention of never directly
+  testing the (already pre-existing, likewise untested) plain Back
+  button's own navigation either. 248/248 GUT passing.
 
 ## Backlog (next up)
 
