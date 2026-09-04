@@ -323,6 +323,7 @@ func enter_post_game(winning: int) -> void:
 	current_phase = Phase.POST_GAME
 	winning_team = winning
 	GameLog.info("match_ended", {"winner": winning, "round_wins": round_wins})
+	ReplayRecorder.record_match_end(winning, round_wins)
 	_rpc_enter_post_game.rpc(winning, match_mode, round_wins)
 
 
@@ -349,11 +350,19 @@ func resolve_round_result(result: int) -> void:
 	if current_phase != Phase.IN_PROGRESS:
 		return
 	var outcome := decide_round_outcome(result, round_wins)
+	var completed_round := current_round
 	round_wins = outcome["wins"]
+	# Phase 19: recorded for EVERY round, including the match-ending one
+	# below (unlike the GameLog "round_ended" event further down, which
+	# only ever fires on the non-final branch) -- a replay needs a
+	# round_end record for the final round too, not just an implicit
+	# absence of one.
+	ReplayRecorder.record_round_end(
+		completed_round, outcome["winner"], outcome["is_draw"], round_wins
+	)
 	if outcome["is_match_end"]:
 		enter_post_game(outcome["winner"])
 		return
-	var completed_round := current_round
 	if not outcome["is_draw"]:
 		current_round += 1
 	(
