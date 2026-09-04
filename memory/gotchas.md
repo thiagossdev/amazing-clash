@@ -717,6 +717,54 @@ Format:
   dimensions, specifically because this bug class has no other
   automated way to be caught in this environment.
 
+- **2026-09-04** — Found live via `/hunt` (human owner: "no 8X os
+  projeteis não são disparados", plus a vaguer "problema de
+  interpolação" that led to a Scope Blast sweep). Root cause:
+  `net/replay_driver.gd`'s `_physics_process()` applies `playback_speed`
+  recorded ticks per REAL physics frame (a loop calling
+  `_apply_next_tick_record()` N times), but `CombatResolver` --
+  the only place `_maybe_launch_projectile()`'s exact
+  `slot_fsm.move_frame == move.startup_frames` check lives -- is a
+  sibling node whose own `_physics_process()` the Godot ENGINE still
+  calls exactly once per real frame, never once per simulated tick. At
+  `playback_speed` 1 this coincides (1 tick == 1 real frame, matching a
+  live server tick exactly); at higher speeds, N ticks' worth of
+  ability-FSM advancement happen before `CombatResolver` ever inspects
+  the state, so the single-tick-wide activation window is invisible
+  unless it happens to land on the very last tick of a batch. → **Rule**:
+  a node whose own logic depends on catching an EXACT single-tick state
+  transition (not "has this become true", but "did this become true ON
+  THIS tick") cannot rely on the engine's own once-per-real-frame
+  callback once anything else in the scene can advance MULTIPLE
+  simulated ticks within one real frame -- it must be driven explicitly,
+  once per tick, by whatever owns that multi-tick loop. Fixed:
+  `ReplayDriver._ready()` disables `CombatResolver`'s own automatic
+  engine callback (`set_physics_process(false)`) and `_apply_tick()`
+  calls it explicitly, once per simulated tick, instead.
+  **Scope Blast swept this exact pattern and found a 2nd, more
+  fundamental match**: `CharacterController._physics_process()` is ALSO
+  a normal engine-driven once-per-real-frame callback -- left enabled
+  during replay, it fired IN ADDITION to `ReplayDriver._apply_tick()`'s
+  own explicit per-tick `replay_step_authoritative()` call, at EVERY
+  playback speed including 1x. Since that explicit call already
+  pushes-then-immediately-pops its one `Sample` from `ServerSim`'s
+  buffer, the engine's own extra automatic call found an empty buffer
+  and fell into `ServerSim.next_input()`'s own stale-input fallback --
+  silently repeating the character's last move direction for one
+  uncommanded phantom tick, every single real frame, compounding over
+  the whole replay. This is very likely the actual mechanism behind the
+  human owner's own vaguer "problema de interpolação" report -- verified
+  by reading `net/server_sim.gd`'s `next_input()` directly, not
+  guessed. Fixed the same way: `ReplayDriver._spawn_characters()` now
+  calls `character.set_physics_process(false)` on every spawned
+  character. Checked every other node with per-frame logic in
+  `ReplayPlayer.tscn` (`Projectile` -- no processing of its own, driven
+  entirely by the now-fixed `CombatResolver`; `HitboxViewer`/
+  `ArenaCamera` -- correctly want once-per-real-frame, pure visual
+  redraw/positioning, not state mutation) -- no further matches. 3 new
+  regression tests, confirmed red (all 3 -- stashing the whole fixed
+  file together reverted both bugs at once) then green.
+
 <!--
 Examples:
 

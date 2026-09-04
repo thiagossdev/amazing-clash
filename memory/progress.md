@@ -827,6 +827,29 @@ changed but this file wasn't updated.
   repurposing Play/Pause into a 2nd copy of the same action is
   redundant. Human owner's own call: "esse back to list, fica
   irrelevante, já que tem o back sempre."
+- [x] **Fixed: projectiles skipped at high replay speed, plus a
+  deeper related bug found by the same sweep (2026-09-04, `/hunt`,
+  "no 8X os projeteis não são disparados" + "problema de
+  interpolação").** Root cause: `CombatResolver`'s own
+  `_physics_process()` -- the only place the exact-frame projectile-
+  spawn check lives -- was still driven by the engine's automatic
+  once-per-real-frame callback, even though `ReplayDriver` applies
+  multiple recorded ticks per real frame at speed > 1. Fixed:
+  `CombatResolver`'s automatic callback disabled, driven explicitly
+  once per simulated tick from `ReplayDriver._apply_tick()` instead.
+  **Scope Blast swept the same pattern and found a 2nd, more
+  fundamental bug**: `CharacterController`'s own automatic
+  per-real-frame callback was ALSO still enabled during replay, at
+  every speed including 1x -- causing one uncommanded "phantom" extra
+  movement tick (via `ServerSim`'s stale-input fallback) every real
+  frame, very likely the real cause of the separately-reported
+  "problema de interpolação". Fixed the same way. Also fixed: pressing
+  Play once a replay has finished now restarts it from the beginning
+  instead of being a permanent no-op (separate small follow-up
+  request). 3 new/updated regression tests, all confirmed red before
+  their respective fixes, green after. 249/249 GUT passing. See
+  `memory/gotchas.md` for the full mechanism and the swept sibling
+  nodes that were NOT affected.
 
 ## Backlog (next up)
 

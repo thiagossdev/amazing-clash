@@ -61,6 +61,58 @@ func test_scene_has_the_f1_hitbox_viewer() -> void:
 	)
 
 
+## Found live via /hunt's own scope-blast sweep 2026-09-04, while
+## investigating the human owner's separate "problema de interpolação"
+## report: CharacterController._physics_process() is ALSO a normal
+## engine-driven once-per-real-frame callback, same shape as the
+## CombatResolver bug above. Left enabled during replay, it fires in
+## ADDITION to ReplayDriver._apply_tick()'s own explicit per-tick
+## replay_step_authoritative() call -- and since that call already
+## pushes then immediately pops its one Sample from ServerSim's buffer,
+## the engine's own extra automatic call finds an empty buffer and
+## falls into ServerSim.next_input()'s stale-input fallback, silently
+## repeating the last move direction for one uncommanded phantom tick
+## EVERY real frame, at any playback speed (not just high speed --
+## confirmed by reading net/server_sim.gd's own next_input()
+## directly, not guessed). Fixed in ReplayDriver._spawn_characters():
+## disables each spawned character's automatic physics processing, the
+## same way CombatResolver's is disabled in _ready().
+func test_replayed_characters_do_not_auto_tick_via_the_engine() -> void:
+	var path := _write_replay(
+		"no_double_step.replay",
+		[
+			{
+				"type": "header",
+				"mode": 0,
+				"friendly_fire": false,
+				"round_target": 2,
+				"sim_seed": 1,
+				"loadouts":
+				[
+					{
+						"peer_id": 1,
+						"class": "vanguard",
+						"team": 0,
+						"weapon": "iron_sword",
+						"boot": "swift_boots",
+						"perk": "vitality",
+					}
+				],
+			}
+		]
+	)
+	var player: Node2D = add_child_autofree(REPLAY_PLAYER_SCENE.instantiate())
+	var driver: ReplayDriver = player.get_node("ReplayDriver")
+	assert_true(driver.load_replay(path))
+	var characters := player.get_node("Characters")
+	assert_eq(characters.get_child_count(), 1)
+	var character := characters.get_child(0)
+	assert_false(
+		character.is_physics_processing(),
+		"a replayed character must be driven only by ReplayDriver's own per-tick calls"
+	)
+
+
 func _skillshot_sample_dict(sequence: int) -> Dictionary:
 	return {
 		"sequence": sequence,
@@ -80,13 +132,13 @@ func _skillshot_sample_dict(sequence: int) -> Dictionary:
 
 ## Direct regression check for the bug above: not just "the node exists"
 ## (the 3 tests above) but "combat actually happens" -- drives real
-## playback tick-by-tick (ReplayDriver._physics_process(), then
-## CombatResolver._physics_process(), exactly the order and pairing the
-## real engine's own per-frame loop produces once both are siblings in
-## the tree) with a held skillshot input, past iron_sword's own
-## debug_skillshot.tres startup_frames (8), and confirms a real
-## Projectile gets spawned into the Projectiles container -- proof
-## replayed combat resolution isn't just wired in, it fires.
+## playback tick-by-tick (ReplayDriver._physics_process(), which itself
+## drives CombatResolver once per simulated tick internally -- see
+## ReplayDriver._ready()'s own doc comment) with a held skillshot input,
+## past iron_sword's own debug_skillshot.tres startup_frames (8), and
+## confirms a real Projectile gets spawned into the Projectiles
+## container -- proof replayed combat resolution isn't just wired in,
+## it fires.
 func test_a_held_skillshot_actually_spawns_a_projectile_during_playback() -> void:
 	var samples: Array = []
 	for i in range(12):
@@ -117,19 +169,93 @@ func test_a_held_skillshot_actually_spawns_a_projectile_during_playback() -> voi
 
 	var player: Node2D = add_child_autofree(REPLAY_PLAYER_SCENE.instantiate())
 	var driver: ReplayDriver = player.get_node("ReplayDriver")
-	var combat_resolver: Node = player.get_node("CombatResolver")
 	var projectiles := player.get_node("Projectiles")
 
 	assert_true(driver.load_replay(path))
 	driver.play()
 	for _i in range(12):
 		driver._physics_process(1.0 / 60.0)
-		combat_resolver._physics_process(1.0 / 60.0)
 
 	assert_gt(
 		projectiles.get_child_count(),
 		0,
 		"a held skillshot past its move's startup_frames must spawn a real Projectile"
+	)
+
+
+func _sample_dict(sequence: int, skillshot_pressed: bool) -> Dictionary:
+	var sample := _skillshot_sample_dict(sequence)
+	sample["skillshot_pressed"] = skillshot_pressed
+	return sample
+
+
+## Found live via /hunt 2026-09-04 (human owner: "ao aumentar a
+## velocidade, tem problema de interpolação... no 8X os projeteis não
+## são disparados"). Root cause: ReplayDriver._physics_process() applies
+## `playback_speed` recorded ticks per REAL physics frame (a for loop
+## calling _apply_next_tick_record() N times), but CombatResolver --
+## the ONLY place _maybe_launch_projectile()'s exact `slot_fsm.move_
+## frame == move.startup_frames` check lives -- used to rely on the
+## ENGINE's own automatic _physics_process() callback, which only fires
+## once per real frame, never once per simulated tick. At
+## playback_speed 1 this coincided (1 tick == 1 real frame); at higher
+## speeds, N ticks' worth of ability-FSM advancement happened before
+## CombatResolver ever inspected the state, silently skipping the
+## single-tick-wide activation window whenever it didn't land on the
+## very last tick of a batch -- exactly the human owner's own "só ta
+## reproduzindo os frames que executam" description. Fixed in
+## ReplayDriver._ready()/_apply_tick(): CombatResolver's automatic
+## engine callback is disabled and it's driven explicitly, once per
+## SIMULATED tick, from inside _apply_tick() instead -- this test now
+## exercises exactly that path through the normal driver API, no manual
+## CombatResolver call needed. The skillshot starts 3 idle ticks in
+## (not tick 0) specifically so the activation frame (idle 3 +
+## debug_skillshot.tres's own startup_frames 8 == absolute tick 11)
+## would have landed mid-batch at speed 8 under the OLD bug (batches:
+## 0-7, 8-15, ...), not coincidentally on a batch boundary.
+func test_high_speed_playback_still_spawns_a_projectile() -> void:
+	var samples: Array = []
+	for i in range(24):
+		samples.append({"peer_id": 1, "sample": _sample_dict(i, i >= 3)})
+	var lines: Array = [
+		{
+			"type": "header",
+			"mode": 0,
+			"friendly_fire": false,
+			"round_target": 2,
+			"sim_seed": 1,
+			"loadouts":
+			[
+				{
+					"peer_id": 1,
+					"class": "vanguard",
+					"team": 0,
+					"weapon": "iron_sword",
+					"boot": "swift_boots",
+					"perk": "vitality",
+				}
+			],
+		}
+	]
+	for i in range(24):
+		lines.append({"type": "tick", "tick": i, "samples": [samples[i]]})
+	var path := _write_replay("skillshot_fast.replay", lines)
+
+	var player: Node2D = add_child_autofree(REPLAY_PLAYER_SCENE.instantiate())
+	var driver: ReplayDriver = player.get_node("ReplayDriver")
+	var projectiles := player.get_node("Projectiles")
+
+	assert_true(driver.load_replay(path))
+	driver.playback_speed = 8
+	driver.play()
+	# 3 real frames * 8 ticks/frame = 24 ticks.
+	for _i in range(3):
+		driver._physics_process(1.0 / 60.0)
+
+	assert_gt(
+		projectiles.get_child_count(),
+		0,
+		"a skillshot cast mid-batch at 8x speed must still spawn a Projectile, not be skipped"
 	)
 
 

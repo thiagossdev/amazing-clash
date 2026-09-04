@@ -416,7 +416,10 @@ func test_round_end_advances_current_round_and_updates_round_wins() -> void:
 	assert_eq(driver.round_wins()[0], 1)
 
 
-func test_play_is_a_noop_once_finished() -> void:
+## Human owner's own follow-up request 2026-09-04: pressing Play once
+## finished restarts from the beginning instead of staying a permanent
+## no-op for the rest of the viewing session.
+func test_play_restarts_from_the_beginning_once_finished() -> void:
 	var path := _write_replay(
 		"finished.replay",
 		[
@@ -438,12 +441,17 @@ func test_play_is_a_noop_once_finished() -> void:
 					}
 				],
 			},
-			{"type": "match_end", "winner": -1, "round_wins": {}},
+			{"type": "tick", "tick": 1, "samples": []},
+			{"type": "match_end", "winner": 0, "round_wins": {"0": 2}},
 		]
 	)
 	var driver := _driver_with_characters()
 	driver.load_replay(path)
-	driver.seek_to_frame(0)
-	assert_true(driver.is_finished())
+	driver.seek_to_frame(999)
+	assert_true(
+		driver.is_finished(), "test setup: the replay must be finished before play() is called"
+	)
 	driver.play()
-	assert_false(driver.is_playing(), "a finished replay must not be playable again")
+	assert_false(driver.is_finished(), "play() once finished must restart, not stay finished")
+	assert_true(driver.is_playing())
+	assert_eq(driver.ticks_processed(), 0, "restarted playback begins at tick 0 again")

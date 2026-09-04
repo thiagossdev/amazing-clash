@@ -34,8 +34,10 @@ extends Node
 signal state_changed
 
 const CONTROLLING_PEER_ID_OFFSET := 1_000_000
+const TICK_DELTA := 1.0 / 60.0
 
 @export var characters_path: NodePath = ^"../Characters"
+@export var combat_resolver_path: NodePath = ^"../CombatResolver"
 
 ## Ticks applied per real physics frame during normal playback (not
 ## seeking, which already fast-forwards independently of this). 1/2/4/8
@@ -49,6 +51,7 @@ var _records: Array = []
 var _tick_record_count: int = 0
 var _roster: Array = []
 var _current_loadouts: Dictionary = {}
+var _combat_resolver: Node
 
 var _record_cursor: int = 0
 var _ticks_processed: int = 0
@@ -58,6 +61,26 @@ var _round_wins: Dictionary = {}
 var _is_finished: bool = false
 var _final_winner: int = -1
 var _load_error: String = ""
+
+
+## Found live via /hunt 2026-09-04 ("no 8X os projeteis não são
+## disparados"): CombatResolver.own _physics_process() -- the only
+## place _maybe_launch_projectile()'s exact-frame move_frame ==
+## startup_frames check lives -- is normally invoked by the ENGINE once
+## per real frame, which happens to line up 1:1 with one simulated tick
+## only at playback_speed 1. At higher speeds this driver applies
+## several ticks' worth of ability-FSM advancement per real frame (see
+## _physics_process() below), so the engine's own once-per-real-frame
+## call sees stale-by-N-ticks state and silently misses the single-tick
+## activation window whenever it doesn't land on the very last tick of
+## a batch. Disabling CombatResolver's own automatic engine callback and
+## driving it explicitly, once per SIMULATED tick, from _apply_tick()
+## below instead, closes this regardless of speed -- at speed 1 this is
+## exactly equivalent to the old behavior (one call per tick either way).
+func _ready() -> void:
+	_combat_resolver = get_node_or_null(combat_resolver_path)
+	if _combat_resolver:
+		_combat_resolver.set_physics_process(false)
 
 
 func _physics_process(_delta: float) -> void:
@@ -145,9 +168,16 @@ func final_winner() -> int:
 	return _final_winner
 
 
+## Human owner's own follow-up request 2026-09-04: pressing Play once
+## the replay has already finished restarts it from the beginning,
+## rather than being a permanent no-op for the rest of this viewing
+## session -- reuses seek_to_frame(0)'s own full reset (characters
+## respawned, round/score/finished state cleared), which fixes
+## _is_finished's own gate on this function immediately below.
 func play() -> void:
-	if not _is_finished:
-		_is_playing = true
+	if _is_finished:
+		seek_to_frame(0)
+	_is_playing = true
 
 
 func pause() -> void:
@@ -376,6 +406,11 @@ func _apply_tick(record: Dictionary) -> void:
 			continue
 		var sample := sample_from_dict(entry["sample"])
 		character.replay_step_authoritative(sample)
+	# Once per SIMULATED tick, not once per real frame -- see _ready()'s
+	# own doc comment for why this can't be left to the engine's normal
+	# automatic per-frame callback once playback_speed > 1.
+	if _combat_resolver:
+		_combat_resolver._physics_process(TICK_DELTA)
 
 
 ## Rebuilds every roster member's character node from _current_loadouts
@@ -431,4 +466,17 @@ func _spawn_characters() -> void:
 		character.team = entry["team"]
 		character.position = position_calculator._spawn_position_for(entry["team"])
 		characters.add_child(character)
+		# Same root cause/fix as CombatResolver in _ready() above:
+		# CharacterController._physics_process() is ALSO a normal engine-
+		# driven once-per-real-frame callback -- left enabled, it fires
+		# in addition to _apply_tick()'s own explicit per-SIMULATED-tick
+		# replay_step_authoritative() call, and since the latter already
+		# pushes-then-immediately-pops its one Sample from ServerSim's
+		# buffer each time, the engine's own extra call finds an empty
+		# buffer and falls into ServerSim.next_input()'s stale-input
+		# fallback -- silently repeating the last move direction for one
+		# uncommanded phantom tick, every real frame, at ANY speed
+		# (found live via /hunt 2026-09-04 while investigating a
+		# different but related report: "problema de interpolação").
+		character.set_physics_process(false)
 	position_calculator.free()
