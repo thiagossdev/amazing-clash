@@ -11,13 +11,23 @@ extends Control
 ## discovery (Phase 10) is not this screen's job, see memory/plan.md's
 ## "Slices 7-10".
 ##
-## Phase 14: ready is now symmetric (a toggle Button per row, including
-## the host's own) rather than a checkbox for every peer EXCEPT the
-## host plus a separate host-only Start button -- LobbyState itself
-## decides WHEN to actually start (a server-side countdown once
-## everyone's ready, see LobbyState._recompute_countdown()), this
-## screen just reflects that countdown's broadcast value. There is no
-## more Start button to press.
+## Phase 14: ready is now symmetric (a toggle Button, including the
+## host's own) rather than a checkbox for every peer EXCEPT the host
+## plus a separate host-only Start button -- LobbyState itself decides
+## WHEN to actually start (a server-side countdown once everyone's
+## ready, see LobbyState._recompute_countdown()), this screen just
+## reflects that countdown's broadcast value. There is no more Start
+## button to press.
+##
+## 2026-09-04 (human owner's own request): Ready and Switch Team are no
+## longer built per-row inside _build_player_row() -- they're the 2
+## most important actions on this whole screen, so they're now fixed,
+## large (2x a normal Button's default size/font), bottom-center-
+## anchored controls in Lobby.tscn (ReadyButton/SwitchTeamButton)
+## always controlling the LOCAL peer, never rebuilt on every room-state
+## refresh. Every peer's row still shows their own ready state, just as
+## read-only text now (a " [Ready]" suffix), the same way team/perk/
+## weapon/boot picks already were.
 ##
 ## Mode/friendly-fire controls are host-only: NetworkManager.is_server()
 ## gates both interactivity (disabled for clients) and which peer's own
@@ -39,6 +49,8 @@ var _is_host: bool = false
 @onready var _player_list_container: VBoxContainer = $PlayerListContainer
 @onready var _status_label: Label = $StatusLabel
 @onready var _leave_button: Button = $LeaveButton
+@onready var _ready_button: Button = $ReadyButton
+@onready var _switch_team_button: Button = $SwitchTeamButton
 
 
 func _ready() -> void:
@@ -52,12 +64,19 @@ func _ready() -> void:
 		_mode_option.item_selected.connect(_on_mode_selected)
 		_friendly_fire_check.toggled.connect(_on_friendly_fire_toggled)
 	_leave_button.pressed.connect(_on_leave_pressed)
+	_ready_button.toggled.connect(LobbyState.set_local_ready)
+	_switch_team_button.pressed.connect(_on_switch_team_pressed)
 
 	LobbyState.room_state_changed.connect(_refresh_room_ui)
 	LobbyState.countdown_changed.connect(_refresh_status_label)
 	EventBus.match_state_changed.connect(_on_match_state_changed)
 	_refresh_room_ui()
 	_maybe_dev_hooks()
+
+
+func _on_switch_team_pressed() -> void:
+	var local_id := multiplayer.get_unique_id()
+	LobbyState.set_local_team(1 - LobbyState.get_team_id(local_id))
 
 
 func _on_mode_selected(index: int) -> void:
@@ -98,6 +117,11 @@ func _refresh_room_ui() -> void:
 	for peer_id in LobbyState.player_class_ids:
 		_player_list_container.add_child(_build_player_row(peer_id, local_id, team_mode))
 
+	var local_is_ready := LobbyState.is_ready(local_id)
+	_ready_button.button_pressed = local_is_ready
+	_ready_button.text = "Not Ready" if local_is_ready else "Ready"
+	_switch_team_button.visible = team_mode
+
 	_refresh_status_label()
 
 
@@ -128,32 +152,15 @@ func _build_player_row(peer_id: int, local_id: int, team_mode: bool) -> HBoxCont
 	var boot_name := LobbyState.BOOT_RESOURCES[LobbyState.BOOT_IDS.find(boot_id)].boot_name
 	var loadout_suffix := " [%s / %s]" % [weapon_name, boot_name]
 	var role_suffix := " (Host)" if peer_id == _host_peer_id() else ""
+	# Ready/Switch Team are no longer built per-row (see this file's own
+	# 2026-09-04 doc comment) -- every row still shows ready state, just
+	# as read-only text now, the same as team/perk/weapon/boot.
+	var ready_suffix := " [Ready]" if LobbyState.is_ready(peer_id) else ""
 	label.text = (
-		"Peer %s: %s%s%s%s%s"
-		% [peer_id, class_id, team_suffix, perk_suffix, loadout_suffix, role_suffix]
+		"Peer %s: %s%s%s%s%s%s"
+		% [peer_id, class_id, team_suffix, perk_suffix, loadout_suffix, role_suffix, ready_suffix]
 	)
 	row.add_child(label)
-
-	var controls := VBoxContainer.new()
-	var is_ready_now := LobbyState.is_ready(peer_id)
-	var ready_button := Button.new()
-	ready_button.toggle_mode = true
-	ready_button.button_pressed = is_ready_now
-	ready_button.text = "Not Ready" if is_ready_now else "Ready"
-	ready_button.disabled = peer_id != local_id
-	if peer_id == local_id:
-		ready_button.toggled.connect(LobbyState.set_local_ready)
-	controls.add_child(ready_button)
-
-	if peer_id == local_id and team_mode:
-		var switch_button := Button.new()
-		switch_button.text = "Switch Team"
-		switch_button.pressed.connect(
-			func(): LobbyState.set_local_team(1 - LobbyState.get_team_id(local_id))
-		)
-		controls.add_child(switch_button)
-
-	row.add_child(controls)
 
 	if peer_id == local_id:
 		row.add_child(_build_perk_option())

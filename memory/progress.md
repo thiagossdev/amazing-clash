@@ -898,6 +898,21 @@ changed but this file wasn't updated.
   (`tests/unit/test_ui_viewport_bounds.gd`, covering every scene
   above) confirmed this red, then green after anchoring each root to
   Godot's "Full Rect" preset. 258/258 GUT passing project-wide.
+- [x] **Room Config's Ready/Switch Team buttons: fixed, large,
+  bottom-center (2026-09-04, human owner's own request: "Ancorar os
+  botões de ready e switch team na parte de baixo e ao centro. Dobrar
+  o tamanho do botão e fonte size").** Pulled out of
+  `_build_player_row()` (where they were built fresh, small, per-row,
+  every room-state refresh) into 2 fixed nodes in `Lobby.tscn`
+  (`ReadyButton`/`SwitchTeamButton`), bottom-center-anchored, 2x a
+  default Button's size and font (32px), always controlling the LOCAL
+  peer. Every peer's row still shows ready state, now as read-only
+  text (a `[Ready]` suffix, same shape as team/perk/weapon/boot).
+  `SwitchTeamButton` stays hidden outside Team mode. 5 new tests
+  (`tests/unit/test_lobby.gd`, new file: signal wiring, state→UI sync,
+  visibility, the doubled font size), confirmed red (stashed the
+  change, re-ran -- real engine errors, the nodes didn't exist) then
+  green. 263/263 GUT passing.
 
 ## Backlog (next up)
 
