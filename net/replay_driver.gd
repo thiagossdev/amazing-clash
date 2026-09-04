@@ -383,10 +383,22 @@ func _apply_tick(record: Dictionary) -> void:
 ## which matches the real match's own connection order for the common
 ## host-then-clients case this project's small match sizes always have,
 ## but isn't a value this driver can verify against the file itself.
+## Real bug found live (2026-09-04): an earlier version used
+## queue_free() here, deferring actual removal to end-of-frame. Two
+## _spawn_characters() calls in the same frame (load_replay() then an
+## immediate seek_to_frame(), or a round_end followed by the new
+## round's own first tick within the SAME _apply_next_tick_record()
+## call -- see that function's own doc comment) then raced a name
+## collision: the still-not-yet-removed old node still held the name
+## str(peer_id), so Godot silently auto-renamed the freshly-added
+## replacement to a generic fallback name instead -- str(name).to_int()
+## lookups (LobbyState application in _ready(), get_node_or_null(str(
+## peer_id)) in _apply_tick()) then silently failed to find it. free()
+## (immediate, not deferred) closes this.
 func _spawn_characters() -> void:
 	var characters := get_node(characters_path)
 	for child in characters.get_children():
-		child.queue_free()
+		child.free()
 	MatchState.match_mode = _header["mode"] as MatchState.MatchMode
 	var position_calculator := PlayerSpawner.new()
 	for entry in _roster:
