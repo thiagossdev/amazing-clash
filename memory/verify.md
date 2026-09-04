@@ -893,3 +893,69 @@ in `progress.md`. No exceptions.
   (e.g. a repeating `--dev-kick-after`) that doesn't exist yet. Covered
   by the regression test above instead; the human owner's own planned
   2-physical-PC test session can exercise this live if desired.
+
+### Phase 14: Room Config UX
+
+- [x] `tests/unit/test_lobby_state.gd`: the 4 old `all_non_host_ready()`
+  tests replaced with 5 `all_ready()` tests (empty room is never ready;
+  a solo host who has readied is ready; the host itself not readying
+  blocks it now, where it never used to; a non-host peer not reporting
+  still blocks it; every registered peer including the host reporting
+  makes it true), 1 `team_label()` test (0 -> "Red", 1 -> "Blue"), and
+  4 `is_room_ready_to_start()` tests (blocked while not everyone's
+  ready; blocked in Team mode with an invalid split; true in Team mode
+  with a valid split; true in FFA regardless of team split). 10 new
+  tests total (146 project-wide, was 136 before this phase -- the
+  Phase 13b reissue fix landed in between at 140).
+- [x] **TDD confirmed**: ran just these 10 new tests before writing
+  any implementation -- all failed with `Invalid call: Nonexistent
+  function 'all_ready'/'team_label'/'is_room_ready_to_start'`, i.e. a
+  genuine red from a missing API, not a logic bug. Green after
+  implementing `net/lobby_state.gd`'s new functions.
+- [x] `gdformat --check` / `gdlint` clean on every changed/new file
+  (`core/match_state.gd`, `net/lan_discovery.gd`, `net/lobby_state.gd`,
+  `tests/unit/test_lobby_state.gd`, `ui/lobby/Lobby.tscn`,
+  `ui/lobby/lobby.gd`) -- 2 real `class-definitions-order` lint passes
+  needed along the way (a new `signal` and 3 new `const`s were first
+  added out of their required group order; fixed by moving them next
+  to the file's existing signal/const declarations instead of inline
+  where they were logically discussed).
+- [x] Full GUT suite: 146/146 passing.
+- [x] **Live 2-process test** (`--dev-autoplay --dev-class=<id>
+  --dev-host`/`--dev-join=127.0.0.1` `--dev-ready
+  --dev-countdown-pre-delay=0.3 --dev-countdown-seconds=1.0`, temporary
+  `print()` traces in `core/match_state.gd`'s `_rpc_enter_loading`/
+  `_rpc_enter_in_progress`, removed before the final commit): both
+  peers set `--dev-ready` -> both processes log `phase=LOADING` then
+  `phase=IN_PROGRESS` with zero button presses and zero engine errors.
+  Re-run with only the host setting `--dev-ready` (client never
+  readies) -> neither process ever logs a phase transition within the
+  same wait window, confirming an incomplete ready-set never
+  auto-starts.
+- [ ] **Known, deliberately unverified gaps** (see `memory/plan.md`'s
+  Slice 14 block for the full reasoning): (1) the Leave Room button's
+  own click path was not exercised by a dedicated live/dev-flag test --
+  it composes 3 already-independently-verified primitives
+  (`NetworkManager.close()`, `LanDiscovery.stop_advertising()`,
+  `get_tree().change_scene_to_file(...)`), accepted as covered by reuse
+  rather than adding a new dev flag for one button; (2) the exact
+  mid-countdown-cancel race (a peer un-readies WHILE the visible 5s
+  countdown is already running) has no dedicated live scenario -- no
+  existing dev flag can deterministically un-ready a peer mid-countdown
+  without adding one solely for this test. Covered by construction (the
+  `_countdown_generation` token re-check before every `await`) and by
+  `is_room_ready_to_start()`'s own unit tests instead; (3) the same "no
+  way to screenshot Godot's real renderer in this environment" gap
+  every UI-adjacent phase has flagged since Phase 7.
+- [ ] **`/check` (code-review skill)**: run at high severity against
+  the branch's full diff before merge -- see this phase's own report
+  for findings and their disposition (fixed, or deferred with a stated
+  reason).
+- [ ] **Not merged into `main`** -- built on `feature/phase14-room-
+  config-ux` from a fork's own isolated worktree; the same hard
+  sandbox boundary Phase 13b hit (a worktree-scoped fork cannot reach
+  the shared primary checkout's git state) applies here too. The
+  orchestrating session needs to run `git merge --no-ff
+  feature/phase14-room-config-ux` from
+  `/mnt/c/var/workspaces/godot/amazing-clash`, then `godot4 --headless
+  --import` before trusting a post-merge GUT run.
