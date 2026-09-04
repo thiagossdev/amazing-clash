@@ -662,18 +662,65 @@ changed but this file wasn't updated.
   the client's own process, zero engine errors. See `memory/plan.md`'s
   Slice 16 block and `memory/verify.md`'s Phase 16 section for full
   evidence.
+- [x] **Phase 17 (Rounds: Best of 3) implemented, live-verified, on
+  `feature/phase17-best-of-3-rounds`**: `MatchState` gains a new
+  `ROUND_INTERMISSION` phase, `round_wins`/`current_round`, and
+  `resolve_round_result()` (now called by `MatchRules` instead of
+  `enter_post_game()` directly). A new `RoundIntermissionOverlay`
+  (`ui/hud/round_intermission_overlay.gd`, a `TestArena.tscn` sibling
+  of `MatchHud`) lets each peer re-pick weapon/boot/perk between
+  rounds via the same self-service `LobbyState` setters Room Config
+  uses, with the confirmed 15s/13s/5s/3s timing. Starting the next
+  round reuses `enter_loading()` outright -- a full, already-proven
+  reset via `TestArena.tscn`'s own fresh scene load, no new "reset
+  stats in place" path needed. `MatchHud`'s final banner now shows the
+  round score too. **2 real bugs found live**: (1) a server-side crash
+  in `CharacterController._rpc_send_input()` -- nothing previously
+  stopped a client from sending input for its old character all
+  through the intermission, and an in-flight packet could arrive after
+  a round-transition reload had already detached that node; fixed with
+  2 guards (an `IN_PROGRESS`-only send gate, plus an `is_inside_tree()`
+  belt-and-suspenders check on receive), confirmed fixed across 3
+  repeated live runs. (2) A separate, confirmed-non-fatal engine-level
+  despawn-ordering warning (`ERR_UNAUTHORIZED` from
+  `MultiplayerSpawner`) reproduces consistently but never once affected
+  the correct round-2/final-score outcome across 3 live runs -- a real
+  fix would mean redesigning the round-transition sequencing, deferred
+  as bigger than this phase's own scope. 10 new GUT tests (192 total,
+  was 182). Live 2-process test (through the real headless flow --
+  found and fixed a real doc gap: `godot4 --headless -- --server` no
+  longer reaches `net/dev_bootstrap.gd` at all since Phase 7 changed
+  the main scene, the scene must be passed explicitly): a full 2-round
+  best-of-3 sequence completed correctly end-to-end 3 times in a row,
+  identical results on both peers each time. See `memory/plan.md`'s
+  Slice 17 block, `memory/gotchas.md`, and `memory/verify.md`'s Phase
+  17 section for full evidence.
 
 ## Backlog (next up)
 
-- [ ] **Phases 17-20 (best-of-3 rounds, match log, replay recording,
-  replay playback) — scope confirmed via `/think` 2026-09-03/04,
-  running now via `/loop` + `/ship-phase`, one phase at a time.
-  Phases 14-16 are DONE, see the Completed entries above.** See
+- [ ] **Phases 18-20 (match log, replay recording, replay playback) —
+  scope confirmed via `/think` 2026-09-03/04, running now via `/loop` +
+  `/ship-phase`, one phase at a time. Phases 14-17 are DONE, see the
+  Completed entries above.** See
   `memory/plan.md`'s roadmap list (items 14-20) for the full decided
   scope of each, including the exact inter-round loadout-countdown
   timing (15s pick/confirm window, 5s or 3s start countdown depending
   on how early everyone confirms) and the `sim_seed` replay-format
   field reserved now for RNG the human owner plans to add later.
+- [ ] **Decide whether to close Phase 17's `ERR_UNAUTHORIZED` despawn-
+  ordering race** (confirmed non-fatal across 3 live runs -- round-2/
+  final-score results were always correct -- but reproduces every
+  round transition) by redesigning the round-transition sequencing so
+  the server's own despawn-and-acknowledge completes before any client
+  is told to reload, or accept the current confirmed-harmless warning
+  as good enough for now. See `memory/plan.md`'s Slice 17 block and
+  `memory/gotchas.md` for the full mechanism.
+- [ ] Phase 17's early-vs-late intermission countdown does not let an
+  un-confirm CANCEL an already-started early countdown once the
+  confirm-set completes -- a deliberate reading of the human owner's
+  own spec (which only describes cancel/restart for Slice 14's
+  original ready-countdown, not this one), not re-litigated during
+  this phase. Revisit if it turns out to matter in practice.
 - [ ] **Internet play without manual port-forwarding** (confirmed
   future direction, 2026-09-04, not yet scheduled as a roadmap phase)
   — migrate `net/network_manager.gd`'s transport from

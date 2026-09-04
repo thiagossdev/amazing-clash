@@ -556,6 +556,52 @@ Format:
   files a phase's own scope says to touch) before considering the
   phase done.
 
+- **2026-09-04** — Phase 17 (best-of-3 rounds): `Node.multiplayer`
+  only resolves once a node is actually inside the `SceneTree` -- a
+  freshly `.new()`-ed `MatchStateScript` (never `add_child()`-ed) has
+  `multiplayer == null`, not the default `SceneMultiplayer` a fresh
+  `MatchState`-shaped test would expect. Every prior test in this
+  project that touched `multiplayer` from a manually-instantiated,
+  non-autoload copy (`LobbyStateScript.new()`, `PlayerSpawner.new()`)
+  happened to only ever touch it through `NetworkManager.is_server()`
+  or via server-vs-client branches that resolved without ever calling
+  a bare `multiplayer.X` on the off-tree instance itself -- this
+  phase's `all_loadout_confirmed()` was the first method in the
+  project to call `multiplayer.has_multiplayer_peer()`/
+  `multiplayer.get_unique_id()` directly on such an instance, and it
+  crashed immediately. → **Rule**: before writing a unit test that
+  calls `multiplayer.X` on a manually-instantiated (not-autoload) Node,
+  add it to the tree first via GUT's `add_child_autofree()` -- it still
+  shares the same default `SceneMultiplayer` every other node
+  (including the real autoload) resolves to, giving a properly
+  isolated instance (separate own-Dictionary state) that doesn't crash
+  on `multiplayer` access. Don't assume an existing project convention
+  covers a new touch-point just because it "looks similar" to code that
+  already works off-tree -- check what that existing code ACTUALLY
+  touches, not just its overall shape.
+
+- **2026-09-04** — Same phase: nothing gated
+  `CharacterController._physics_step_predicted()`'s own
+  `_rpc_send_input` sends on match phase, so a client kept sending
+  input for its about-to-be-replaced character all through the new
+  `ROUND_INTERMISSION` window. The very first live 2-process test of a
+  round transition crashed the SERVER with "Cannot call method
+  'get_remote_sender_id' on a null value" the instant an already-in-
+  flight input packet arrived after the round-transition reload had
+  already detached the receiving character node (`multiplayer`
+  resolves to `null` on a detached node, same underlying fact as the
+  test gotcha above, this time hit by REAL network traffic instead of
+  a test). → **Rule**: introducing a new match-phase transition that
+  tears down/replaces already-live networked nodes (a round reload, a
+  scene change) needs an explicit audit of every OTHER system that
+  keeps sending/processing RPCs against those nodes based on ITS OWN
+  local trigger (here: "every physics tick," unrelated to match phase)
+  -- don't assume an existing send loop will naturally stop just
+  because the nodes it targets are about to go away; gate the SEND
+  side on the new phase explicitly, and add a receive-side
+  `is_inside_tree()` guard as defense against whatever's already
+  in-flight when you do.
+
 <!--
 Examples:
 

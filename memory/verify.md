@@ -1166,3 +1166,125 @@ in `progress.md`. No exceptions.
   renderer" gap every UI-adjacent phase has flagged since Phase 1 --
   the 2 new Room Config dropdowns are unverified visually, though their
   underlying self-service logic is exercised live above.
+
+### Phase 17: Rounds: Best of 3
+
+- [x] `tests/unit/test_match_state.gd` (new, 10 tests):
+  `decide_round_outcome()` (draw doesn't change wins, decisive round
+  increments the winner, below/at `ROUND_TARGET` branching, never
+  mutates its input dict), `all_loadout_confirmed()` (false with no
+  multiplayer peer, false before the local peer confirms, true once it
+  does with no remote peers connected -- required
+  `add_child_autofree()` rather than a bare `MatchStateScript.new()`
+  since `Node.multiplayer` only resolves once a node is actually
+  inside the `SceneTree`), `is_early_confirm()` (below/at the
+  threshold). The RPC-dispatching orchestration around these (the
+  countdown coroutines, the actual round-transition broadcast) is
+  verified live below instead, matching this project's established
+  convention for exactly this class of code (see `net/lobby_state.gd`'s
+  own countdown, never unit-tested directly either).
+- [x] `gdformat --check` / `gdlint` clean on every changed/new file
+  (`core/event_bus.gd`, `core/match_state.gd`, `gameplay/characters/
+  character_base/character_controller.gd`, `gameplay/match/
+  match_rules.gd`, `net/dev_bootstrap.gd`, `ui/hud/match_hud.gd`,
+  `ui/hud/round_intermission_overlay.gd` (new), `tests/unit/
+  test_match_state.gd` (new), `maps/test_arena/TestArena.tscn`).
+  192/192 GUT tests total project-wide (was 182).
+- [x] **Live 2-process test, 3 repeated runs**, through the real
+  headless flow: `godot4 --headless res://maps/test_arena/TestArena.tscn
+  -- --server --dev-intermission-window=3
+  --dev-intermission-early-threshold=2 --dev-intermission-early-seconds=1
+  --dev-intermission-late-seconds=1 --dev-auto-confirm-intermission`
+  (server) and `-- --join --simulate-self-eliminate
+  --dev-auto-confirm-intermission` (client, the only peer eliminating
+  itself each round so every round is decisive, not a draw). Found and
+  fixed a real doc gap first: a bare `godot4 --headless -- --server`
+  reaches `res://ui/main_menu/MainMenu.tscn` (the project's main scene
+  since Phase 7), never `net/dev_bootstrap.gd` at all -- the scene must
+  be passed explicitly, now documented directly in that file's own doc
+  comment. With that fixed, temporary `[VERIFY]` `print()`
+  instrumentation in `core/match_state.gd` (`_rpc_enter_in_progress`/
+  `_rpc_round_ended`/`_rpc_enter_round_intermission`/
+  `_rpc_enter_post_game`) and `gameplay/match/match_rules.gd`
+  (`alive_by_team` on every change), removed before the final commit,
+  confirmed all 3 runs: round 1 decided 1-0 -> `ROUND_INTERMISSION`
+  opened, both peers auto-confirmed, the early 1s countdown fired
+  (elapsed well under the 2s test threshold) -> round 2 started with
+  `current_round=2` and the carried-over `1-0` score, characters fully
+  reset -> round 2 also decided, `round_wins` reached `{0: 2}` ->
+  `POST_GAME` reached with `winning=0` -- identical on both the
+  server's and the client's own process, every run.
+- [x] **2 real bugs found live, both investigated to a confirmed
+  root cause**:
+  1. **Fixed.** `CharacterController._rpc_send_input()` crashed on the
+     server ("Cannot call method 'get_remote_sender_id' on a null
+     value") on the very first live attempt, during the round-1-to-
+     round-2 transition. Root cause: nothing gated a client's own
+     continuous `_rpc_send_input` sends on match phase, so it kept
+     sending them all through `ROUND_INTERMISSION`; an already-in-
+     flight packet arrived after the round-transition reload had
+     already detached the receiving character node server-side
+     (`multiplayer` resolves to `null` on a detached node -- the exact
+     "off-tree node" lesson this phase's own `all_loadout_confirmed()`
+     tests hit too, see `memory/gotchas.md`). Fixed with 2 guards:
+     `_physics_step_predicted()` now only sends while
+     `MatchState.current_phase == Phase.IN_PROGRESS`; `_rpc_send_input()`
+     itself also checks `is_inside_tree()` as a belt-and-suspenders
+     guard against an already-in-flight packet. Re-ran the SAME live
+     test 3 times after the fix: 0/3 crashes, versus 1/1 crashes before
+     it (the very first attempt).
+  2. **Confirmed non-fatal, fix explicitly deferred.** A separate,
+     lower-severity, ENGINE-level (not GDScript-level) warning
+     reproduces on the client, consistently, every single run (3/3):
+     `ERROR: Condition "!pinfo.recv_nodes.has(net_id)" is true.
+     Returning: ERR_UNAUTHORIZED` from `on_despawn_receive` in Godot's
+     own `scene_replication_interface.cpp`. Root cause: the server's
+     OLD `MultiplayerSpawner` automatically broadcasts a despawn
+     notification for its own tracked characters as the round-just-
+     ended scene is torn down, but the client's own OLD replication
+     tracking may already be independently discarded (its own reload
+     races the server's) by the time that notification arrives.
+     Explicitly NOT fixed this phase: all 3 runs still reached the
+     correct round-2 and final-`POST_GAME` results despite the warning
+     appearing every time -- this is Godot's replication layer failing
+     to apply a notification for state that's already correctly being
+     discarded, not a corruption that persists. A real fix needs
+     redesigning the round-transition sequencing (despawn-and-
+     acknowledge completing before any client reloads), flagged in
+     `memory/progress.md`'s Backlog for the human owner's own decision
+     on whether it's worth the investment.
+- [x] **Self-review** (adversarial, in place of `/check`'s multi-persona
+  pass -- the async dispatch attempt was skipped entirely this time,
+  per Phases 15/16's own documented dead end for isolated worker
+  forks): `git diff main...feature/phase17-best-of-3-rounds` read in
+  full. Checked specifically for: re-entrant/concurrent countdown
+  triggering (safe by construction, same generation-token pattern
+  `net/lobby_state.gd`'s own countdown already uses), `MatchRules`'
+  own per-round state correctly resetting across a scene reload (yes,
+  it's a fresh Node instance every round, no manual reset needed),
+  `round_wins` keying working identically for team mode and
+  free-for-all (yes, fully key-agnostic `Dictionary` throughout, no
+  fixed-2-team assumption anywhere in the new code). No additional
+  issues found beyond the 2 already fixed/documented above.
+- [ ] **Not merged into `main`** -- built on
+  `feature/phase17-best-of-3-rounds` from a fork's own isolated
+  worktree; the same hard sandbox boundary every prior fork-built phase
+  (13b/14/15/16) hit applies here too. The orchestrating session needs
+  to run `git merge --no-ff feature/phase17-best-of-3-rounds` from
+  `/mnt/c/var/workspaces/godot/amazing-clash`, then `godot4 --headless
+  --import` before trusting a post-merge GUT run.
+- [ ] **Known, deliberately unverified/undecided gaps**: the
+  `ERR_UNAUTHORIZED` despawn race above (confirmed non-fatal, fix
+  deferred to the human owner's own decision); whether an un-confirm
+  should be able to cancel an already-started early final countdown
+  (current behavior: it runs to completion once started -- a
+  deliberate reading of a spec that only describes cancel/restart for
+  Slice 14's original ready-countdown); a peer connecting DURING an
+  active `ROUND_INTERMISSION` gets no catch-up RPC for it (documented
+  directly in `MatchState._on_peer_connected()`'s own doc comment,
+  same class of accepted gap as the pre-existing `LOADING` catch-up
+  gap). Same "no way to screenshot Godot's real renderer" gap every
+  UI-adjacent phase has flagged since Phase 1 -- the new intermission
+  overlay's own dropdowns/labels are unverified visually, though their
+  underlying logic (weapon/boot/perk resolution, confirm-set/countdown
+  timing, round score) is exercised live above.

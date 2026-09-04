@@ -1,7 +1,19 @@
 extends Node
 ## Dev-only bootstrap for manual 2-instance playtesting, headless-friendly
-## so Phase 1's networking can be verified without a GUI. Reads args after
-## "--": `-- --server` hosts, `-- --join` connects to 127.0.0.1,
+## so Phase 1's networking can be verified without a GUI.
+##
+## Phase 17: `project.godot`'s `run/main_scene` has been
+## `res://ui/main_menu/MainMenu.tscn` since Phase 7 (Room Config
+## replaced a fixed-TestArena-at-startup flow) -- this node only exists
+## as a child of `res://maps/test_arena/TestArena.tscn`, so a bare
+## `godot4 --headless -- --server` launches MainMenu and never reaches
+## this file's own `_ready()` at all (no error, no output, nothing --
+## a real gap found live during this phase's own verification, easy to
+## mistake for the game silently failing to start). The scene must be
+## passed explicitly: `godot4 --headless
+## res://maps/test_arena/TestArena.tscn -- --server ...`.
+##
+## Reads args after "--": `-- --server` hosts, `-- --join` connects to 127.0.0.1,
 ## `-- --latency=50` sets NetworkManager.artificial_latency_ms so latency
 ## can be dialed in without editing code mid-test. `-- --simulate-move`
 ## holds move_right and fires one dash press ~1s in, since headless mode
@@ -178,14 +190,7 @@ func _ready() -> void:
 				if new_phase != MatchState.Phase.IN_PROGRESS:
 					return
 				await get_tree().create_timer(1.0).timeout
-				var characters := get_node_or_null(^"../Characters")
-				var own_character := (
-					characters.get_node_or_null(str(multiplayer.get_unique_id()))
-					if characters
-					else null
-				)
-				if own_character:
-					own_character.take_damage(9999.0)
+				_dev_self_eliminate()
 		)
 
 	if "--dev-auto-confirm-intermission" in args:
@@ -194,3 +199,42 @@ func _ready() -> void:
 				if new_phase == MatchState.Phase.ROUND_INTERMISSION:
 					MatchState.set_local_loadout_confirmed(true)
 		)
+
+
+## Found live (Phase 17): CharacterController.take_damage() mutates
+## current_health directly with no authority check or RPC -- it's meant
+## to be called only from already-server-only code (CombatResolver's
+## own hit application). Calling it directly on a non-host peer only
+## ever touches that peer's own local PREDICTED copy (see Phase 9's own
+## "MultiplayerSpawner replication creates separate node instances for
+## the AUTHORITATIVE/PREDICTED/INTERPOLATED copies" lesson,
+## memory/plan.md's Slice 9 block) -- the server's own authoritative
+## character never changes, so MatchRules (server-only) never sees the
+## elimination and the match never progresses. This was a pre-existing
+## gap in --simulate-self-eliminate itself, invisible before Phase 17
+## because every earlier phase that used this flag only ever ran it on
+## the host. Routes through the server via RPC when this peer isn't
+## the server; calls take_damage() directly (no RPC round-trip needed)
+## when it already is.
+func _dev_self_eliminate() -> void:
+	if NetworkManager.is_server():
+		_apply_dev_self_eliminate(multiplayer.get_unique_id())
+	else:
+		_rpc_dev_self_eliminate.rpc_id(1)
+
+
+## any_peer, but never trusts a client-supplied peer id -- eliminates
+## only the CALLER's own character, same trust reasoning every other
+## any_peer RPC in this project already uses.
+@rpc("any_peer", "reliable")
+func _rpc_dev_self_eliminate() -> void:
+	if not NetworkManager.is_server():
+		return
+	_apply_dev_self_eliminate(multiplayer.get_remote_sender_id())
+
+
+func _apply_dev_self_eliminate(peer_id: int) -> void:
+	var characters := get_node_or_null(^"../Characters")
+	var character := characters.get_node_or_null(str(peer_id)) if characters else null
+	if character:
+		character.take_damage(9999.0)
