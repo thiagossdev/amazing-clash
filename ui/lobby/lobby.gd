@@ -4,10 +4,12 @@ extends Control
 ## button on a peer's own row only, never another peer's; corrected
 ## mid-Phase-9, was host-controlled-for-everyone, a real authority bug
 ## the human owner caught, not a design choice), a self-service perk
-## pick (Phase 9, visible on every row, changeable only on a peer's
-## own -- same authority shape as team), and a Leave Room button (Phase
-## 14, returns to Main Menu). LAN discovery (Phase 10) is not this
-## screen's job, see memory/plan.md's "Slices 7-10".
+## pick (Phase 9), self-service weapon/boot picks (Phase 16, a shared
+## pool of 3 each, class-independent), all visible on every row and
+## changeable only on a peer's own -- same authority shape as team --
+## and a Leave Room button (Phase 14, returns to Main Menu). LAN
+## discovery (Phase 10) is not this screen's job, see memory/plan.md's
+## "Slices 7-10".
 ##
 ## Phase 14: ready is now symmetric (a toggle Button per row, including
 ## the host's own) rather than a checkbox for every peer EXCEPT the
@@ -22,9 +24,10 @@ extends Control
 ## script instance is allowed to actually call
 ## LobbyState.set_room_match_mode()/set_room_friendly_fire() -- both are
 ## called directly (no RPC), since the host IS the server locally.
-## Team and perk, unlike those two, are per-player choices, not
-## match-wide settings -- LobbyState.set_local_team()/set_local_perk()
-## are self-service (any peer, own row only), same shape as
+## Team, perk, weapon, and boot, unlike those two, are per-player
+## choices, not match-wide settings -- LobbyState.set_local_team()/
+## set_local_perk()/set_local_weapon()/set_local_boot() are all
+## self-service (any peer, own row only), same shape as
 ## set_local_ready().
 
 const MODE_LABELS: Array[String] = ["Team", "Free For All"]
@@ -117,8 +120,18 @@ func _build_player_row(peer_id: int, local_id: int, team_mode: bool) -> HBoxCont
 	)
 	var perk_id := LobbyState.get_perk_id(peer_id, LobbyState.PERK_IDS[0])
 	var perk_suffix := " (%s)" % perk_id.capitalize()
+	var weapon_id := LobbyState.get_weapon_id(peer_id, LobbyState.WEAPON_IDS[0])
+	var weapon_name := (
+		LobbyState.WEAPON_RESOURCES[LobbyState.WEAPON_IDS.find(weapon_id)].weapon_name
+	)
+	var boot_id := LobbyState.get_boot_id(peer_id, LobbyState.BOOT_IDS[0])
+	var boot_name := LobbyState.BOOT_RESOURCES[LobbyState.BOOT_IDS.find(boot_id)].boot_name
+	var loadout_suffix := " [%s / %s]" % [weapon_name, boot_name]
 	var role_suffix := " (Host)" if peer_id == _host_peer_id() else ""
-	label.text = "Peer %s: %s%s%s%s" % [peer_id, class_id, team_suffix, perk_suffix, role_suffix]
+	label.text = (
+		"Peer %s: %s%s%s%s%s"
+		% [peer_id, class_id, team_suffix, perk_suffix, loadout_suffix, role_suffix]
+	)
 	row.add_child(label)
 
 	var controls := VBoxContainer.new()
@@ -144,6 +157,8 @@ func _build_player_row(peer_id: int, local_id: int, team_mode: bool) -> HBoxCont
 
 	if peer_id == local_id:
 		row.add_child(_build_perk_option())
+		row.add_child(_build_weapon_option())
+		row.add_child(_build_boot_option())
 
 	return row
 
@@ -165,6 +180,37 @@ func _build_perk_option() -> OptionButton:
 	return option
 
 
+## Phase 16: same self-service authority shape as _build_perk_option()
+## above -- class + weapon + boot + perk are 4 fully independent
+## choices. Shows each weapon's own display name (WeaponResource.
+## weapon_name), not perk's id.capitalize() convention -- a weapon id
+## like "iron_sword" would read as "Iron_sword" capitalized.
+func _build_weapon_option() -> OptionButton:
+	var option := OptionButton.new()
+	for weapon in LobbyState.WEAPON_RESOURCES:
+		option.add_item(weapon.weapon_name)
+	option.selected = LobbyState.WEAPON_IDS.find(
+		LobbyState.get_weapon_id(multiplayer.get_unique_id(), LobbyState.WEAPON_IDS[0])
+	)
+	option.item_selected.connect(
+		func(index: int): LobbyState.set_local_weapon(LobbyState.WEAPON_IDS[index])
+	)
+	return option
+
+
+func _build_boot_option() -> OptionButton:
+	var option := OptionButton.new()
+	for boot in LobbyState.BOOT_RESOURCES:
+		option.add_item(boot.boot_name)
+	option.selected = LobbyState.BOOT_IDS.find(
+		LobbyState.get_boot_id(multiplayer.get_unique_id(), LobbyState.BOOT_IDS[0])
+	)
+	option.item_selected.connect(
+		func(index: int): LobbyState.set_local_boot(LobbyState.BOOT_IDS[index])
+	)
+	return option
+
+
 func _host_peer_id() -> int:
 	return 1
 
@@ -175,12 +221,13 @@ func _host_peer_id() -> int:
 ## memory/verify.md's Phase 8 section for how these are used in the
 ## live multi-process test. Host-only flags do nothing on a client, and
 ## vice versa, matching each control's own real interactivity gating.
-## --dev-ready, --dev-switch-team, and --dev-perk=<id> are available to
-## EITHER role -- Phase 14 made ready symmetric (team and perk were
-## already self-service, per-player choices, not host-only). There is
-## no more --dev-autostart: the countdown itself is what starts the
-## match now, once every peer (including the host) has readied up --
-## see LobbyState._recompute_countdown().
+## --dev-ready, --dev-switch-team, --dev-perk=<id>, and Phase 16's
+## --dev-weapon=<id>/--dev-boot=<id> are available to EITHER role --
+## Phase 14 made ready symmetric (team and perk were already
+## self-service, per-player choices, not host-only). There is no more
+## --dev-autostart: the countdown itself is what starts the match now,
+## once every peer (including the host) has readied up -- see
+## LobbyState._recompute_countdown().
 func _maybe_dev_hooks() -> void:
 	var args := OS.get_cmdline_user_args()
 	if _is_host:
@@ -195,6 +242,10 @@ func _maybe_dev_hooks() -> void:
 	for arg in args:
 		if arg.begins_with("--dev-perk="):
 			LobbyState.set_local_perk(arg.trim_prefix("--dev-perk="))
+		elif arg.begins_with("--dev-weapon="):
+			LobbyState.set_local_weapon(arg.trim_prefix("--dev-weapon="))
+		elif arg.begins_with("--dev-boot="):
+			LobbyState.set_local_boot(arg.trim_prefix("--dev-boot="))
 
 
 ## Waits for the LOCAL peer's own registration to land in LobbyState
