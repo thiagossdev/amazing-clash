@@ -1,7 +1,14 @@
 excluded_directories:
   - .git
   - addons
-  - .claude/worktrees
+  # gdtoolkit matches each os.walk() dirname SEGMENT individually
+  # (gdtoolkit/common/utils.py: `d not in excluded_directories` per
+  # path component) -- a combined path like ".claude/worktrees" never
+  # matches any single segment and is silently a no-op. "worktrees" is
+  # the actual segment created by Agent tool calls with isolation:
+  # "worktree" (always under .claude/worktrees/<agent-id>/), so this
+  # bare name is both correct and sufficient.
+  - worktrees
 max-file-lines: 2000
 # Default (20) is tuned for production classes; GUT's one-test-per-
 # method convention means a growing test file legitimately exceeds it

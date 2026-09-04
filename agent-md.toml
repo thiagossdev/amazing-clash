@@ -18,8 +18,15 @@
 # the -prune below since gdformat has no exclude config of its own.
 # .claude/worktrees/ holds full nested checkouts (including their own
 # addons/gut/) created by Agent tool calls with isolation: "worktree" --
-# pruned the same way, or gdformat tries to reformat vendored GUT files
-# living inside a subagent's in-progress worktree.
+# pruned from $GD via the -prune below (gdformat), and from gdlint's
+# own directory walk via .gdlintrc's excluded_directories: "worktrees"
+# (bare segment name, NOT "'.claude/worktrees'" -- gdtoolkit matches
+# each os.walk() dirname individually, so a combined path never
+# matches; found live 2026-09-04 when a subagent's in-progress
+# worktree code -- not yet gdformatted -- got flagged by a bare
+# `gdlint .`). Without either, gdformat/gdlint would try to
+# reformat/lint vendored GUT files and in-progress code living inside
+# a subagent's own isolated worktree.
 lint = "npx --yes markdownlint-cli2 && (GD=$(find . -path ./addons -prune -o -path ./.godot -prune -o -path ./.git -prune -o -path ./.claude/worktrees -prune -o -name '*.gd' -print); [ -z "$GD" ] || (gdformat --check $GD && gdlint .))"
 
 # Per-file lint used by post-edit-verify (fast, runs after every Write/Edit).

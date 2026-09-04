@@ -487,6 +487,29 @@ Format:
   declaration, before writing the functions that use it, to catch this
   in one small diff instead of a larger reshuffle later.
 
+- **2026-09-04** — The stop hook's lint check (`agent-md.toml`'s
+  `[verify].lint`) kept failing on files inside
+  `.claude/worktrees/agent-.../` -- a background fork's own
+  in-progress, not-yet-formatted worktree, nothing wrong in the
+  primary checkout. Root cause: `.gdlintrc`'s `excluded_directories`
+  listed the combined path `.claude/worktrees`, but gdtoolkit's own
+  exclusion logic (`gdtoolkit/common/utils.py`) filters `os.walk()`'s
+  `dirnames` one path SEGMENT at a time (`d not in
+  excluded_directories`) -- a multi-segment string like
+  `.claude/worktrees` never equals any single segment (`.claude` and
+  `worktrees` show up as separate walk steps), so the entry was a
+  silent no-op the whole time; `gdformat` was never affected only
+  because its own invocation in `agent-md.toml` builds an explicit
+  pre-pruned file list (`find ... -path ./.claude/worktrees -prune`)
+  instead of relying on `.gdlintrc` at all. → **Rule**: any tool whose
+  "excluded directories" config matches by walking segment-by-segment
+  (check the tool's own source, don't assume) needs bare directory
+  NAMES, not multi-segment paths -- `.git`/`addons` worked here only
+  because they're already single segments; test an exclusion by
+  actually triggering the tool against a matching path, don't just
+  trust that adding an entry that "looks right" worked. Fixed by
+  changing the entry to the bare segment `worktrees`.
+
 <!--
 Examples:
 
