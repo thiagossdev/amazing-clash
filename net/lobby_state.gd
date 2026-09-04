@@ -269,10 +269,33 @@ func is_room_ready_to_start() -> bool:
 	)
 
 
+## Found by /check (Phase 14): LobbyState is an autoload, so every one
+## of these registries used to survive across a Leave Room -> re-host/
+## re-join cycle -- a stale player_ready[1] = true left over from a
+## PREVIOUS room could let the new room's auto-countdown start
+## immediately, with no Ready press ever happening in the new room at
+## all. No RPC calls here (unlike _cancel_countdown()): this runs on
+## EVERY peer, including a client, and _rpc_receive_countdown is
+## "authority"-only -- a client calling it would be rejected.
+func reset_room() -> void:
+	player_class_ids.clear()
+	player_team_ids.clear()
+	player_perk_ids.clear()
+	player_ready.clear()
+	room_match_mode = MatchState.MatchMode.TEAM
+	room_friendly_fire = false
+	countdown_seconds_remaining = -1.0
+	if NetworkManager.is_server():
+		_next_team_index = 0
+		_countdown_generation = 0
+
+
 ## Called locally by the connecting peer (host or client) right after
 ## NetworkManager.host()/join() succeeds, to register local_chosen_
-## class_id under this peer's own id.
+## class_id under this peer's own id. Always the first thing a fresh
+## room entry does -- see reset_room()'s own doc comment above for why.
 func register_local_player() -> void:
+	reset_room()
 	var peer_id := multiplayer.get_unique_id()
 	if NetworkManager.is_server():
 		_apply_registration(peer_id, local_chosen_class_id)
@@ -464,10 +487,21 @@ func _rpc_receive_room_state(
 ## ready-set re-forms. A no-op on a client (only the server ever calls
 ## _broadcast_room_state(), but this stays defensive in case that ever
 ## changes).
+##
+## Found by /check (Phase 14): _on_peer_disconnected() below (and
+## _apply_registration()) can still run and call _broadcast_room_state()
+## while MatchState.current_phase is already LOADING/IN_PROGRESS/
+## POST_GAME -- e.g. a peer disconnecting mid-match, or a NEW peer
+## direct-IP-joining mid-match (LAN advertising stops, but the port
+## itself doesn't). Without this guard, is_room_ready_to_start() could
+## still resolve true off leftover Room Config state and re-trigger
+## _start_match() -> MatchState.enter_loading() mid-match, forcing
+## every already-in-match peer back to LOADING. The countdown is only
+## ever a Room Config (Phase.LOBBY) concern.
 func _recompute_countdown() -> void:
 	if not NetworkManager.is_server():
 		return
-	if not is_room_ready_to_start():
+	if MatchState.current_phase != MatchState.Phase.LOBBY or not is_room_ready_to_start():
 		_cancel_countdown()
 		return
 	if _countdown_generation > 0:
@@ -488,23 +522,32 @@ func _cancel_countdown() -> void:
 ## de 5s"). _countdown_generation is bumped once up front and captured
 ## locally so a later _cancel_countdown()/_run_countdown() call from a
 ## DIFFERENT ready-state change can't be confused with this one -- each
-## `await` below re-checks both the generation and is_room_ready_to_
-## start() before continuing, since either can change while suspended.
+## `await` below re-checks _countdown_still_valid() before continuing,
+## since the room's readiness, the match's own phase, or the generation
+## itself can all change while suspended.
 func _run_countdown() -> void:
 	_countdown_generation += 1
 	var my_generation := _countdown_generation
 	await get_tree().create_timer(_pre_delay_seconds).timeout
-	if my_generation != _countdown_generation or not is_room_ready_to_start():
+	if not _countdown_still_valid(my_generation):
 		return
 	var remaining := _countdown_seconds_config
 	while remaining > 0.0:
 		_set_countdown_remaining(remaining)
 		await get_tree().create_timer(1.0).timeout
-		if my_generation != _countdown_generation or not is_room_ready_to_start():
+		if not _countdown_still_valid(my_generation):
 			return
 		remaining -= 1.0
 	_set_countdown_remaining(-1.0)
 	_start_match()
+
+
+func _countdown_still_valid(my_generation: int) -> bool:
+	return (
+		my_generation == _countdown_generation
+		and MatchState.current_phase == MatchState.Phase.LOBBY
+		and is_room_ready_to_start()
+	)
 
 
 ## Relies purely on the RPC's own call_local to update the server's own
