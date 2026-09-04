@@ -1306,12 +1306,22 @@ single biggest gap between "roadmap done" and the fuller MVP proposal.
   single "N players alive" line instead; a per-player list (names,
   individual health bars) needs a display-name system that doesn't
   exist yet.
-- A reconnect/grace-period system for a mid-match disconnect — a
-  disconnect currently resolves as an immediate forfeit for that
-  team (see Slice 5 above), matching the docs' own "online matches
-  should not pause" principle, but a real reconnect window (per
-  `docs/blueprint/03-networking-and-match-modes.md`'s own "Reconnect"
-  sub-state) is unbuilt.
+- ~~A reconnect/grace-period system for a mid-match disconnect~~ —
+  resolved by Slices 13a+13b (grace-period freeze + token-based
+  reconnect), both shipped and merged 2026-09-03. This line was stale,
+  left over from before those slices shipped.
+- **Internet play without manual port-forwarding** (confirmed future
+  direction, 2026-09-04, not yet scheduled as a roadmap phase) — the
+  chosen path (migrate `net/network_manager.gd`'s transport from
+  `ENetMultiplayerPeer` to `WebRTCMultiplayerPeer` for its built-in
+  NAT traversal, a transport-only change that does NOT alter the
+  server-authoritative trust model) is fully written up in
+  `docs/blueprint/03-networking-and-match-modes.md`'s own "Future:
+  Internet Play Without Manual Port-Forwarding" section, including
+  the confirmed-isolated ENet touchpoints, what a signaling/STUN/TURN
+  service would add that this project doesn't have today, and the
+  open questions (hosting/cost, provider, matchmaking scope) still
+  needing their own `/think` before this is scheduled.
 - R/F/T keybindings exist in the InputMap (Phase 3) but are not wired
   to any ability — deferred to whichever later phase adds a 3rd+
   ability slot (needs the human owner's decision on how many slots a

@@ -628,6 +628,19 @@ changed but this file wasn't updated.
   timing (15s pick/confirm window, 5s or 3s start countdown depending
   on how early everyone confirms) and the `sim_seed` replay-format
   field reserved now for RNG the human owner plans to add later.
+- [ ] **Internet play without manual port-forwarding** (confirmed
+  future direction, 2026-09-04, not yet scheduled as a roadmap phase)
+  — migrate `net/network_manager.gd`'s transport from
+  `ENetMultiplayerPeer` to `WebRTCMultiplayerPeer` for its NAT
+  traversal (transport-only change, server stays fully authoritative).
+  Full write-up in `docs/blueprint/03-networking-and-match-modes.md`'s
+  "Future: Internet Play Without Manual Port-Forwarding" section and
+  `memory/plan.md`'s "Deferred / Out of Scope" — confirmed by code
+  audit that every ENet-specific call in the project lives in that one
+  file, but a signaling service (WebRTC can't connect without one) and
+  a STUN/TURN server don't exist in this project yet, and need their
+  own hosting/provider decisions via a future `/think` before this is
+  scheduled.
 - [ ] LAN discovery: Linux still can't discover a Windows-hosted room
   even after confirming `ufw allow 7777/udp` + `7778/udp` (the 7777
   fix DID resolve the separate "join hangs forever" symptom -- this is

@@ -54,14 +54,66 @@ entry.
 damage authority is the most basic cheat vector there is, incompatible
 with a fair, competitive PvP game.
 
-**Known gap**: the lag-compensation piece described above ("rewinds
-hurtboxes to the timestamp the attacker actually saw") is architecture
-intent, not yet implemented — `HitDetection` currently resolves hits
-against each character's live server-tick position only, with no
-position-history buffer or timestamp rewind. See
-[docs/research/networking-architecture-inspiration/04-synthesis-amazingclash.md](../research/networking-architecture-inspiration/04-synthesis-amazingclash.md)
-for a suggested implementation shape and `memory/progress.md` for the
-tracked backlog item.
+**Lag compensation**: implemented (Phase 11, 2026-09-03) — `HitDetection`
+now rewinds hurtboxes to the timestamp the attacker actually saw, via a
+bounded server-side position-history buffer. See `memory/plan.md`'s
+Slice 11 block for the shipped implementation.
+
+## Future: Internet Play Without Manual Port-Forwarding
+
+**Confirmed direction (2026-09-04), not yet scheduled as a roadmap
+phase**: the human owner wants players to be able to host/join over
+the real internet without manually configuring port-forwarding on
+their router — the current direct-connect flow (`net/network_manager.gd`,
+`ENetMultiplayerPeer` over raw UDP) works on a LAN or once a port is
+already open, but a typical home NAT blocks an unsolicited inbound
+connection otherwise.
+
+**Chosen path: swap the transport from ENet to `WebRTCMultiplayerPeer`**,
+using WebRTC's built-in NAT traversal (STUN, with TURN as a fallback
+for symmetric NAT where STUN alone can't punch through). This is a
+**transport-layer change only** — it does not revisit "Why not P2P"
+above: the server stays fully authoritative over damage/death/match
+state exactly as today; WebRTC here just carries the same
+server-authoritative traffic through NAT, it is not a move to a P2P
+trust model.
+
+**Confirmed 2026-09-04 by direct code audit: this project's ENet usage
+is already isolated to a single file.** Every other file (`@rpc`
+methods, `MultiplayerSpawner`, `multiplayer.get_unique_id()`/
+`get_peers()`, `multiplayer.server_disconnected`, etc.) is built on
+Godot's transport-agnostic `MultiplayerPeer`/`SceneMultiplayer` layer
+and needs zero changes. The only real touchpoints are in
+`net/network_manager.gd`:
+
+- `host()`/`join()` create an `ENetMultiplayerPeer` directly — would
+  become a `WebRTCMultiplayerPeer` wrapping one `WebRTCPeerConnection`/
+  `WebRTCDataChannel` pair per remote peer.
+- `get_peer_rtt_ms()` reads `ENetPacketPeer.PEER_ROUND_TRIP_TIME`, an
+  ENet-only stat — WebRTC has no equivalent built-in, so this needs a
+  small custom ping/pong RPC instead.
+
+**What the swap doesn't cover, and this project doesn't have yet**:
+WebRTC cannot establish a connection on its own — it needs an
+out-of-band **signaling channel** to exchange SDP offer/answer and ICE
+candidates before any P2P link exists, which has no equivalent in
+ENet's direct-connect model. This project has no signaling service
+today (even a minimal one, e.g. a small WebSocket relay). It also
+needs a **STUN server** (several free public ones exist) and likely a
+**TURN server** as a fallback for peers behind symmetric NAT (TURN
+relays traffic instead of punching through, and typically isn't free
+to run at scale, unlike STUN). `net/lan_discovery.gd`'s own UDP-
+broadcast room discovery is unrelated (it never touches the transport
+peer) but is itself LAN-only — internet play needs a separate
+room-listing mechanism (a lobby/matchmaking service), tracked
+separately as still out of scope, see `memory/plan.md`'s "Deferred /
+Out of Scope" section.
+
+**Not yet decided, needs its own `/think` when this is picked up**:
+where the signaling (and TURN, if needed) service is hosted and who
+pays for it, which STUN/TURN provider to use, and whether a
+room-listing/matchmaking service ships alongside this or stays a
+separate, later effort.
 
 ## Combat Architecture: Also Inherited
 
