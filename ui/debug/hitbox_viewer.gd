@@ -74,23 +74,31 @@ func _draw_hurtbox(character: CharacterController) -> void:
 	draw_rect(_to_local(rect), HURTBOX_COLOR, false, LINE_WIDTH)
 
 
-## Draws the base attack's hitbox, plus ability_q/ability_e's own
-## hitbox when that slot's AbilityResource is melee-style (not
-## is_projectile -- a projectile-style slot's hitbox is drawn instead
-## by _draw_projectile_hitbox once the projectile actually spawns).
-## Mirrors CombatResolver._resolve_ability_slot()'s own generalization
-## -- this viewer stopped tracking that generalization when Phase 3
-## added independent ability_q_fsm/ability_e_fsm slots, so Heavy Slam/
-## Bulwark Strike-style abilities never drew here even though they hit
-## correctly server-side. Caught by the human owner while play-testing
-## Vanguard: no debug hitbox ever appeared for Q/E, reasonably read as
-## "the hit isn't landing" even though it always was.
+## Draws the base attack's hitbox, plus ability_q/ability_e/ability_r/
+## ability_f's own hitbox when that slot's AbilityResource is melee-style
+## (not is_projectile -- a projectile-style slot's hitbox is drawn
+## instead by _draw_projectile_hitbox once the projectile actually
+## spawns). Mirrors CombatResolver._resolve_ability_slot()'s own
+## generalization -- this viewer stopped tracking that generalization
+## when Phase 3 added independent ability_q_fsm/ability_e_fsm slots, so
+## Heavy Slam/Bulwark Strike-style abilities never drew here even though
+## they hit correctly server-side. Caught by the human owner while
+## play-testing Vanguard: no debug hitbox ever appeared for Q/E,
+## reasonably read as "the hit isn't landing" even though it always
+## was. Found again live during Phase 15's own self-review before it
+## could repeat the same mistake for R/F -- this file needs updating
+## every time CombatResolver gains an ability slot, since nothing
+## enforces the two stay in sync.
 func _draw_hitbox_if_active(character: CharacterController) -> void:
 	_draw_slot_hitbox_if_active(character, character.action_fsm, character.attack_move)
 	if character.ability_q and not character.ability_q.is_projectile:
 		_draw_slot_hitbox_if_active(character, character.ability_q_fsm, character.ability_q.move)
 	if character.ability_e and not character.ability_e.is_projectile:
 		_draw_slot_hitbox_if_active(character, character.ability_e_fsm, character.ability_e.move)
+	if character.ability_r and not character.ability_r.is_projectile:
+		_draw_slot_hitbox_if_active(character, character.ability_r_fsm, character.ability_r.move)
+	if character.ability_f and not character.ability_f.is_projectile:
+		_draw_slot_hitbox_if_active(character, character.ability_f_fsm, character.ability_f.move)
 
 
 func _draw_slot_hitbox_if_active(
