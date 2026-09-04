@@ -1512,3 +1512,116 @@ in `progress.md`. No exceptions.
   `GameLog` itself already left open. No playback, no reconstruction,
   no UI, no Main Menu button -- entirely Phase 20's own separate scope,
   not attempted here.
+
+### Phase 20: Replay Playback (`ReplayDriver`)
+
+- [x] `tests/unit/test_replay_driver.gd` (new, 14 tests): `parse_line()`
+  casts every numeric field back from JSON's own "everything is a
+  float" decoding, for all 5 record types (`header`/`loadout_change`/
+  `tick`/`round_end`/`match_end`), including nested fields (a tick
+  record's per-peer `peer_id`, a `round_wins` dict's int values); a
+  malformed line and an unknown record type both return `{}` rather
+  than raising; `sample_from_dict()` round-trips a real `InputBuffer.
+  Sample` through `ReplayRecorder.sample_to_dict()` and back via actual
+  `JSON.stringify()`/`parse_string()` (not a mock) with every field
+  intact; `load_replay()` fails cleanly (with a non-empty `load_error()`)
+  on a missing file and on a file whose first line isn't a header;
+  `total_ticks()` counts only `tick` records, not header/round_end/
+  match_end; `seek_to_frame()` re-simulates from scratch every call
+  (confirmed by seeking forward then back to 0 and checking
+  `ticks_processed()` resets), clamps a target past the end and still
+  reaches `is_finished()` (consuming trailing `round_end`/`match_end`
+  records, not just stopping at the tick count); `round_end` advances
+  `current_round()`/updates `round_wins()`; `play()` is a no-op once
+  finished.
+- [x] **TDD confirmed for both real bugs found while writing these
+  tests** (see `memory/gotchas.md` and `memory/plan.md`'s Slice 20
+  block for the full mechanism of each):
+  1. `test_parse_line_malformed_json_returns_empty_dict` failed with a
+     real engine error ("Condition 'error != Error::OK' is true")
+     against the original `JSON.parse_string()`-based implementation,
+     even though the function's own return value was already correct
+     -- switched to the instance `JSON` API (`json.parse()` returning
+     an `Error` code, no auto-printed engine error) to fail silently at
+     this expected boundary. Green after.
+  2. The live record-then-playback comparison below (not a unit test)
+     found the `queue_free()`/`free()` node-name-collision bug --
+     confirmed the fix by re-running that same live comparison, not by
+     a synthetic unit test (the bug needed 2 real character nodes and
+     2 `_spawn_characters()` calls in the same frame to reproduce,
+     which the existing `test_round_end_advances_current_round_...`
+     unit test also exercises but didn't itself assert on node identity/
+     naming -- flagged as a coverage gap worth a future dedicated test,
+     not added here to keep this phase's own scope from growing).
+- [x] `gdformat --check` / `gdlint` clean on every changed/new file
+  (`gameplay/characters/character_base/character_controller.gd`,
+  `net/replay_driver.gd` (new), `tests/unit/test_replay_driver.gd`
+  (new), `ui/main_menu/MainMenu.tscn`, `ui/main_menu/main_menu.gd`,
+  `ui/replay/ReplayList.tscn` (new), `ui/replay/ReplayPlayer.tscn`
+  (new), `ui/replay/replay_list.gd` (new), `ui/replay/replay_player.gd`
+  (new)). 231/231 GUT tests total project-wide (was 217).
+- [x] **Live record-then-playback comparison** (the real verification
+  bar for this phase, per its own scope: confirm reconstruction
+  fidelity against an actual recording, not just unit-level logic).
+  Step 1, record: ran the same real Room Config 2-process flow Phase
+  19's own live test used (host Vanguard/Iron Sword/Swift Boots/
+  Vitality, `--simulate-move --simulate-attack`; client Ranged Mage/
+  Iron Sword/Swift Boots/Vitality, `--simulate-self-eliminate`, best-of-
+  3 with `--dev-intermission-window=3
+  --dev-intermission-early-threshold=2 --dev-intermission-early-
+  seconds=1 --dev-intermission-late-seconds=1
+  --dev-auto-confirm-intermission --dev-print-replay-path`). Located
+  the real on-disk `.replay` file via the printed `REPLAY_PATH:` line
+  and inspected it directly: 1 `header`, 362 `tick` records, 2
+  `round_end`, exactly 1 `match_end` (`winner: 0`, `round_wins {0: 2}`
+  -- host won 2-0). Step 2, play back: loaded that EXACT file through
+  `ReplayDriver` in a SEPARATE process, via a temporary GUT test (not
+  committed -- see the gotcha below for why a bare custom `SceneTree`
+  script doesn't work for this). Seeking to frame 50 (mid-round 1)
+  showed exactly 2 characters, correctly named `"1"`/`"279064290"`,
+  with plausible non-zero/non-default health (138.0 -- 120 base ×1.15
+  Vitality -- and 92.0) and position for both -- this run is what
+  first caught the node-name-collision bug (4 characters, 2 of them
+  generically-named ghosts, before the `free()` fix). Seeking to the
+  very end reproduced the recording's own final state exactly:
+  `ticks_processed() == 362`, `is_finished() == true`,
+  `final_winner() == 0`, `round_wins()[0] == 2` -- confirming
+  byte-for-byte deterministic reconstruction from raw recorded inputs
+  alone, with zero calculated state ever read from the file.
+- [x] **Real environment gotcha found while setting up the live
+  verification above**: a bare `godot4 --headless -s
+  <custom_script.gd extends SceneTree>` does NOT get the project's own
+  `project.godot`-configured autoload singletons (`NetworkManager`,
+  `MatchState`, `LobbyState`, etc.) registered as global script
+  identifiers -- `SCRIPT ERROR: Compile Error: Identifier not found:
+  NetworkManager`, confirmed live, hanging the process rather than
+  failing cleanly. GUT's own test runner (`addons/gut/gut_cmdln.gd`,
+  itself also a custom `SceneTree` script) handles this correctly.
+  Used a temporary GUT test instead of a hand-rolled verification
+  script -- see `memory/gotchas.md` for the durable rule.
+- [x] **`/check`**: async background dispatch not attempted (confirmed
+  dead end by every prior fork this batch). Inline adversarial
+  self-review of the full diff against `main`, including explicitly
+  re-deriving (not assuming) that `_spawn_characters()`'s `LobbyState`
+  pollution is safe: `register_local_player()` -- always the first
+  thing a real host/join does -- calls `reset_room()` first, which
+  clears `player_weapon_ids`/`player_boot_ids`/`player_perk_ids`/
+  `player_class_ids`/`player_team_ids`/`player_ready` entirely, the
+  same protection Phase 14's own `/check` finding already built for
+  the "Leave Room -> re-host" case. No new guard added; confirmed the
+  existing one already covers this.
+- [x] **Not merged into `main`** -- built on
+  `feature/phase20-replay-playback` from a fork's own isolated
+  worktree; the same hard sandbox boundary every prior fork-built phase
+  hit applies here too. The orchestrating session needs to run `git
+  merge --no-ff feature/phase20-replay-playback` from
+  `/mnt/c/var/workspaces/godot/amazing-clash`, then `godot4 --headless
+  --import` before trusting a post-merge GUT run.
+- [ ] **Known, deliberately unverified gaps**: same "no way to
+  screenshot Godot's real renderer in this headless environment"
+  limitation every UI-adjacent phase since Phase 7 has flagged -- the
+  VCR controls' actual visual layout was never seen with eyes, only
+  their underlying logic (`seek_to_frame()`/`ticks_processed()`/etc.)
+  verified directly. No automated test drives the scrubber's own drag
+  UI interaction. From-scratch reseek performance on a much longer
+  match than this phase's own ~6-second live test was never measured.

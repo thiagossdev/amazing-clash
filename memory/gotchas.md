@@ -615,6 +615,47 @@ Format:
   failure on its own) -- add and commit it immediately rather than
   leaving it untracked.
 
+- **2026-09-04** — Phase 20: `net/replay_driver.gd`'s `_spawn_
+  characters()` used `child.queue_free()` (deferred -- actual removal
+  happens at end-of-frame) instead of `child.free()` (immediate).
+  Calling `_spawn_characters()` twice in the same frame -- `load_
+  replay()` immediately followed by `seek_to_frame()`, or a `round_end`
+  record followed by the new round's own first tick within the SAME
+  `_apply_next_tick_record()` call -- meant the OLD character node
+  still held the name `str(peer_id)` at the moment the NEW one was
+  `add_child()`ed with that same name. Godot silently auto-renamed the
+  new node to a generic fallback (`@CharacterBody2D@14`, etc.) rather
+  than erroring, so every `str(name).to_int()`-keyed lookup for it
+  (`_ready()`'s own `LobbyState` application, `_apply_tick()`'s own
+  character lookup) silently found nothing. Found only via a live
+  record-then-playback comparison (a mid-match seek showed 4
+  characters, 2 of them ghosts, instead of 2) -- no unit test caught it,
+  since none of them called `_spawn_characters()` twice in the same
+  frame the way real usage does. → **Rule**: when the SAME container's
+  children get freed and immediately re-populated (a respawn, a reset,
+  a rebuild) more than once within a single call chain, `queue_free()`
+  is unsafe if the replacement reuses the same node NAME -- prefer
+  immediate `free()` (or `remove_child()` first) so the name is
+  actually free before the collision can occur. A unit test that adds
+  children and asserts on their names/state after 2 back-to-back
+  resets would have caught this without needing a live run; worth
+  adding if this class of bug recurs.
+
+- **2026-09-04** — Phase 20's own live-verification setup: a bare
+  `godot4 --headless -s <custom_script.gd extends SceneTree>` does NOT
+  get `project.godot`'s configured autoload singletons
+  (`NetworkManager`, `MatchState`, `LobbyState`, etc.) registered as
+  global script identifiers the way a normal scene launch (or GUT's own
+  `addons/gut/gut_cmdln.gd`, itself also a custom `SceneTree` script)
+  does -- `SCRIPT ERROR: Compile Error: Identifier not found:
+  NetworkManager`, and the process then hung rather than exiting
+  cleanly. → **Rule**: don't write a throwaway custom `SceneTree`
+  script to manually verify something that touches this project's
+  autoloads -- write a temporary GUT test instead (removed before the
+  final commit if it's not meant to be permanent, same convention as
+  every other phase's own temporary live-test instrumentation) since
+  GUT's own runner already solves this bootstrapping problem correctly.
+
 <!--
 Examples:
 

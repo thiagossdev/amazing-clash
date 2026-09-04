@@ -6,6 +6,7 @@ extends Control
 
 func _ready() -> void:
 	$PlayButton.pressed.connect(_on_play_pressed)
+	$ReplaysButton.pressed.connect(_on_replays_pressed)
 	if "--dev-autoplay" in OS.get_cmdline_user_args():
 		# One-frame defer: this is the engine's own initial main-scene
 		# _ready(), still mid-setup -- change_scene_to_file() here
@@ -20,3 +21,8 @@ func _ready() -> void:
 
 func _on_play_pressed() -> void:
 	get_tree().change_scene_to_file("res://ui/character_select/CharacterSelect.tscn")
+
+
+## Phase 20: local playback only, no editing/export/sharing.
+func _on_replays_pressed() -> void:
+	get_tree().change_scene_to_file("res://ui/replay/ReplayList.tscn")

@@ -1,0 +1,50 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/replay/replay_list.gd" id="1_list"]
+
+[node name="ReplayList" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_list")
+
+[node name="TitleLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 450.0
+offset_top = 60.0
+offset_right = 750.0
+offset_bottom = 100.0
+text = "Replays"
+horizontal_alignment = 1
+
+[node name="ReplayItemList" type="ItemList" parent="."]
+layout_mode = 0
+offset_left = 300.0
+offset_top = 120.0
+offset_right = 900.0
+offset_bottom = 560.0
+
+[node name="EmptyLabel" type="Label" parent="."]
+visible = false
+layout_mode = 0
+offset_left = 300.0
+offset_top = 300.0
+offset_right = 900.0
+offset_bottom = 340.0
+text = "No replays yet -- play a match to record one."
+horizontal_alignment = 1
+
+[node name="PlayButton" type="Button" parent="."]
+layout_mode = 0
+offset_left = 500.0
+offset_top = 580.0
+offset_right = 620.0
+offset_bottom = 620.0
+text = "Play"
+
+[node name="BackButton" type="Button" parent="."]
+layout_mode = 0
+offset_left = 640.0
+offset_top = 580.0
+offset_right = 760.0
+offset_bottom = 620.0
+text = "Back"

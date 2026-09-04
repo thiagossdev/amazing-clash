@@ -24,3 +24,11 @@ offset_top = 400.0
 offset_right = 650.0
 offset_bottom = 440.0
 text = "Play"
+
+[node name="ReplaysButton" type="Button" parent="."]
+layout_mode = 0
+offset_left = 550.0
+offset_top = 450.0
+offset_right = 650.0
+offset_bottom = 490.0
+text = "Replays"

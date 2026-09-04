@@ -747,17 +747,34 @@ changed but this file wasn't updated.
   match-ending round), exactly 1 match_end. Client wrote no file. See
   `memory/plan.md`'s Slice 19 block and `memory/verify.md`'s Phase 19
   section for full evidence.
+- [x] **Phase 20 (Replay Playback: `ReplayDriver`) implemented and
+  live-verified, on `feature/phase20-replay-playback` -- closes the
+  ENTIRE Phases 14-20 batch**: reconstructs a `.replay` file by
+  reusing the real simulation (every replayed character resolves
+  `ControlMode.AUTHORITATIVE`; a new `CharacterController.replay_
+  step_authoritative(sample)` pushes a recorded sample and runs the
+  exact per-tick step a live server tick already runs), not a
+  reimplementation. `controlling_peer_id` is offset by 1,000,000 so
+  `is_owned_by_me()` never fires the live-input double-record path.
+  Seeking always re-simulates from tick 0 (confirmed MVP tradeoff, no
+  checkpoint cache). UI: a "Replays" button on Main Menu, a list
+  screen, a player screen with Play/Pause/Skip Back/Skip Forward/a
+  scrubber. 1 real bug found via live verification (recorded a real
+  best-of-3 match, then played that exact file back and compared final
+  state against it): `_spawn_characters()` used deferred `queue_free()`
+  instead of immediate `free()`, so 2 calls in the same frame raced a
+  node-name collision, silently breaking every `str(name).to_int()`-
+  keyed lookup for the mis-renamed character. 14 new GUT tests (231
+  total, was 217). Live verification: reconstructed a real recorded
+  362-tick, 2-round, host-wins-2-0 match byte-for-byte -- final
+  `ticks_processed`/`is_finished`/`final_winner`/`round_wins` all
+  matched the recording's own file content exactly, mid-match state
+  (health, position) plausible with no phantom characters after the
+  fix. See `memory/plan.md`'s Slice 20 block and `memory/verify.md`'s
+  Phase 20 section for full evidence.
 
 ## Backlog (next up)
 
-- [ ] **Phase 20 (replay playback) — scope confirmed via `/think`
-  2026-09-03/04, running now via `/loop` + `/ship-phase`. Phases 14-19
-  are DONE, see the Completed entries above.** See
-  `memory/plan.md`'s roadmap list (items 14-20) for the full decided
-  scope of each, including the exact inter-round loadout-countdown
-  timing (15s pick/confirm window, 5s or 3s start countdown depending
-  on how early everyone confirms) and the `sim_seed` replay-format
-  field reserved now for RNG the human owner plans to add later.
 - [ ] **Decide whether to close Phase 17's `ERR_UNAUTHORIZED` despawn-
   ordering race** (confirmed non-fatal across 3 live runs -- round-2/
   final-score results were always correct -- but reproduces every
