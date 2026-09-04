@@ -1059,3 +1059,110 @@ in `progress.md`. No exceptions.
   cooldown/hitstun for all 8 new abilities) are a first pass, not
   playtested. Same "no way to screenshot Godot's real renderer" gap
   every phase since Phase 1 has flagged.
+
+### Phase 16: Loadout: Weapon + Boot
+
+- [x] `tests/unit/test_lobby_state.gd` (+14 tests): `resolve_weapon_id()`/
+  `resolve_boot_id()` (registered id passthrough, unknown/empty falls
+  back to `WEAPON_IDS[0]`/`BOOT_IDS[0]`), `get_weapon_id()`/
+  `get_boot_id()` (fallback/registered), and registration-defaulting/
+  not-reset-on-re-registration for both -- same shape as the existing
+  perk tests, extended `test_reset_room_clears_every_previous_rooms_state`
+  to also cover the 2 new dictionaries.
+- [x] `tests/unit/test_character_controller_combat.gd` (+9 tests):
+  `boot_active` start/stays-on-cooldown/independent-of-the-4-class-slots/
+  `_is_any_action_active()`-inclusion/checkpoint-`current_move`-restore
+  (the same deliberate Phase-15-style subset of Q/E's exhaustive
+  coverage, plus this phase's own live-found-crash regression shape
+  applied preemptively rather than found broken later), plus weapon
+  resolution (`_spawn_character_with_weapon` picks the right
+  attack/skillshot), boot resolution (`_spawn_character_with_boot`
+  picks the right active ability), and both unregistered-fallback
+  cases.
+- [x] `tests/unit/test_character_classes.gd`: removed 6 now-invalid
+  per-class `attack_move`/`skillshot_move` assertion lines (attack/
+  skillshot stopped being class-owned data this phase); added 1 new
+  test confirming all 3 real classes share the identical unregistered-
+  fallback weapon, proving the pool is genuinely class-independent
+  rather than silently still per-class under the hood.
+- [x] `tests/unit/test_input_buffer.gd`: extended the existing
+  pack/unpack round-trip test from 6 to 7 flags (`boot_active_pressed`),
+  same reasoning as Phase 15's own extension -- a bit-order mistake
+  here would silently swap which slot a remote peer's input re-triggers
+  server-side.
+- [x] **TDD confirmed throughout**: `test_lobby_state.gd`'s new tests
+  failed with "Invalid call. Nonexistent function 'resolve_boot_id'"/
+  "Invalid access to property or key 'player_boot_ids'" engine errors
+  before `net/lobby_state.gd`'s registry existed, green after.
+  `test_character_controller_combat.gd`'s new tests failed to even
+  parse ("Invalid access to property... 'boot_active'" during static
+  type inference on `var move := character.boot_active.move`) before
+  `CharacterController.boot_active` existed, green after.
+- [x] `gdformat --check` / `gdlint` clean project-wide (51 `.gd` files
+  outside `addons/`/`.godot/`, plus every changed/new `.tres`/`.tscn`
+  content file -- not gdlint-applicable, syntax-checked via `godot4
+  --headless --import` instead, run clean after every content-adding
+  wave). Bumped `.gdlintrc` twice, both documented inline in the file
+  itself: `max-public-methods` 40->60 (`test_lobby_state.gd` hit the
+  prior cap again at 49 functions) and `max-returns` 6->8
+  (`CombatResolver._get_move_for_slot()`'s flat slot-lookup `match`
+  gained a 7th branch for `boot_active`).
+- [x] Full GUT suite: 182/182 passing (was 158 after Phase 15; 24 new
+  tests this phase, confirmed by diffing `^+func test_` lines against
+  `main` per file: `test_lobby_state.gd` +14, `test_character_
+  controller_combat.gd` +9, `test_character_classes.gd` +1,
+  `test_input_buffer.gd` +0 new functions).
+- [x] **Live 2-process test through the REAL Room Config flow**
+  (`godot4 --headless -- --dev-autoplay --dev-class=vanguard --dev-host
+  --dev-weapon=warhammer --dev-boot=tumbling_boots --dev-ready` /
+  `--dev-autoplay --dev-class=ranged_mage --dev-join=127.0.0.1
+  --dev-weapon=twin_daggers --dev-boot=swift_boots --dev-ready`,
+  temporary `[VERIFY]` `print()` trace in both `_apply_weapon_from_
+  lobby_state()` and `_apply_boot_from_lobby_state()`, removed before
+  the final commit): confirmed the server's own log shows BOTH peers'
+  weapon/boot correctly (peer 1 -> Warhammer/Crushing Blow/Ground Slam
+  Wave + Tumbling Boots/Rolling Strike/projectile; peer 476206252 ->
+  Twin Daggers/Dagger Flurry/Thrown Blade + Swift Boots/Quick Kick/
+  melee), and the CLIENT's own separate process logged the EXACT SAME
+  values for both peers -- direct proof the per-peer resolution holds
+  across a real network boundary, same evidence bar Phase 9's own perk
+  verification used. Zero engine errors on either side. Deliberately
+  did NOT use `net/dev_bootstrap.gd`'s direct-TestArena-connect flow
+  for this: that flow spawns a connecting peer's character the instant
+  its raw ENet connection completes, before any Room Config
+  registration RPC could possibly land -- the identical race Phase
+  13b's own `peer_connected` finding already documented. Room Config's
+  registration-before-`enter_loading()` guarantee sidesteps it
+  entirely, so that's the flow this test used.
+- [x] **`--simulate-boot-active` flag** (`net/dev_bootstrap.gd`,
+  mirroring the existing `--simulate-ability-r`/`-f` pattern exactly):
+  live-verified with `godot4 --headless -- --server
+  --simulate-boot-active` -- fires with zero engine errors.
+- [x] **Self-review** (adversarial, in place of `/check`'s multi-persona
+  pass -- attempting the async dispatch was skipped entirely this time,
+  per Phase 15's own documented dead end for isolated worker forks):
+  `git diff main...feature/phase16-weapon-boot-loadout` read in full.
+  Found and fixed 1 real gap: `net/dev_bootstrap.gd`'s `--simulate-
+  ability-q/e/r/f` flags had no `boot_active` sibling. `grep -rln
+  "ability_r\b" --include="*.gd" .` swept every file referencing the
+  pattern this phase extends (`character_controller.gd`,
+  `combat_resolver.gd`, `input_buffer.gd`, `dev_bootstrap.gd`,
+  `hitbox_viewer.gd`) -- confirmed all 5 already correctly extended
+  (the gap above was the only miss). Also confirmed via `grep` that no
+  test or non-doc file still referenced any of the 6 deleted per-class
+  move files before removing them.
+- [ ] **Not merged into `main`** -- built on
+  `feature/phase16-weapon-boot-loadout` from a fork's own isolated
+  worktree; the same hard sandbox boundary every prior fork-built phase
+  (13b/14/15) hit applies here too. The orchestrating session needs to
+  run `git merge --no-ff feature/phase16-weapon-boot-loadout` from
+  `/mnt/c/var/workspaces/godot/amazing-clash`, then `godot4 --headless
+  --import` before trusting a post-merge GUT run.
+- [ ] **Known, deliberately unverified gaps**: `boot_active_fsm` state
+  isn't replicated to a remote `INTERPOLATED` peer, same pre-existing
+  Phase 3 limitation as every ability slot before it. The 3 new
+  weapons' and 3 new boots' numbers (damage/frames/cooldowns) are a
+  first pass, not playtested. Same "no way to screenshot Godot's real
+  renderer" gap every UI-adjacent phase has flagged since Phase 1 --
+  the 2 new Room Config dropdowns are unverified visually, though their
+  underlying self-service logic is exercised live above.
