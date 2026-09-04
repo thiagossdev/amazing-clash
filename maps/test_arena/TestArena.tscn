@@ -9,6 +9,7 @@
 [ext_resource type="Script" uid="uid://d0sc5sg4putp8" path="res://ui/hud/match_hud.gd" id="7_mhud"]
 [ext_resource type="Script" uid="uid://ck2n3c3bjxrcr" path="res://gameplay/match/match_rules.gd" id="8_mrule"]
 [ext_resource type="Script" uid="uid://o3klvpw1hrun" path="res://net/loading_reporter.gd" id="9_ldrep"]
+[ext_resource type="Script" uid="uid://g23jx46kdnmm" path="res://ui/hud/round_intermission_overlay.gd" id="10_rndov"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_horiz"]
 size = Vector2(1200, 32)
@@ -102,6 +103,29 @@ offset_bottom = 450.0
 theme_override_font_sizes/font_size = 48
 horizontal_alignment = 1
 vertical_alignment = 1
+
+[node name="RoundIntermissionOverlay" type="CanvasLayer" parent="." unique_id=500000101]
+script = ExtResource("10_rndov")
+
+[node name="ResultLabel" type="Label" parent="RoundIntermissionOverlay" unique_id=500000102]
+offset_left = 350.0
+offset_top = 200.0
+offset_right = 850.0
+offset_bottom = 240.0
+horizontal_alignment = 1
+
+[node name="CountdownLabel" type="Label" parent="RoundIntermissionOverlay" unique_id=500000103]
+offset_left = 450.0
+offset_top = 240.0
+offset_right = 750.0
+offset_bottom = 270.0
+horizontal_alignment = 1
+
+[node name="LoadoutContainer" type="VBoxContainer" parent="RoundIntermissionOverlay" unique_id=500000104]
+offset_left = 500.0
+offset_top = 300.0
+offset_right = 700.0
+offset_bottom = 460.0
 
 [node name="CombatResolver" type="Node" parent="." unique_id=1803979365]
 script = ExtResource("6_cmbtr")
