@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="AbilityResource" format=3]
+
+[ext_resource type="Script" uid="uid://b4blmuhgqbum" path="res://gameplay/abilities/ability_resource.gd" id="1_abty"]
+[ext_resource type="Resource" path="res://data/moves/ranged_mage_mana_spike.tres" id="2_move"]
+
+[resource]
+script = ExtResource("1_abty")
+ability_name = "Mana Spike"
+move = ExtResource("2_move")
+cooldown_frames = 50
+is_projectile = true

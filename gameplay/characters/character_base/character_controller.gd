@@ -62,11 +62,14 @@ const POSITION_HISTORY_MAX_ENTRIES := 24
 @export var skillshot_move: MoveDefinition
 ## Phase 3's 2 independent test ability slots -- Q and E, each its own
 ## cooldown, castable while melee/skillshot are on cooldown or vice
-## versa. R/F/T InputMap actions already exist for Phase 4+ content;
-## these 2 slots are enough to prove the framework, not a full 5-slot
-## roster yet.
+## versa. Phase 15 adds ability_r/ability_f below, mirroring these 2
+## exactly -- 4 class-owned slots total. T is reserved for Phase 16's
+## boot-driven 5th slot (owned by the player's loadout pick, not the
+## class), not added here.
 @export var ability_q: AbilityResource
 @export var ability_e: AbilityResource
+@export var ability_r: AbilityResource
+@export var ability_f: AbilityResource
 ## Own hurtbox for combat, decoupled from the CharacterBody2D collision
 ## shape used for world collision.
 @export var hurtbox_size: Vector2 = Vector2(40.0, 40.0)
@@ -86,6 +89,8 @@ var action_fsm := ActionFsm.new()
 ## Phase 4's real classes, not decided here.
 var ability_q_fsm := ActionFsm.new()
 var ability_e_fsm := ActionFsm.new()
+var ability_r_fsm := ActionFsm.new()
+var ability_f_fsm := ActionFsm.new()
 var control_mode: ControlMode = ControlMode.PREDICTED
 ## Never predicted -- the server is sole authority over damage taken,
 ## set directly from CharacterSnapshot.health on receipt, same category
@@ -105,6 +110,8 @@ var pending_skillshot_direction: Vector2 = Vector2.RIGHT
 ## get_aim_direction() instead, same as the base melee move).
 var pending_ability_q_direction: Vector2 = Vector2.RIGHT
 var pending_ability_e_direction: Vector2 = Vector2.RIGHT
+var pending_ability_r_direction: Vector2 = Vector2.RIGHT
+var pending_ability_f_direction: Vector2 = Vector2.RIGHT
 ## Real mouse-aim, refreshed every tick from the current input sample --
 ## what get_aim_direction() (melee's hitbox rotation) reads. Corrected
 ## from LocomotionFsm.facing_direction (last movement direction) after
@@ -181,6 +188,8 @@ var _lock_frames: int = 0
 ## comes from Checkpoint carrying them, restored before replay.
 var _ability_q_cooldown_frames: int = 0
 var _ability_e_cooldown_frames: int = 0
+var _ability_r_cooldown_frames: int = 0
+var _ability_f_cooldown_frames: int = 0
 ## Server-only (AUTHORITATIVE): a short ring buffer of this character's
 ## own recent positions, keyed by _server_sim.tick_count(), for lag-
 ## compensated hit resolution (see position_at_tick() and
@@ -359,6 +368,8 @@ func _sample_local_input(delta: float) -> InputBuffer.Sample:
 	sample.skillshot_pressed = InputManager.is_action_pressed(&"skillshot")
 	sample.ability_q_pressed = InputManager.is_action_pressed(&"ability_q")
 	sample.ability_e_pressed = InputManager.is_action_pressed(&"ability_e")
+	sample.ability_r_pressed = InputManager.is_action_pressed(&"ability_r")
+	sample.ability_f_pressed = InputManager.is_action_pressed(&"ability_f")
 	sample.delta = delta
 	return sample
 
@@ -422,12 +433,13 @@ func _rpc_receive_snapshot(
 ## never predicted, applied directly on every control mode -- the
 ## client never predicts damage taken, only its own movement/action.
 ## INTERPOLATED: no local physics, just buffers the snapshot for
-## _render_interpolated_position(). Ability Q/E state is NOT replicated
-## to a remote INTERPOLATED character in Phase 3 (the snapshot RPC's own
-## param count is already at its practical limit) -- a remote player's Q/
-## E cast won't visually show as active on other clients yet, a
-## deliberate, documented gap; hit resolution itself is unaffected since
-## it's already server-only regardless of what a remote peer renders.
+## _render_interpolated_position(). Ability Q/E/R/F state is NOT
+## replicated to a remote INTERPOLATED character (the snapshot RPC's own
+## param count was already at its practical limit in Phase 3, before R/F
+## even existed) -- a remote player's ability cast won't visually show as
+## active on other clients yet, a deliberate, documented gap; hit
+## resolution itself is unaffected since it's already server-only
+## regardless of what a remote peer renders.
 ## AUTHORITATIVE never receives this.
 func _apply_snapshot(
 	tick: int,
@@ -478,9 +490,19 @@ func _capture_predicted_state(sequence: int) -> ClientPredictor.Checkpoint:
 	checkpoint.ability_q_state = ability_q_fsm.state
 	checkpoint.ability_q_move_frame = ability_q_fsm.move_frame
 	checkpoint.ability_q_cooldown_frames = _ability_q_cooldown_frames
+	checkpoint.ability_q_move = ability_q_fsm.current_move
 	checkpoint.ability_e_state = ability_e_fsm.state
 	checkpoint.ability_e_move_frame = ability_e_fsm.move_frame
 	checkpoint.ability_e_cooldown_frames = _ability_e_cooldown_frames
+	checkpoint.ability_e_move = ability_e_fsm.current_move
+	checkpoint.ability_r_state = ability_r_fsm.state
+	checkpoint.ability_r_move_frame = ability_r_fsm.move_frame
+	checkpoint.ability_r_cooldown_frames = _ability_r_cooldown_frames
+	checkpoint.ability_r_move = ability_r_fsm.current_move
+	checkpoint.ability_f_state = ability_f_fsm.state
+	checkpoint.ability_f_move_frame = ability_f_fsm.move_frame
+	checkpoint.ability_f_cooldown_frames = _ability_f_cooldown_frames
+	checkpoint.ability_f_move = ability_f_fsm.current_move
 	return checkpoint
 
 
@@ -496,9 +518,19 @@ func _restore_predicted_state(checkpoint: ClientPredictor.Checkpoint) -> void:
 	ability_q_fsm.state = checkpoint.ability_q_state as ActionFsm.State
 	ability_q_fsm.move_frame = checkpoint.ability_q_move_frame
 	_ability_q_cooldown_frames = checkpoint.ability_q_cooldown_frames
+	ability_q_fsm.current_move = checkpoint.ability_q_move
 	ability_e_fsm.state = checkpoint.ability_e_state as ActionFsm.State
 	ability_e_fsm.move_frame = checkpoint.ability_e_move_frame
 	_ability_e_cooldown_frames = checkpoint.ability_e_cooldown_frames
+	ability_e_fsm.current_move = checkpoint.ability_e_move
+	ability_r_fsm.state = checkpoint.ability_r_state as ActionFsm.State
+	ability_r_fsm.move_frame = checkpoint.ability_r_move_frame
+	_ability_r_cooldown_frames = checkpoint.ability_r_cooldown_frames
+	ability_r_fsm.current_move = checkpoint.ability_r_move
+	ability_f_fsm.state = checkpoint.ability_f_state as ActionFsm.State
+	ability_f_fsm.move_frame = checkpoint.ability_f_move_frame
+	_ability_f_cooldown_frames = checkpoint.ability_f_cooldown_frames
+	ability_f_fsm.current_move = checkpoint.ability_f_move
 
 
 func _begin_visual_correction_smoothing(pre_correction_position: Vector2) -> void:
@@ -515,13 +547,13 @@ func _begin_visual_correction_smoothing(pre_correction_position: Vector2) -> voi
 ## receipt/reconciliation everywhere else), and a swing pulse only needs
 ## to know whether any of this character's OWN action FSMs is currently
 ## ACTIVE (action_fsm is already snapshot-replicated to every peer; the
-## known Phase 3 gap -- ability_q_fsm/ability_e_fsm state isn't
-## replicated to remote INTERPOLATED peers yet -- means a remote peer
-## won't see someone else's Q/E swing pulse, same pre-existing
-## limitation as everything else that gap already affects, not a new
-## one). A hit flash always wins over a swing pulse while both would
-## otherwise apply (landing a hit mid-swing is the more important of
-## the two to read clearly).
+## known Phase 3 gap -- ability_q_fsm/ability_e_fsm/ability_r_fsm/
+## ability_f_fsm state isn't replicated to remote INTERPOLATED peers
+## yet -- means a remote peer won't see someone else's ability swing
+## pulse, same pre-existing limitation as everything else that gap
+## already affects, not a new one). A hit flash always wins over a
+## swing pulse while both would otherwise apply (landing a hit mid-swing
+## is the more important of the two to read clearly).
 func _update_visual_feedback() -> void:
 	var visual := get_node_or_null(visual_path)
 	if not visual:
@@ -543,6 +575,8 @@ func _is_any_action_active() -> bool:
 		action_fsm.state == ActionFsm.State.ACTIVE
 		or ability_q_fsm.state == ActionFsm.State.ACTIVE
 		or ability_e_fsm.state == ActionFsm.State.ACTIVE
+		or ability_r_fsm.state == ActionFsm.State.ACTIVE
+		or ability_f_fsm.state == ActionFsm.State.ACTIVE
 	)
 
 
@@ -634,6 +668,18 @@ func apply_input(sample: InputBuffer.Sample) -> void:
 	_ability_e_cooldown_frames = e_result.cooldown_frames
 	if e_result.started and ability_e and ability_e.is_projectile:
 		pending_ability_e_direction = _normalized_aim(sample.aim_direction)
+	var r_result := _advance_ability_slot(
+		ability_r_fsm, ability_r, sample.ability_r_pressed, _ability_r_cooldown_frames
+	)
+	_ability_r_cooldown_frames = r_result.cooldown_frames
+	if r_result.started and ability_r and ability_r.is_projectile:
+		pending_ability_r_direction = _normalized_aim(sample.aim_direction)
+	var f_result := _advance_ability_slot(
+		ability_f_fsm, ability_f, sample.ability_f_pressed, _ability_f_cooldown_frames
+	)
+	_ability_f_cooldown_frames = f_result.cooldown_frames
+	if f_result.started and ability_f and ability_f.is_projectile:
+		pending_ability_f_direction = _normalized_aim(sample.aim_direction)
 
 
 ## Starts `resource`'s move if pressed, NEUTRAL, and off cooldown;

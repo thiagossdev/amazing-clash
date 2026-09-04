@@ -15,9 +15,10 @@ extends Node
 ## mouse either, so InputManager.get_aim_direction() resolves off
 ## whatever the headless viewport's mouse position defaults to -- fine
 ## for proving the projectile spawns/travels/expires, not for testing a
-## specific aim). `-- --simulate-ability-q` / `-- --simulate-ability-e`
-## fire one press each ~1.6s/~1.8s in, same reasoning, to prove Phase
-## 3's independent ability slots. `-- --friendly-fire` sets
+## specific aim). `-- --simulate-ability-q` / `-- --simulate-ability-e` /
+## `-- --simulate-ability-r` / `-- --simulate-ability-f` fire one press
+## each ~1.6s/~1.8s/~2.0s/~2.2s in, same reasoning, to prove Phase 3's
+## (and Phase 15's) independent ability slots. `-- --friendly-fire` sets
 ## MatchState.friendly_fire_enabled -- a per-match server setting
 ## decided at startup, not a live-togglable console command (who's
 ## allowed to change a match rule mid-game is a separate authority
@@ -109,6 +110,14 @@ func _ready() -> void:
 	if "--simulate-ability-e" in args:
 		await get_tree().create_timer(1.8).timeout
 		Input.action_press(&"ability_e")
+
+	if "--simulate-ability-r" in args:
+		await get_tree().create_timer(2.0).timeout
+		Input.action_press(&"ability_r")
+
+	if "--simulate-ability-f" in args:
+		await get_tree().create_timer(2.2).timeout
+		Input.action_press(&"ability_f")
 
 	if "--simulate-self-eliminate" in args:
 		await get_tree().create_timer(1.0).timeout
