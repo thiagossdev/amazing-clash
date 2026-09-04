@@ -5,6 +5,8 @@
 [ext_resource type="Resource" path="res://data/moves/debug_skillshot.tres" id="3_sklmv"]
 [ext_resource type="Resource" path="res://data/abilities/debug_ability_q.tres" id="4_abqq"]
 [ext_resource type="Resource" path="res://data/abilities/debug_ability_e.tres" id="5_abee"]
+[ext_resource type="Resource" path="res://data/abilities/debug_ability_r.tres" id="6_abrr"]
+[ext_resource type="Resource" path="res://data/abilities/debug_ability_f.tres" id="7_abff"]
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_char"]
 radius = 20.0
@@ -16,6 +18,8 @@ attack_move = ExtResource("2_atkmv")
 skillshot_move = ExtResource("3_sklmv")
 ability_q = ExtResource("4_abqq")
 ability_e = ExtResource("5_abee")
+ability_r = ExtResource("6_abrr")
+ability_f = ExtResource("7_abff")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=611118084]
 shape = SubResource("CircleShape2D_char")

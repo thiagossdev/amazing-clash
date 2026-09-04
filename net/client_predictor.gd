@@ -37,6 +37,14 @@ class Checkpoint:
 	var ability_e_state: int = 0
 	var ability_e_move_frame: int = 0
 	var ability_e_cooldown_frames: int = 0
+	## Phase 15's 2 new class ability slots -- same reconciliation
+	## treatment as Q/E above.
+	var ability_r_state: int = 0
+	var ability_r_move_frame: int = 0
+	var ability_r_cooldown_frames: int = 0
+	var ability_f_state: int = 0
+	var ability_f_move_frame: int = 0
+	var ability_f_cooldown_frames: int = 0
 
 
 var _buffer := InputBuffer.new()

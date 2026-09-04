@@ -26,12 +26,18 @@ func _spawn_character_with_perk(peer_id: int, perk_id: String) -> CharacterContr
 
 
 func _sample(
-	attack_pressed: bool = false, ability_q_pressed: bool = false, ability_e_pressed: bool = false
+	attack_pressed: bool = false,
+	ability_q_pressed: bool = false,
+	ability_e_pressed: bool = false,
+	ability_r_pressed: bool = false,
+	ability_f_pressed: bool = false
 ) -> InputBuffer.Sample:
 	var sample := InputBuffer.Sample.new()
 	sample.attack_pressed = attack_pressed
 	sample.ability_q_pressed = ability_q_pressed
 	sample.ability_e_pressed = ability_e_pressed
+	sample.ability_r_pressed = ability_r_pressed
+	sample.ability_f_pressed = ability_f_pressed
 	sample.delta = 1.0 / 60.0
 	return sample
 
@@ -185,6 +191,70 @@ func test_cooldown_multiplier_shortens_ability_cooldown() -> void:
 		"a 0.5 cooldown_multiplier (e.g. Adept) should let Q recast after half its normal cooldown"
 	)
 	assert_ne(character.ability_q_fsm.state, ActionFsm.State.NEUTRAL)
+
+
+## Phase 15: ability_r/ability_f mirror ability_q/ability_e exactly --
+## own FSM, own cooldown, independent of every other slot. Coverage
+## here is deliberately a subset of Q/E's own (start, cooldown-blocks,
+## cooldown-elapses), not the full set -- the underlying
+## _advance_ability_slot() logic is already exhaustively covered by
+## the Q/E tests above; these just confirm R/F are wired to it at all.
+func test_ability_r_pressed_starts_its_own_move() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, false, false, true))
+	assert_ne(character.ability_r_fsm.state, ActionFsm.State.NEUTRAL)
+	assert_eq(character.ability_r_fsm.current_move, character.ability_r.move)
+
+
+func test_ability_f_pressed_starts_its_own_move() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, false, false, false, true))
+	assert_ne(character.ability_f_fsm.state, ActionFsm.State.NEUTRAL)
+	assert_eq(character.ability_f_fsm.current_move, character.ability_f.move)
+
+
+func test_ability_r_stays_on_cooldown_after_its_move_ends() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, false, false, true))
+	var move := character.ability_r.move
+	var total_frames := move.startup_frames + move.active_frames + move.recovery_frames
+	for _i in range(total_frames):
+		character.apply_input(_sample())
+	assert_eq(character.ability_r_fsm.state, ActionFsm.State.NEUTRAL)
+	character.apply_input(_sample(false, false, false, true))
+	assert_eq(
+		character.ability_r_fsm.state,
+		ActionFsm.State.NEUTRAL,
+		"pressing R again immediately after its move ends should be blocked by cooldown"
+	)
+
+
+func test_ability_f_can_be_cast_again_once_cooldown_elapses() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, false, false, false, true))
+	for _i in range(character.ability_f.cooldown_frames):
+		character.apply_input(_sample())
+	character.apply_input(_sample(false, false, false, false, true))
+	assert_eq(character.ability_f_fsm.current_move, character.ability_f.move)
+	assert_ne(character.ability_f_fsm.state, ActionFsm.State.NEUTRAL)
+
+
+func test_all_4_ability_slots_are_independent_of_each_other() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, true, true, true, true))
+	assert_ne(character.ability_q_fsm.state, ActionFsm.State.NEUTRAL)
+	assert_ne(character.ability_e_fsm.state, ActionFsm.State.NEUTRAL)
+	assert_ne(character.ability_r_fsm.state, ActionFsm.State.NEUTRAL)
+	assert_ne(character.ability_f_fsm.state, ActionFsm.State.NEUTRAL)
+
+
+func test_is_any_action_active_includes_ability_r_and_f() -> void:
+	var character := _spawn_character()
+	character.ability_r_fsm.state = ActionFsm.State.ACTIVE
+	assert_true(character._is_any_action_active())
+	character.ability_r_fsm.state = ActionFsm.State.NEUTRAL
+	character.ability_f_fsm.state = ActionFsm.State.ACTIVE
+	assert_true(character._is_any_action_active())
 
 
 func test_apply_perk_from_lobby_state_scales_stats_on_ready() -> void:
