@@ -721,13 +721,38 @@ changed but this file wasn't updated.
   all 7 lines in order, zero engine errors, client wrote no log file.
   See `memory/plan.md`'s Slice 18 block and `memory/verify.md`'s Phase
   18 section for full evidence.
+- [x] **Phase 19 (Replay Recording: `ReplayRecorder`) implemented and
+  live-verified, on `feature/phase19-replay-recording`**: a new
+  autoload, separate file/system from `GameLog` per the human owner's
+  own request. Writes `user://replays/<timestamp>_pid<N>_<counter>.replay`
+  (JSONL) -- a `header` (mode, friendly-fire, round target, a reserved
+  `sim_seed`, each peer's initial loadout), `loadout_change` records
+  (a mid-match re-pick during `ROUND_INTERMISSION` only -- Room
+  Config's own initial pick is already in the header), `tick` records
+  (every authoritative character's raw `InputBuffer.Sample`, batched
+  per tick -- no calculated/derived value ever stored), `round_end`
+  (every round, including the match-ending one), and a final
+  `match_end`. A real design risk avoided during implementation:
+  `ServerSim.tick_count()` is per-character and resets on a round-
+  transition respawn, so `Engine.get_physics_frames()` (a single
+  monotonic per-process counter) is the shared tick key instead --
+  confirmed strictly increasing with zero collisions across a real
+  round transition in this phase's own live test. 16 new GUT tests
+  (217 total, was 201). **Live 2-process test through the real Room
+  Config flow**: a full best-of-3 sequence (client self-eliminating
+  each round), a real mid-intermission weapon change via a new
+  `--dev-change-weapon-in-intermission=<id>` dev flag, then inspected
+  the server's actual on-disk file -- correct header, 184 real tick
+  records, the 1 loadout change, both round_end records (including the
+  match-ending round), exactly 1 match_end. Client wrote no file. See
+  `memory/plan.md`'s Slice 19 block and `memory/verify.md`'s Phase 19
+  section for full evidence.
 
 ## Backlog (next up)
 
-- [ ] **Phases 19-20 (replay recording, replay playback) — scope
-  confirmed via `/think` 2026-09-03/04, running now via `/loop` +
-  `/ship-phase`, one phase at a time. Phases 14-18 are DONE, see the
-  Completed entries above.** See
+- [ ] **Phase 20 (replay playback) — scope confirmed via `/think`
+  2026-09-03/04, running now via `/loop` + `/ship-phase`. Phases 14-19
+  are DONE, see the Completed entries above.** See
   `memory/plan.md`'s roadmap list (items 14-20) for the full decided
   scope of each, including the exact inter-round loadout-countdown
   timing (15s pick/confirm window, 5s or 3s start countdown depending
