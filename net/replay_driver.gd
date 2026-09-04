@@ -37,6 +37,13 @@ const CONTROLLING_PEER_ID_OFFSET := 1_000_000
 
 @export var characters_path: NodePath = ^"../Characters"
 
+## Ticks applied per real physics frame during normal playback (not
+## seeking, which already fast-forwards independently of this). 1/2/4/8
+## per the human owner's own request -- applying N tick records per
+## frame rather than scaling delta, since a "tick" here is a discrete
+## recorded input sample, not a continuous physics quantity.
+var playback_speed: int = 1
+
 var _header: Dictionary = {}
 var _records: Array = []
 var _tick_record_count: int = 0
@@ -56,7 +63,10 @@ var _load_error: String = ""
 func _physics_process(_delta: float) -> void:
 	if not _is_playing or _is_finished:
 		return
-	_apply_next_tick_record()
+	for _i in playback_speed:
+		if _is_finished:
+			break
+		_apply_next_tick_record()
 	state_changed.emit()
 
 

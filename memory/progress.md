@@ -787,6 +787,20 @@ changed but this file wasn't updated.
   passing. See `memory/plan.md`'s Slice 20 follow-up note,
   `memory/verify.md`'s Phase 20 follow-up section, and
   `memory/gotchas.md` for full evidence.
+- [x] **Replay camera control + playback speed (2026-09-04, human
+  owner's own request).** Tab cycles the camera through replayed
+  characters; arrow keys (new `replay_camera_left/right/up/down`
+  actions) decouple into a freely-moved camera, Tab re-couples; number
+  keys `1`/`2`/`3`/`4` (new `replay_speed_1x/2x/4x/8x` actions) set
+  `ReplayDriver.playback_speed` (1x/2x/4x/8x). Also bumped
+  `ArenaCamera`'s zoom in `ReplayPlayer.tscn` from 1.0 to 1.4 --
+  confirmed the arena's own `Walls` extend past the default viewport at
+  zoom 1.0, exactly matching the human owner's own suspicion about why
+  F1's hitbox debug view looked empty during replay. 10 new tests
+  (`tests/unit/test_replay_player.gd`, new file, +2 in
+  `test_replay_driver.gd`). 246/246 GUT passing. See `memory/plan.md`'s
+  Slice 20 2nd follow-up note and `memory/verify.md`'s Phase 20 section
+  for full evidence.
 
 ## Backlog (next up)
 

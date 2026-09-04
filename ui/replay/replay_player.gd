@@ -1,12 +1,33 @@
 extends Node2D
 ## Phase 20: hosts a ReplayDriver + a static top-down view of the arena
 ## (Walls duplicated from maps/test_arena/TestArena.tscn's own fixed
-## geometry, ArenaCamera parked at ARENA_CENTER instead of following a
-## character -- no replayed character ever claims the camera, since
-## none of them are ever is_owned_by_me(), see ReplayDriver's own
-## CONTROLLING_PEER_ID_OFFSET doc comment; a static spectator view over
-## the whole arena is the correct behavior here anyway, not a gap) and
-## VCR-style controls (Play/Pause, Skip Back/Forward, a scrubber).
+## geometry) and VCR-style controls (Play/Pause, Skip Back/Forward, a
+## scrubber). Camera control added 2026-09-04 per the human owner's own
+## request: Tab cycles ArenaCamera's target through Characters.get_
+## children() (never is_owned_by_me() during replay, see ReplayDriver's
+## own CONTROLLING_PEER_ID_OFFSET doc comment -- character_controller.gd's
+## normal auto-claim on spawn never fires here, so this script owns
+## camera positioning entirely, deliberately never touching ArenaCamera.
+## target itself, which would go stale across a round transition's
+## _spawn_characters() free()-then-recreate cycle); arrow keys
+## (project.godot's own replay_camera_left/right/up/down actions, NOT
+## Godot's built-in ui_left/right/up/down -- confirmed live 2026-09-04
+## that a synthetic InputEventKey testing this project's own custom
+## actions matches reliably via physical_keycode, the same convention
+## every other action in this file uses, but the built-ins' own default
+## bindings did not match a synthetic event the same way, same class of
+## mismatch as memory/gotchas.md's 2026-09-02 ui_cancel entry) decouple
+## into a freely-moved camera, Tab re-couples.
+## Starts decoupled (ARENA_CENTER, matching this scene's own pre-Tab
+## parked position) so the very first frame still shows the whole arena,
+## not an arbitrary player. `ArenaCamera`'s own zoom in `ReplayPlayer.
+## tscn` was bumped from the default 1.0 to 1.4 at the same time: at 1.0
+## and this project's default ~1152x648 viewport, the arena's own
+## 1200x800 Walls extend past every edge of the visible area -- the
+## human owner's own suspicion ("senti falta do colision debug da
+## arena... mas pode ter sido só falta de enquadramento da câmera") was
+## exactly right, confirmed by the arena/viewport math, not just the
+## missing HitboxViewer node fixed separately the same day.
 ##
 ## The replay's own path arrives via SceneTree meta (set by ui/replay/
 ## replay_list.gd right before change_scene_to_file(), the same
@@ -15,8 +36,17 @@ extends Node2D
 ## carry one String across a single scene change).
 
 const SKIP_SECONDS := 5.0
+const FREE_CAMERA_SPEED := 600.0
+const SPEED_ACTIONS := {
+	&"replay_speed_1x": 1,
+	&"replay_speed_2x": 2,
+	&"replay_speed_4x": 4,
+	&"replay_speed_8x": 8,
+}
 
 @export var driver_path: NodePath = ^"ReplayDriver"
+@export var camera_path: NodePath = ^"ArenaCamera"
+@export var characters_path: NodePath = ^"Characters"
 @export var play_pause_button_path: NodePath = ^"Controls/PlayPauseButton"
 @export var skip_back_button_path: NodePath = ^"Controls/SkipBackButton"
 @export var skip_forward_button_path: NodePath = ^"Controls/SkipForwardButton"
@@ -25,11 +55,16 @@ const SKIP_SECONDS := 5.0
 @export var back_button_path: NodePath = ^"Controls/BackButton"
 
 var _driver: ReplayDriver
+var _camera: Camera2D
 var _dragging_scrubber: bool = false
+## -1 means the camera is free (arrow-key controlled); otherwise an
+## index into characters_path's children, wrapped every Tab press.
+var _camera_target_index: int = -1
 
 
 func _ready() -> void:
 	_driver = get_node(driver_path)
+	_camera = get_node(camera_path)
 	_driver.state_changed.connect(_refresh_ui)
 
 	var path: String = get_tree().get_meta("replay_path_to_play", "")
@@ -60,6 +95,66 @@ func _ready() -> void:
 
 	_driver.play()
 	_refresh_ui()
+
+
+func _process(delta: float) -> void:
+	if not is_instance_valid(_camera):
+		return
+	if _camera_target_index < 0:
+		var move := Vector2(
+			Input.get_axis(&"replay_camera_left", &"replay_camera_right"),
+			Input.get_axis(&"replay_camera_up", &"replay_camera_down")
+		)
+		_camera.global_position += move * FREE_CAMERA_SPEED * delta
+		return
+	var target := _character_at(_camera_target_index)
+	if target:
+		_camera.global_position = target.global_position
+
+
+func _input(event: InputEvent) -> void:
+	if event.is_action_pressed(&"replay_cycle_camera"):
+		get_viewport().set_input_as_handled()
+		_cycle_camera_target()
+		_refresh_ui()
+		return
+	for action in SPEED_ACTIONS:
+		if event.is_action_pressed(action):
+			get_viewport().set_input_as_handled()
+			_driver.playback_speed = SPEED_ACTIONS[action]
+			_refresh_ui()
+			return
+	if _camera_target_index >= 0 and _is_free_camera_move_pressed(event):
+		_camera_target_index = -1
+		_refresh_ui()
+
+
+func _is_free_camera_move_pressed(event: InputEvent) -> bool:
+	return (
+		event.is_action_pressed(&"replay_camera_left")
+		or event.is_action_pressed(&"replay_camera_right")
+		or event.is_action_pressed(&"replay_camera_up")
+		or event.is_action_pressed(&"replay_camera_down")
+	)
+
+
+## Wraps -1 (free camera) into 0 the same as any other index, so Tab
+## from free camera both re-couples AND lands on a real player -- one
+## rule instead of a special case for "was free" vs "was already
+## coupled".
+func _cycle_camera_target() -> void:
+	var characters := get_node_or_null(characters_path)
+	var count := characters.get_child_count() if characters else 0
+	if count == 0:
+		return
+	_camera_target_index = (_camera_target_index + 1) % count
+
+
+func _character_at(index: int) -> Node2D:
+	var characters := get_node_or_null(characters_path)
+	if not characters or characters.get_child_count() == 0:
+		return null
+	return characters.get_child(index % characters.get_child_count()) as Node2D
 
 
 func _on_play_pause_pressed() -> void:
@@ -95,7 +190,12 @@ func _refresh_ui() -> void:
 		)
 	else:
 		status = "Round %d -- %s" % [_driver.current_round(), _format_round_wins(round_wins)]
+	status += " | Cam: %s | Speed: %dx" % [_camera_status_text(), _driver.playback_speed]
 	_show_status(status)
+
+
+func _camera_status_text() -> String:
+	return "Free" if _camera_target_index < 0 else "Player %d" % (_camera_target_index + 1)
 
 
 func _format_round_wins(round_wins: Dictionary) -> String:

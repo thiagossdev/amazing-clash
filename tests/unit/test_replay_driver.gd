@@ -259,6 +259,53 @@ func test_load_replay_applies_the_headers_friendly_fire_flag_to_match_state() ->
 	)
 
 
+## Human owner's own request (2026-09-04): 1x/2x/4x/8x playback speed.
+func test_playback_speed_applies_that_many_ticks_per_physics_frame() -> void:
+	var lines: Array = [
+		{
+			"type": "header",
+			"mode": 0,
+			"friendly_fire": false,
+			"round_target": 2,
+			"sim_seed": 1,
+			"loadouts": [],
+		}
+	]
+	for i in range(6):
+		lines.append({"type": "tick", "tick": i, "samples": []})
+	var path := _write_replay("speed.replay", lines)
+	var driver := _driver_with_characters()
+	assert_true(driver.load_replay(path))
+	driver.playback_speed = 4
+	driver.play()
+	driver._physics_process(1.0 / 60.0)
+	assert_eq(driver.ticks_processed(), 4, "one frame at 4x must consume 4 recorded ticks at once")
+
+
+func test_playback_speed_stops_early_without_overshooting_when_replay_ends_mid_batch() -> void:
+	var lines: Array = [
+		{
+			"type": "header",
+			"mode": 0,
+			"friendly_fire": false,
+			"round_target": 2,
+			"sim_seed": 1,
+			"loadouts": [],
+		}
+	]
+	for i in range(3):
+		lines.append({"type": "tick", "tick": i, "samples": []})
+	lines.append({"type": "match_end", "winner": 0, "round_wins": {"0": 1}})
+	var path := _write_replay("speed_overshoot.replay", lines)
+	var driver := _driver_with_characters()
+	assert_true(driver.load_replay(path))
+	driver.playback_speed = 8
+	driver.play()
+	driver._physics_process(1.0 / 60.0)
+	assert_eq(driver.ticks_processed(), 3, "must stop at the last real tick, not error past it")
+	assert_true(driver.is_finished())
+
+
 func test_seek_to_frame_zero_after_playing_resets_ticks_processed() -> void:
 	var path := _write_replay(
 		"seek.replay",

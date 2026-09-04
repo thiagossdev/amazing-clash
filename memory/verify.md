@@ -1679,3 +1679,64 @@ os projéteis"). See `memory/gotchas.md` for the full root-cause writeup.
   own scene composition.
 - [x] `gdformat`/`gdlint`/`markdownlint-cli2` clean. Full GUT suite:
   236/236 passing (was 231, 5 new).
+
+#### 2nd follow-up: replay camera control + playback speed (2026-09-04)
+
+Human owner's own request: couple the camera to a replayed player, Tab
+to cycle, arrows for free camera (Tab returns), 1/2/3/4 for 1x/2x/4x/8x
+playback speed. Also flagged (hedged, "pode ter sido só falta de
+enquadramento") that F1's hitbox debug looked empty during replay.
+
+- [x] **Camera coupling/cycling**: `ui/replay/replay_player.gd` owns
+  positioning directly (never sets `ArenaCamera.target`, which would go
+  stale across a round transition's `_spawn_characters()` free()-then-
+  recreate cycle) -- `_camera_target_index` (-1 = free) indexes fresh
+  into `Characters.get_children()` every frame. `Tab` (new
+  `replay_cycle_camera` action) increments and wraps; any of the 4 new
+  `replay_camera_left/right/up/down` actions decouples back to free
+  while coupled.
+- [x] **Found live, root-caused before writing any camera code**:
+  Godot's built-in `ui_left`/`ui_right`/`ui_up`/`ui_down` actions'
+  default bindings did not match a synthetic `InputEventKey` the way
+  every other action in this project does, confirmed via
+  `InputMap.event_is_action()`/`event.is_action_pressed()` returning
+  `false` for both a `physical_keycode`-only and a `keycode`-only test
+  event -- same class of mismatch as `memory/gotchas.md`'s 2026-09-02
+  `ui_cancel` entry. Rather than depend on undocumented built-in
+  matching behavior, added this project's own explicit
+  `replay_camera_left/right/up/down` actions (`physical_keycode`-bound,
+  the established convention every other action here already uses).
+- [x] **Playback speed**: `ReplayDriver.playback_speed: int = 1`
+  (public var); `_physics_process()` now applies that many tick records
+  per real frame during normal (non-seeking) playback, stopping early
+  if the replay finishes mid-batch rather than overshooting past the
+  last real tick. `1`/`2`/`3`/`4` (new `replay_speed_1x/2x/4x/8x`
+  actions) set it to 1/2/4/8 respectively.
+- [x] **Camera framing fix, confirming the human owner's own
+  suspicion**: `ArenaCamera`'s zoom in `ReplayPlayer.tscn` was 1.0 (the
+  script default) -- at this project's default ~1152x648 viewport, the
+  arena's own 1200x800 `Walls` extend past every edge of the visible
+  area at that zoom, regardless of whether `HitboxViewer` is present
+  (it already is, from the 1st follow-up above) or drawing correctly.
+  Bumped to 1.4 (fits the full arena with margin on every side).
+- [x] **TDD**: 8 new tests in `tests/unit/test_replay_player.gd` (new
+  file, following `tests/unit/test_network_stats_overlay_console.gd`'s
+  own established synthetic-`InputEventKey` pattern): free camera by
+  default, Tab couples/cycles/wraps, the camera actually follows the
+  coupled character's `global_position`, an arrow key decouples, Tab
+  with zero characters is a safe no-op, speed keys set
+  `ReplayDriver.playback_speed` and the status label. 2 new tests in
+  `tests/unit/test_replay_driver.gd` for the speed-application and
+  no-overshoot-at-the-end logic. All confirmed to genuinely exercise
+  the fix during development (the `ui_left` mismatch above was itself
+  caught by a real test failure, then root-caused live before
+  switching approach, not guessed at).
+- [x] `gdformat`/`gdlint`/`markdownlint-cli2` clean. Full GUT suite:
+  246/246 passing (was 236, 10 new).
+- [ ] **Known, deliberately unverified gap**: same "no way to
+  screenshot Godot's real renderer in this headless environment"
+  limitation every UI-adjacent phase has flagged -- the camera's actual
+  on-screen framing at the new 1.4 zoom, and the VCR controls'
+  interaction with the new camera/speed keys, were verified via
+  `_input()`/`_process()` called directly in tests, not with eyes on a
+  real render.

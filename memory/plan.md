@@ -2005,6 +2005,27 @@ owner's own request, folded into the same fix. 5 new regression tests
 green. 236/236 GUT passing. See `memory/verify.md`'s Phase 20 follow-up
 section and `memory/gotchas.md` for full detail.
 
+**2nd follow-up feature (2026-09-04, human owner's own request)**:
+replay camera control and playback speed. Tab cycles `ArenaCamera`
+through `Characters.get_children()` (this script owns positioning
+directly, never touching `ArenaCamera.target`, which would go stale
+across a round transition's respawn cycle); arrow keys (new
+`replay_camera_left/right/up/down` actions -- NOT Godot's built-in
+`ui_left/right/up/down`, which a live check confirmed don't match a
+synthetic `InputEventKey` the way this project's own
+`physical_keycode`-bound actions do, same class of mismatch as the
+`ui_cancel` gotcha) decouple into a freely-moved camera; Tab re-couples.
+Number keys `1`/`2`/`3`/`4` (new `replay_speed_1x/2x/4x/8x` actions)
+set `ReplayDriver.playback_speed`, which now applies that many tick
+records per real physics frame during normal (non-seeking) playback.
+Also bumped `ArenaCamera`'s zoom in `ReplayPlayer.tscn` from 1.0 to
+1.4: confirmed by the arena/viewport math that the arena's own
+1200x800 `Walls` extend past every edge of this project's default
+~1152x648 viewport at zoom 1.0 -- the human owner's own suspicion about
+the F1 hitbox debug view was exactly right. 10 new tests (8 in new
+`tests/unit/test_replay_player.gd`, 2 in `test_replay_driver.gd`).
+246/246 GUT passing, `gdformat`/`gdlint`/`markdownlint-cli2` clean.
+
 **This closes the entire Phases 14-20 batch** (Room Config UX, Q/E/R/F
 ability framework, weapon+boot loadout, best-of-3 rounds, match log,
 replay recording, replay playback), all designed via `/think`
