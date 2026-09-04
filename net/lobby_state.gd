@@ -507,8 +507,11 @@ func _run_countdown() -> void:
 	_start_match()
 
 
+## Relies purely on the RPC's own call_local to update the server's own
+## countdown_seconds_remaining, same pattern as MatchState's
+## broadcast_grace_period_count() -- no redundant direct assignment
+## here before the call.
 func _set_countdown_remaining(value: float) -> void:
-	countdown_seconds_remaining = value
 	_rpc_receive_countdown.rpc(value)
 
 
