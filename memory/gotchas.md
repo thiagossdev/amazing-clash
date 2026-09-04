@@ -376,6 +376,72 @@ Format:
   entry) can override what `ufw status` reports as allowed; and the
   2 machines' actual subnets were never directly compared.
 
+- **2026-09-03** — Slice 13b (token-based reconnect): a reconnecting
+  peer's raw ENet connection always fires `multiplayer.peer_connected`
+  (and the ordinary `PlayerSpawner._spawn_for_peer()` it triggers)
+  *before* its own reconnect-token RPC can possibly arrive -- that RPC
+  is itself a round trip over the connection `peer_connected` just
+  reported established, so the server-side ordering can't be won.
+  Left unhandled, this spawned a permanent throwaway duplicate
+  character answering to the same `controlling_peer_id` as the
+  reclaimed original, so the reconnecting client fully predicted and
+  drove both from 1 set of inputs. → **Rule**: when a design lets 2
+  independent code paths (a generic "new connection" handler and a
+  specific "this connection is actually a resume" handler) both react
+  to the same underlying event, expect the generic one to fire first
+  and unconditionally -- design the specific handler to clean up after
+  it, not to preempt it.
+
+- **2026-09-03** — Same investigation: the first fix for the bug above
+  (`queue_free()` the duplicate character immediately inside
+  `try_reclaim()`) was live-verified to be WORSE than the original
+  bug -- it raced `MultiplayerSpawner`'s own initial replication burst
+  to the just-connected peer and produced real cascading engine errors
+  ("Node not found", "Invalid packet received", "ERR_UNAUTHORIZED" on
+  the client's own despawn-receive path), not just noisy logs. A 1-
+  second defer before freeing resolved it cleanly across every trial
+  run. → **Rule**: freeing a `MultiplayerSpawner`-replicated node in
+  the same tick it was spawned is unsafe regardless of how correct the
+  *decision* to remove it is -- the replication protocol needs time to
+  actually reach every peer first. Don't assume `queue_free()` is a
+  safe, timing-independent operation on a networked node just because
+  it is on a local one; and when you can't reproduce a subtle network
+  race in a genuinely correct way (no exposed "replication settled"
+  signal existed here), a documented bounded delay is a legitimate,
+  honestly-flagged interim mitigation -- shipping it with a clear "not
+  a real fix, here's what the real fix needs" note beats either
+  leaving the worse bug in place or silently pretending the delay is
+  bulletproof.
+
+- **2026-09-03** — Same investigation: the original Slice 13b design
+  reloaded `TestArena.tscn` (`get_tree().change_scene_to_file()`) on a
+  successful reconnect, reasoning it would hand the client a clean
+  scene instead of the disconnect-frozen one. Live-confirmed this
+  reload itself corrupted `MultiplayerSpawner`'s replication caches on
+  both ends -- the same class of cascading engine errors as the
+  duplicate-despawn bug above, since the reload yanks the entire local
+  scene tree out from under an still-active multiplayer connection
+  without the replication layer ever being told. → **Rule**: don't
+  reload the scene a live multiplayer connection's nodes live in as a
+  way to "reset" client state; if a node's state is already correct
+  and already replicated (as the reclaimed character's was, having
+  never actually despawned during the grace period), leave it in place
+  and let the existing replicated RPCs update it instead.
+
+- **2026-09-03** — Also found while chasing the reload bug above: `net/
+  dev_bootstrap.gd`'s `--join`/`--server` cmdline flags were being
+  re-read (and `NetworkManager.join()` re-executed) every time the
+  reload above re-ran its `_ready()`, tearing down an already-just-
+  restored connection and forcing another reconnect cycle -- observed
+  as a 3rd distinct peer_id and another orphaned duplicate character.
+  Fixed with a `static var _ran_once` guard regardless of the reload
+  fix, since any future scene reload would otherwise repeat the same
+  mistake. → **Rule**: a dev/test-only bootstrap script that reads
+  `OS.get_cmdline_user_args()` in `_ready()` needs to guard against
+  running more than once per process if ANYTHING in the app can cause
+  its own node to be re-instantiated (scene reload, respawn) -- the
+  cmdline args don't go away just because the node did.
+
 <!--
 Examples:
 

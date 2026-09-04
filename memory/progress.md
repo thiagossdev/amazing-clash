@@ -549,6 +549,41 @@ changed but this file wasn't updated.
   `memory/plan.md`'s Slice 13b block; needs its own `/think` before
   implementing, per the human owner's own explicit instruction not to
   start it here.
+- [x] **Slice 13b (token-based reconnect) implemented and live-verified,
+  branch built but not yet merged**: `net/reconnect_manager.gd` (new
+  autoload) holds a server-issued token client-side, auto-retries
+  joining the last address every second on disconnect for up to 30s,
+  and drives `ui/hud/network_stats_overlay.gd`'s status text/eventual
+  return to `MainMenu`. `CharacterController.controlling_peer_id` +
+  `PlayerSpawner.try_reclaim()` implement reconnect exactly as
+  `memory/plan.md`'s Slice 13b block originally designed, no `/think`
+  deviation needed. **3 real bugs found live via 2-process testing
+  (`net/dev_bootstrap.gd`'s new `--dev-kick-after=` flag) that the
+  design didn't anticipate**, all fixed and re-verified: (1) a
+  reconnecting peer's own `peer_connected` always spawns a throwaway
+  duplicate character before its reconnect token can arrive --
+  `try_reclaim()` now despawns it, but only after a live-calibrated
+  1s delay (freeing it instantly raced `MultiplayerSpawner`'s own
+  replication and produced real engine errors) -- **a known,
+  intentionally-not-fully-closed ~1s dual-control window remains, see
+  `memory/plan.md`'s Slice 13b block and `memory/gotchas.md`**; (2)
+  the original design's post-reconnect scene reload corrupted
+  `MultiplayerSpawner`'s replication caches -- removed, reconnection
+  now resumes the client's already-frozen scene in place; (3) `net/
+  dev_bootstrap.gd`'s dev-only `--join`/`--server` flags were
+  re-executing on the scene reload from bug #2 -- guarded regardless.
+  TDD: 139 total GUT tests project-wide (was 138), all passing.
+  `gdformat`/`gdlint` clean. `/check` run inline by the implementing
+  fork; findings fixed and re-verified live rather than deferred.
+  **NOT MERGED into `main`**: the implementing fork ran in an isolated
+  `.claude/worktrees/` checkout, and the sandbox refuses any git
+  operation targeting the shared primary checkout from inside it (not
+  a "main is busy" conflict -- a hard tool-level boundary). The human
+  owner needs to run `git merge --no-ff feature/phase13b-token-
+  reconnect` from `/mnt/c/var/workspaces/godot/amazing-clash` manually,
+  then `godot4 --headless --import` before trusting a post-merge GUT
+  run. See `memory/verify.md`'s Phase 13b section and `memory/plan.md`'s
+  Slice 13b block for full evidence.
 
 ## Backlog (next up)
 
@@ -560,20 +595,22 @@ changed but this file wasn't updated.
   `memory/gotchas.md` for the full history and the exact next
   commands to run (`sudo iptables -L -n -v` for Docker interference,
   `ip addr` vs `ipconfig` for a subnet mismatch).
-- [ ] Slice 13b (token-based reconnect) -- see `memory/plan.md`'s Slice
-  13b block for the full decided scope (token identity, no node
-  rename, `controlling_peer_id` indirection, reconnect flow bypasses
-  Character Select/Room Config). Deliberately not started in the same
-  session as 13a -- real identity/networking risk, needs its own
-  `/think` first. **Now also carries a real bug found via `/waza:hunt`
-  during play-testing** (2026-09-03, see `memory/gotchas.md`): a
-  disconnected client's own screen is a dead end today -- frozen
-  `TestArena`, `network_stats_overlay.gd` spamming a real engine error
-  every frame (`multiplayer.get_unique_id()` with no peer guard).
-  Deliberately not patched standalone (a bare "return to MainMenu"
-  fix would just be a smaller dead end without 13b's actual reconnect)
-  -- 13b's own design must decide what a disconnected client's screen
-  does, the null-peer guard included.
+- [x] ~~Slice 13b (token-based reconnect)~~ -- implemented and
+  live-verified, see the "Completed (this session)" entry above and
+  `memory/plan.md`'s Slice 13b block. 2 items remain from it:
+- [ ] **Merge `feature/phase13b-token-reconnect` into `main`** --
+  built and fully verified in an isolated worktree, but the sandbox
+  won't let that fork touch the primary checkout's git state. Run
+  `git merge --no-ff feature/phase13b-token-reconnect` from
+  `/mnt/c/var/workspaces/godot/amazing-clash`, then `godot4 --headless
+  --import` before trusting a post-merge GUT run.
+- [ ] **Decide whether to close Slice 13b's ~1s dual-control window**
+  (a reconnecting peer briefly predicts/drives both its reclaimed
+  original character and a throwaway duplicate before the duplicate
+  is despawned -- see `memory/plan.md`'s Slice 13b block and
+  `memory/gotchas.md` for the full mechanism) by adopting Godot's
+  `SceneMultiplayer` peer-authentication API, or accept the current
+  live-verified 1s mitigation as good enough for now.
 - [ ] A new peer joining mid-grace-period (Phase 13a) can transiently
   make more characters "alive" than there are connected peers --
   doesn't corrupt the win condition (every character is counted
