@@ -390,6 +390,12 @@ func _physics_step_authoritative(delta: float) -> void:
 	if is_owned_by_me():
 		_server_sim.record_input(_sample_local_input(delta))
 	var sample := _server_sim.next_input(delta)
+	# Phase 19: Engine.get_physics_frames(), not _server_sim.tick_count()
+	# -- that counter is PER-CHARACTER and resets to 0 for a character
+	# freshly spawned by a round transition, so it can't be trusted as a
+	# shared tick key across a multi-round match. See net/replay_
+	# recorder.gd's own record_tick_sample() doc comment.
+	ReplayRecorder.record_tick_sample(Engine.get_physics_frames(), controlling_peer_id, sample)
 	if _lock_frames > 0:
 		_lock_frames -= 1
 	elif current_health > 0.0:
