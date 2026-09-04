@@ -25,7 +25,10 @@ extends Node
 ## zeroes this peer's own character's health ~1s in (bypassing hit
 ## geometry entirely) so Phase 5's elimination/win-condition/HUD chain
 ## can be exercised deterministically without depending on 2 characters
-## actually connecting a hit. `-- --free-for-all` sets
+## actually connecting a hit. `-- --dev-kick-after=<seconds>` (server
+## only, Slice 13b) force-disconnects the first connected client after
+## the delay, simulating a real mid-match drop for live reconnect
+## testing -- see this function's own trailing block. `-- --free-for-all` sets
 ## MatchState.match_mode to FREE_FOR_ALL -- must be set before
 ## PlayerSpawner._ready() reads it to decide team assignment, so this
 ## is parsed alongside --friendly-fire, before host()/join(), same
@@ -60,6 +63,10 @@ func _ready() -> void:
 		else:
 			MatchState.enter_in_progress()
 	elif "--join" in args:
+		# Slice 13b: mirrors ui/host_join/host_join.gd's own
+		# remember_join_target() call -- without it, this headless
+		# dev-join path would have no address to auto-reconnect to.
+		ReconnectManager.remember_join_target("127.0.0.1", NetworkManager.DEFAULT_PORT)
 		var err := NetworkManager.join()
 		if err != OK:
 			push_error("dev_bootstrap: failed to join (%s)" % err)
@@ -93,3 +100,17 @@ func _ready() -> void:
 		)
 		if own_character:
 			own_character.take_damage(9999.0)
+
+	# Slice 13b live-test hook: simulates a real mid-match drop (server
+	# forcibly severing one client's ENet connection) without killing
+	# either process -- the dropped client's own ReconnectManager
+	# autoload survives (it's the process staying alive that lets it
+	# hold the token and auto-retry), same as a real WiFi blip. Only
+	# meaningful on --server; disconnects the first non-host peer found.
+	for arg in args:
+		if arg.begins_with("--dev-kick-after="):
+			var delay := arg.trim_prefix("--dev-kick-after=").to_float()
+			await get_tree().create_timer(delay).timeout
+			var peers := multiplayer.get_peers()
+			if not peers.is_empty():
+				multiplayer.multiplayer_peer.disconnect_peer(peers[0])

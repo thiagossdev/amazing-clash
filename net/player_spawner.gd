@@ -97,6 +97,12 @@ var _next_index_for_team: Dictionary = {}
 ## peer still inside its grace period. Server-only.
 var _grace_timers: Dictionary = {}
 var _grace_period_seconds: float = GRACE_PERIOD_SECONDS
+## Slice 13b: token (String) -> original peer_id, one entry per
+## currently-connected OR currently-grace-period character. Server-
+## only. Not cryptographically strong on purpose -- this is "the same
+## running client reconnecting after a drop," not an account/security
+## boundary (see memory/plan.md's Slice 13b block).
+var _reconnect_tokens: Dictionary = {}
 
 
 ## Phase 7: no longer spawns unconditionally at _ready() -- doing so
@@ -126,6 +132,7 @@ func _ready() -> void:
 						% [raw_value, GRACE_PERIOD_SECONDS]
 					)
 				)
+	add_to_group(&"player_spawner")
 	var characters := get_node(characters_path)
 	multiplayer.peer_connected.connect(func(peer_id): _spawn_for_peer(peer_id, characters))
 	multiplayer.peer_disconnected.connect(func(peer_id): _begin_grace_period(peer_id, characters))
@@ -155,6 +162,7 @@ func _spawn_for_peer(peer_id: int, characters: Node) -> void:
 	character.position = _spawn_position_for(character.team)
 	_next_spawn_index += 1
 	characters.add_child(character)
+	_issue_reconnect_token(peer_id)
 	# Perk multipliers are NOT applied here, deliberately -- this method
 	# only ever runs on the server (see _ready()'s own early return
 	# above). A perk's move_speed_multiplier/cooldown_multiplier are
@@ -256,8 +264,56 @@ func _expire_grace_period(peer_id: int, characters: Node) -> void:
 	if not _grace_timers.has(peer_id):
 		return
 	_grace_timers.erase(peer_id)
+	_invalidate_token_for(peer_id)
 	_despawn_for_peer(peer_id, characters)
 	MatchState.broadcast_grace_period_count(_grace_timers.size())
+
+
+## Random, not cryptographic (see _reconnect_tokens' own doc comment).
+## Sent to the owning peer only -- never broadcast, never logged. The
+## host's own character is spawned locally (peer_id == our own unique
+## id), and Godot's RPC layer rejects a non-call_local @rpc targeted at
+## yourself ("RPC on yourself is not allowed by selected mode", found
+## live) -- a direct call sidesteps that without changing the RPC's
+## authorization mode for the real network case.
+func _issue_reconnect_token(peer_id: int) -> void:
+	var token := "%d-%d" % [Time.get_ticks_usec(), randi()]
+	_reconnect_tokens[token] = peer_id
+	if peer_id == multiplayer.get_unique_id():
+		ReconnectManager._rpc_receive_token(token)
+	else:
+		ReconnectManager._rpc_receive_token.rpc_id(peer_id, token)
+
+
+func _invalidate_token_for(peer_id: int) -> void:
+	for token in _reconnect_tokens.keys():
+		if _reconnect_tokens[token] == peer_id:
+			_reconnect_tokens.erase(token)
+			return
+
+
+## Slice 13b: called by net/reconnect_manager.gd's own RPC handler
+## (server-only) when a peer presents a token. Server-authoritative --
+## the caller passes the RPC's own multiplayer.get_remote_sender_id(),
+## never a client-supplied id, so a peer can only ever reclaim
+## whichever character its OWN presented token actually maps to. A
+## valid token whose character has already fully despawned (grace
+## expired, or the token is simply unknown/reused) fails closed.
+func try_reclaim(token: String, new_peer_id: int) -> bool:
+	if not _reconnect_tokens.has(token):
+		return false
+	var original_peer_id: int = _reconnect_tokens[token]
+	if not _grace_timers.has(original_peer_id):
+		return false
+	var characters := get_node(characters_path)
+	var character := characters.get_node_or_null(str(original_peer_id)) as CharacterController
+	if not character:
+		return false
+	_grace_timers.erase(original_peer_id)
+	_reconnect_tokens.erase(token)
+	character._rpc_reassign_controller.rpc(new_peer_id)
+	MatchState.broadcast_grace_period_count(_grace_timers.size())
+	return true
 
 
 func _despawn_for_peer(peer_id: int, characters: Node) -> void:

@@ -23,6 +23,7 @@ InputManager="*res://input/input_manager.gd"
 NetworkManager="*res://net/network_manager.gd"
 LobbyState="*res://net/lobby_state.gd"
 LanDiscovery="*res://net/lan_discovery.gd"
+ReconnectManager="*res://net/reconnect_manager.gd"
 
 [display]
 

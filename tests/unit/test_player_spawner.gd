@@ -6,6 +6,8 @@ extends GutTest
 ## save/restore MatchState.match_mode so a mutation here can't leak
 ## into any other test file sharing the same autoload instance.
 
+const CHARACTER_SCENE := preload("res://gameplay/characters/character_base/Character.tscn")
+
 
 func _spawner() -> PlayerSpawner:
 	return autofree(PlayerSpawner.new())
@@ -130,3 +132,54 @@ func test_expire_grace_period_is_a_noop_when_not_tracked() -> void:
 	var characters: Node = autofree(Node.new())
 	spawner._expire_grace_period(424242, characters)
 	assert_eq(characters.get_child_count(), 0)
+
+
+## Slice 13b: try_reclaim() is server-authoritative decision logic --
+## the RPC plumbing itself (net/reconnect_manager.gd) is verified live,
+## same convention this project already uses for every other RPC-
+## triggered flow (see e.g. test_lobby_state.gd's own doc comment).
+func _spawner_characters_and_reconnecting_character() -> Array:
+	var spawner_and_characters := _spawner_and_characters()
+	var spawner: PlayerSpawner = spawner_and_characters[0]
+	var characters: Node = spawner_and_characters[1]
+	var character: CharacterController = CHARACTER_SCENE.instantiate()
+	character.name = "555"
+	characters.add_child(character)
+	spawner._grace_timers[555] = null
+	spawner._reconnect_tokens["a-real-token"] = 555
+	return [spawner, characters, character]
+
+
+func test_try_reclaim_rejects_an_unknown_token() -> void:
+	var setup := _spawner_characters_and_reconnecting_character()
+	var spawner: PlayerSpawner = setup[0]
+	assert_false(spawner.try_reclaim("not-a-real-token", 999))
+
+
+func test_try_reclaim_rejects_a_token_whose_character_is_no_longer_in_grace() -> void:
+	var setup := _spawner_characters_and_reconnecting_character()
+	var spawner: PlayerSpawner = setup[0]
+	spawner._grace_timers.erase(555)
+	assert_false(
+		spawner.try_reclaim("a-real-token", 999),
+		"grace already expired (or was never entered) -- the slot is gone"
+	)
+
+
+func test_try_reclaim_accepts_a_valid_token_and_reassigns_control() -> void:
+	var setup := _spawner_characters_and_reconnecting_character()
+	var spawner: PlayerSpawner = setup[0]
+	var character: CharacterController = setup[2]
+	assert_true(spawner.try_reclaim("a-real-token", 999))
+	assert_eq(character.controlling_peer_id, 999)
+	assert_false(spawner._grace_timers.has(555), "reclaiming cancels the grace period")
+	assert_false(spawner._reconnect_tokens.has("a-real-token"), "a token is single-use")
+
+
+func test_try_reclaim_same_token_twice_only_succeeds_once() -> void:
+	var setup := _spawner_characters_and_reconnecting_character()
+	var spawner: PlayerSpawner = setup[0]
+	assert_true(spawner.try_reclaim("a-real-token", 999))
+	assert_false(
+		spawner.try_reclaim("a-real-token", 1000), "the same token can't reclaim a 2nd time"
+	)

@@ -13,6 +13,7 @@ extends CanvasLayer
 var _snapshot_count_this_window: int = 0
 var _time_since_update: float = 0.0
 var _tracked_character: CharacterController
+var _returning_to_menu: bool = false
 
 @onready var _label: Label = $Label
 @onready var _console_input: LineEdit = $ConsoleInput
@@ -32,7 +33,22 @@ func _exit_tree() -> void:
 	InputManager.suppress_gameplay_input = false
 
 
+## Bug found live via /waza:hunt (2026-09-03, see memory/gotchas.md):
+## a real disconnect (WiFi drop, host closing) left the peer null
+## forever, and this method called multiplayer.get_unique_id()
+## unconditionally every tick with no guard -- a real engine error
+## ("No multiplayer peer is assigned"), spammed every frame, with no
+## way back to the menu. Slice 13b's net/reconnect_manager.gd now owns
+## the actual recovery (auto-retry using the held token, within the
+## same grace window net/player_spawner.gd's disconnected peer sits
+## in); this overlay just surfaces its status text while that's
+## happening, and returns to MainMenu once it gives up.
 func _process(delta: float) -> void:
+	if not multiplayer.has_multiplayer_peer():
+		_label.text = ReconnectManager.status_text()
+		if ReconnectManager.has_given_up():
+			_return_to_main_menu_once()
+		return
 	_ensure_tracking_own_character()
 	_time_since_update += delta
 	if _time_since_update < update_interval:
@@ -41,6 +57,13 @@ func _process(delta: float) -> void:
 	_label.text = "Ping: %dms | Snapshots/s: %.1f" % [_ping_ms(), rate]
 	_snapshot_count_this_window = 0
 	_time_since_update = 0.0
+
+
+func _return_to_main_menu_once() -> void:
+	if _returning_to_menu:
+		return
+	_returning_to_menu = true
+	get_tree().change_scene_to_file("res://ui/main_menu/MainMenu.tscn")
 
 
 ## Bound to "/" (matching the console's own command syntax), not
@@ -131,16 +154,23 @@ func _execute_command(text: String) -> void:
 			_console_output.text = "unknown command: /%s" % parsed["command"]
 
 
+## Slice 13b: matches via CharacterController.is_owned_by_me()
+## (controlling_peer_id), not a node-name lookup keyed by this peer's
+## own multiplayer.get_unique_id() -- after a reconnect, "my" character
+## node is still named str(the ORIGINAL peer_id), which no longer
+## equals my own (new) unique_id, so a name-based lookup would silently
+## never find it again post-reconnect.
 func _ensure_tracking_own_character() -> void:
 	if is_instance_valid(_tracked_character):
 		return
 	var characters := get_node_or_null(characters_path)
 	if not characters:
 		return
-	var own := characters.get_node_or_null(str(multiplayer.get_unique_id()))
-	if own:
-		_tracked_character = own
-		_tracked_character.snapshot_received.connect(func(): _snapshot_count_this_window += 1)
+	for child in characters.get_children():
+		if child is CharacterController and (child as CharacterController).is_owned_by_me():
+			_tracked_character = child
+			_tracked_character.snapshot_received.connect(func(): _snapshot_count_this_window += 1)
+			return
 
 
 func _ping_ms() -> int:
