@@ -813,6 +813,22 @@ changed but this file wasn't updated.
   test, matching this project's existing convention of never directly
   testing the (already pre-existing, likewise untested) plain Back
   button's own navigation either. 248/248 GUT passing.
+- [x] **Fixed: the entire replay VCR control row was off-screen
+  (2026-09-04, found live -- "enter/space deu certo. Mas não vi esse
+  botão").** `ui/replay/ReplayPlayer.tscn`'s bottom `Controls` row
+  (PlayPauseButton/SkipBack/SkipForward/Scrubber/BackButton) sat at
+  y:740-780, past this project's own default viewport height (648) --
+  genuinely invisible since Phase 20's original build; keyboard
+  activation (Enter/Space on a focused button) still worked because
+  Godot's focus system doesn't require on-screen visibility, which is
+  exactly why this shipped unnoticed. Moved the whole row to y:590-630
+  and fixed `BackButton`'s right edge (was also past the viewport
+  width). New regression test
+  (`test_every_control_fits_inside_the_real_viewport`) checks every
+  Control under a replay screen's root against the real configured
+  viewport size -- confirmed red (6 failures matching every affected
+  control) before the fix, green after. 249/249 GUT passing. See
+  `memory/gotchas.md` for the full mechanism.
 
 ## Backlog (next up)
 

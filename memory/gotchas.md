@@ -687,6 +687,36 @@ Format:
   directly) -- same root pattern, a header field that looked wired in
   because it was PARSED, but was never actually APPLIED anywhere.
 
+- **2026-09-04** — Found live via real hands-on testing (human owner:
+  "enter/space deu certo. Mas não vi esse botão"): `ui/replay/
+  ReplayPlayer.tscn`'s entire bottom `Controls` row (`PlayPauseButton`/
+  `SkipBackButton`/`SkipForwardButton`/`Scrubber`/`BackButton`) was
+  positioned at `offset_top/bottom = 740/780`, past this project's own
+  default viewport height (648, `display/window/size/viewport_height`
+  in `project.godot`) -- `BackButton`'s right edge (1180) was also past
+  the viewport width (1152). The whole row had been genuinely
+  off-screen since Phase 20's original build. Keyboard activation
+  (`grab_focus()` + Enter/Space, added this same day for the "Back to
+  List" button) still worked perfectly despite this -- Godot's
+  focus/action-triggering system doesn't require a Control to be
+  visually on-screen, only that it holds focus -- which is exactly why
+  a real, fully-invisible layout bug produced a working keyboard
+  interaction and no visible symptom to a text-only/headless
+  verification pass. → **Rule**: a Control positioned by fixed
+  `offset_*` values (not anchors) needs its own numbers checked against
+  the project's REAL configured viewport size
+  (`ProjectSettings.get_setting("display/window/size/viewport_width
+  /height")`), not just "looks reasonable" -- this project's own "no
+  way to screenshot Godot's real renderer" gap (flagged on every
+  UI-adjacent phase since Phase 7) makes this exact class of bug
+  invisible to every verification method available except a real human
+  looking at a real running window. Added a regression test
+  (`test_every_control_fits_inside_the_real_viewport` in
+  `tests/unit/test_replay_player_scene.gd`) that checks every Control
+  under a screen's root against the actual configured viewport
+  dimensions, specifically because this bug class has no other
+  automated way to be caught in this environment.
+
 <!--
 Examples:
 
