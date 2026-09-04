@@ -24,6 +24,7 @@ NetworkManager="*res://net/network_manager.gd"
 LobbyState="*res://net/lobby_state.gd"
 LanDiscovery="*res://net/lan_discovery.gd"
 ReconnectManager="*res://net/reconnect_manager.gd"
+GameLog="*res://net/game_log.gd"
 
 [display]
 
