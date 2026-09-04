@@ -185,6 +185,25 @@ func test_try_reclaim_same_token_twice_only_succeeds_once() -> void:
 	)
 
 
+## Found live: try_reclaim() erased the spent token but never issued a
+## replacement, so a peer that reconnected once had no token left to
+## survive a 2nd disconnect in the same match -- reconnect_manager.gd's
+## own _token would still hold the now-dead value, and the server
+## would reject it outright. See memory/gotchas.md.
+func test_try_reclaim_issues_a_fresh_token_for_the_new_peer_id() -> void:
+	var setup := _spawner_characters_and_reconnecting_character()
+	var spawner: PlayerSpawner = setup[0]
+	assert_true(spawner.try_reclaim("a-real-token", 999))
+	var tokens_for_new_peer: Array = spawner._reconnect_tokens.values().filter(
+		func(pid): return pid == 999
+	)
+	assert_eq(
+		tokens_for_new_peer.size(),
+		1,
+		"a fresh token must exist for 999 so a 2nd disconnect is still recoverable"
+	)
+
+
 ## Found live: multiplayer.peer_connected -> _spawn_for_peer() always
 ## fires for a reconnecting peer's raw ENet connection before its own
 ## reconnect-token RPC can possibly arrive, spawning a fresh throwaway

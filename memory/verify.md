@@ -845,16 +845,51 @@ in `progress.md`. No exceptions.
   worktree, so this was a single adversarial self-review pass rather
   than the multi-persona flow. All 3 findings above were fixed and
   live-re-verified, none deferred.
-- [ ] **Not merged into `main`** -- the implementing fork ran inside an
-  isolated `.claude/worktrees/` checkout; the sandbox refuses any git
-  operation (tried `cd`, `git -C <path>`, and a `git worktree list`
-  check targeting the shared path) that reaches outside that worktree
-  into the primary checkout. This is a hard tool-level boundary, not a
-  "`main` is busy" merge conflict -- the human owner needs to run
-  `git merge --no-ff feature/phase13b-token-reconnect` from
-  `/mnt/c/var/workspaces/godot/amazing-clash` manually, then `godot4
-  --headless --import` before trusting a post-merge GUT run.
+- [x] **Merged into `main`** (`4d47c96`) -- the implementing fork ran
+  inside an isolated `.claude/worktrees/` checkout; the sandbox refused
+  any git operation (tried `cd`, `git -C <path>`, and a `git worktree
+  list` check targeting the shared path) that reaches outside that
+  worktree into the primary checkout. This was a hard tool-level
+  boundary, not a "`main` is busy" merge conflict, so the merge was
+  done from the primary checkout instead, followed by `godot4
+  --headless --import` and a full re-verification (140/140 GUT, lint
+  clean) on the then-current engine build.
 - [ ] **Visual verification not applicable** -- `network_stats_overlay.
   gd`'s status-text change is the only UI surface touched, already
   covered by the live functional test above (its `_label.text` mirrors
   `ReconnectManager.status_text()`, observed correct throughout).
+
+#### Follow-up: reconnect token reissue fix (2026-09-03, post-merge)
+
+- [x] **Root cause**: `try_reclaim()` erased the spent token on success
+  but never issued a replacement -- a peer that reconnected once had no
+  valid token left for a 2nd disconnect in the same match, so the
+  server would reject it outright. Found by the human owner asking
+  directly whether the token was single-use, not by a test.
+- [x] **Fix**: `try_reclaim()` now calls
+  `_issue_reconnect_token(new_peer_id)` after a successful reclaim.
+- [x] **Adjacent issue surfaced by the fix**: `_issue_reconnect_token()`
+  unconditionally called `.rpc_id()` on its remote branch. Every real
+  caller passes an actually-connected peer_id, but `try_reclaim()` is
+  unit-tested directly with a fabricated peer_id (999) and no live
+  `ENetMultiplayerPeer` -- calling `.rpc_id()` against it threw a real
+  engine error ("Method/function failed"). Fixed by guarding that
+  branch behind `multiplayer.get_peers().has(peer_id)`; confirmed with
+  a standalone headless script that `get_peers()` returns `[]` by
+  default with no real peer connected, so the guard is a true no-op in
+  that unit-test context and a true pass-through for every real caller.
+- [x] **TDD**: new `test_try_reclaim_issues_a_fresh_token_for_the_new_
+  peer_id` in `tests/unit/test_player_spawner.gd`. Confirmed red by
+  temporarily stashing the source fix and re-running just this test
+  (failed: `[0] expected to equal [1]`); confirmed green after
+  restoring the fix.
+- [x] `gdformat --check` / `gdlint` clean on both changed files
+  (`net/player_spawner.gd`, `tests/unit/test_player_spawner.gd`).
+- [x] Full GUT suite: 140/140 passing (was 139 -- 1 new test).
+- [ ] **Not live-verified with a real 2nd disconnect** -- the original
+  Phase 13b live test only exercised a single disconnect/reconnect
+  cycle; re-running it with a 2nd forced disconnect after the first
+  reconnect succeeds would need a new `net/dev_bootstrap.gd` flag
+  (e.g. a repeating `--dev-kick-after`) that doesn't exist yet. Covered
+  by the regression test above instead; the human owner's own planned
+  2-physical-PC test session can exercise this live if desired.

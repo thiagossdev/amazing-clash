@@ -1004,6 +1004,21 @@ anticipate** -- see `memory/gotchas.md` for full detail on each:
   window, already a large improvement over 13a's forfeit-only
   behavior) or invest in the `SceneMultiplayer` peer-authentication
   redesign to close it fully.
+- **Follow-up fix (2026-09-03, after merge, human owner's own
+  question)**: the token was single-use with no replacement ever
+  issued -- a peer that successfully reconnected once had nothing left
+  to survive a *2nd* disconnect in the same match, and the server
+  would reject the now-dead token outright. Fixed: `try_reclaim()`
+  calls `_issue_reconnect_token(new_peer_id)` right after a successful
+  reclaim, so every reconnect leaves the peer holding a fresh token.
+  Also guarded `_issue_reconnect_token()`'s remote RPC dispatch behind
+  `multiplayer.get_peers().has(peer_id)`, since `try_reclaim()` is now
+  unit-tested directly with a fabricated peer_id that has no real
+  `ENetMultiplayerPeer` behind it (see `memory/gotchas.md`). New
+  regression test `test_try_reclaim_issues_a_fresh_token_for_the_new_
+  peer_id` in `tests/unit/test_player_spawner.gd`, confirmed red on the
+  pre-fix code, green after. Full suite: 140/140 passing,
+  `gdformat`/`gdlint` clean.
 
 - **Identity across a peer_id change**: a per-player secret token,
   issued once (when a peer's character is spawned) and held only in

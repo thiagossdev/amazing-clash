@@ -575,15 +575,27 @@ changed but this file wasn't updated.
   TDD: 139 total GUT tests project-wide (was 138), all passing.
   `gdformat`/`gdlint` clean. `/check` run inline by the implementing
   fork; findings fixed and re-verified live rather than deferred.
-  **NOT MERGED into `main`**: the implementing fork ran in an isolated
-  `.claude/worktrees/` checkout, and the sandbox refuses any git
-  operation targeting the shared primary checkout from inside it (not
-  a "main is busy" conflict -- a hard tool-level boundary). The human
-  owner needs to run `git merge --no-ff feature/phase13b-token-
-  reconnect` from `/mnt/c/var/workspaces/godot/amazing-clash` manually,
-  then `godot4 --headless --import` before trusting a post-merge GUT
-  run. See `memory/verify.md`'s Phase 13b section and `memory/plan.md`'s
-  Slice 13b block for full evidence.
+  **Merged into `main`** (commit `4d47c96`): the implementing fork ran
+  in an isolated `.claude/worktrees/` checkout and the sandbox refused
+  any git operation targeting the shared primary checkout from inside
+  it (not a "main is busy" conflict -- a hard tool-level boundary), so
+  the merge was done from the primary checkout instead, followed by
+  `godot4 --headless --import` and a full re-verification (140/140 GUT,
+  lint clean) on the current engine build. See `memory/verify.md`'s
+  Phase 13b section and `memory/plan.md`'s Slice 13b block for full
+  evidence.
+- [x] **Reconnect token reissue fix (2026-09-03, post-merge)**: the
+  token was single-use with no replacement ever issued, so a peer that
+  reconnected once had nothing left to survive a 2nd disconnect in the
+  same match. `PlayerSpawner.try_reclaim()` now calls
+  `_issue_reconnect_token(new_peer_id)` on a successful reclaim; its
+  remote RPC dispatch is now guarded behind
+  `multiplayer.get_peers().has(peer_id)` so unit-testing `try_reclaim()`
+  directly (a fabricated peer_id, no real `ENetMultiplayerPeer`)
+  doesn't explode. New regression test in `tests/unit/
+  test_player_spawner.gd`, confirmed red before the fix, green after.
+  140/140 GUT passing, `gdformat`/`gdlint` clean. See
+  `memory/gotchas.md` and `memory/plan.md`'s Slice 13b block.
 
 ## Backlog (next up)
 
@@ -595,15 +607,11 @@ changed but this file wasn't updated.
   `memory/gotchas.md` for the full history and the exact next
   commands to run (`sudo iptables -L -n -v` for Docker interference,
   `ip addr` vs `ipconfig` for a subnet mismatch).
-- [x] ~~Slice 13b (token-based reconnect)~~ -- implemented and
-  live-verified, see the "Completed (this session)" entry above and
-  `memory/plan.md`'s Slice 13b block. 2 items remain from it:
-- [ ] **Merge `feature/phase13b-token-reconnect` into `main`** --
-  built and fully verified in an isolated worktree, but the sandbox
-  won't let that fork touch the primary checkout's git state. Run
-  `git merge --no-ff feature/phase13b-token-reconnect` from
-  `/mnt/c/var/workspaces/godot/amazing-clash`, then `godot4 --headless
-  --import` before trusting a post-merge GUT run.
+- [x] ~~Slice 13b (token-based reconnect)~~ -- implemented,
+  live-verified, merged into `main` (`4d47c96`), and the single-use
+  token gap fixed post-merge -- see the "Completed (this session)"
+  entries above and `memory/plan.md`'s Slice 13b block. 1 item remains
+  from it:
 - [ ] **Decide whether to close Slice 13b's ~1s dual-control window**
   (a reconnecting peer briefly predicts/drives both its reclaimed
   original character and a throwaway duplicate before the duplicate

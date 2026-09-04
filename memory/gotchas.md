@@ -442,6 +442,35 @@ Format:
   its own node to be re-instantiated (scene reload, respawn) -- the
   cmdline args don't go away just because the node did.
 
+- **2026-09-03** — Same investigation, found after shipping (asked by
+  the human owner, not caught by any test at merge time): the
+  reconnect token was single-use by design (`try_reclaim()` erases it
+  on success) but nothing ever issued a replacement, so a peer that
+  successfully reconnected once had no valid token left to survive a
+  *second* disconnect in the same match -- `net/reconnect_manager.gd`
+  would still hold the now-dead token, present it, and the server
+  would reject it outright, sending that peer to the main menu instead
+  of recovering. → **Rule**: any "consume on success" token/nonce
+  design needs an explicit answer for "what happens on the *next*
+  attempt" before shipping -- single-use is a correct security
+  property in isolation, but silently becomes single-use-per-match
+  wide unless the success path also reissues. Fixed in
+  `net/player_spawner.gd`'s `try_reclaim()` by calling
+  `_issue_reconnect_token(new_peer_id)` right after a successful
+  reclaim. Surfaced a 2nd, adjacent issue: `_issue_reconnect_token()`
+  unconditionally called `.rpc_id()` on its remote branch, which is
+  fine for every real caller (always an actually-connected peer) but
+  explodes with a real engine error ("Method/function failed") the
+  moment a unit test calls `try_reclaim()` directly with a fabricated
+  peer_id and no live `ENetMultiplayerPeer` behind it --
+  `multiplayer.get_peers()` guard added so the RPC dispatch only fires
+  for a peer_id Godot's own multiplayer layer actually knows about.
+  → **Rule**: a helper written for one call site's guarantees (always
+  a real connected peer) can silently violate a *different* call
+  site's environment (a pure-logic unit test) once it's reused --
+  re-check every existing caller's assumptions before adding a 2nd one,
+  not just the new caller's own correctness.
+
 <!--
 Examples:
 

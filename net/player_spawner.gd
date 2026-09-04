@@ -308,13 +308,19 @@ func _expire_grace_period(peer_id: int, characters: Node) -> void:
 ## id), and Godot's RPC layer rejects a non-call_local @rpc targeted at
 ## yourself ("RPC on yourself is not allowed by selected mode", found
 ## live) -- a direct call sidesteps that without changing the RPC's
-## authorization mode for the real network case.
+## authorization mode for the real network case. The get_peers() guard
+## on the remote branch only ever matters for unit tests that call
+## try_reclaim() directly with a fabricated peer_id and no real ENet
+## connection behind it (see tests/unit/test_player_spawner.gd) --
+## every real caller (_spawn_for_peer() on an actual peer_connected,
+## try_reclaim() on an actual multiplayer.get_remote_sender_id()) only
+## ever passes a peer_id that's already in this list.
 func _issue_reconnect_token(peer_id: int) -> void:
 	var token := "%d-%d" % [Time.get_ticks_usec(), randi()]
 	_reconnect_tokens[token] = peer_id
 	if peer_id == multiplayer.get_unique_id():
 		ReconnectManager._rpc_receive_token(token)
-	else:
+	elif multiplayer.get_peers().has(peer_id):
 		ReconnectManager._rpc_receive_token.rpc_id(peer_id, token)
 
 
@@ -349,6 +355,7 @@ func try_reclaim(token: String, new_peer_id: int) -> bool:
 	_despawn_reconnect_duplicate(new_peer_id, characters)
 	character._rpc_reassign_controller.rpc(new_peer_id)
 	MatchState.broadcast_grace_period_count(_grace_timers.size())
+	_issue_reconnect_token(new_peer_id)
 	return true
 
 
