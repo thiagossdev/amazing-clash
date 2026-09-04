@@ -257,6 +257,30 @@ func test_is_any_action_active_includes_ability_r_and_f() -> void:
 	assert_true(character._is_any_action_active())
 
 
+## Found live via Phase 15's own functional test (see memory/gotchas.md):
+## _restore_predicted_state() restored ability_q/e/r/f's .state and
+## .move_frame from their Checkpoint fields, but never .current_move --
+## ActionFsm.advance_frame() dereferences current_move unconditionally
+## whenever state isn't NEUTRAL, so a reconciliation replay landing on a
+## restored non-NEUTRAL ability slot crashed with a real engine error
+## ("Invalid access to property or key 'startup_frames' on a base
+## object of type 'Nil'"). Pre-existing for Q/E too (this test would
+## fail identically against ability_q); R/F's live test is what first
+## exercised the reconciliation timing that triggers it.
+func test_restoring_a_predicted_checkpoint_preserves_ability_r_current_move() -> void:
+	var character := _spawn_character()
+	character.apply_input(_sample(false, false, false, true))
+	var checkpoint := character._capture_predicted_state(1)
+	character.ability_r_fsm.current_move = null
+	character._restore_predicted_state(checkpoint)
+	assert_eq(
+		character.ability_r_fsm.current_move,
+		character.ability_r.move,
+		"restoring a checkpoint must bring back the ability's current_move, not just state/move_frame"
+	)
+	character.ability_r_fsm.advance_frame()  # must not throw
+
+
 func test_apply_perk_from_lobby_state_scales_stats_on_ready() -> void:
 	var character := _spawn_character_with_perk(919191, "swift")
 	assert_eq(

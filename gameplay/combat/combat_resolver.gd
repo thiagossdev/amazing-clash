@@ -9,10 +9,11 @@ extends Node
 ## gameplay/projectiles/projectile.gd); only hit resolution is gated to
 ## the server. Pattern inherited from amazing-nauts'
 ## gameplay/combat/combat_resolver.gd. Melee, a single non-piercing
-## skillshot, and 2 independent ability slots (Q/E), each melee- or
-## projectile-style per its own AbilityResource.is_projectile (no
-## armor/buffs/VFX/objectives/piercing -- none of that exists in this
-## project's design yet). Phase 5: an eliminated attacker
+## skillshot, and 4 independent ability slots (Q/E/R/F, Phase 15 grew
+## this from 2), each melee- or projectile-style per its own
+## AbilityResource.is_projectile (no armor/buffs/VFX/objectives/piercing
+## -- none of that exists in this project's design yet). Phase 5: an
+## eliminated attacker
 ## (current_health <= 0) can no longer land a hit, and a hit between
 ## same-team characters is skipped unless MatchState.friendly_fire_enabled
 ## is true.
@@ -61,12 +62,14 @@ func _resolve_attacker(attacker: Node, roster: Array) -> void:
 	)
 	_resolve_ability_slot(attacker, roster, attacker.ability_q, attacker.ability_q_fsm, "ability_q")
 	_resolve_ability_slot(attacker, roster, attacker.ability_e, attacker.ability_e_fsm, "ability_e")
+	_resolve_ability_slot(attacker, roster, attacker.ability_r, attacker.ability_r_fsm, "ability_r")
+	_resolve_ability_slot(attacker, roster, attacker.ability_f, attacker.ability_f_fsm, "ability_f")
 
 
 ## Dispatches one ability slot to the melee or projectile resolution
-## path per its own AbilityResource.is_projectile -- the 2 test
-## abilities exercise one of each, but any future ability data (a
-## melee Q reslotted as a projectile, etc.) needs no code change here.
+## path per its own AbilityResource.is_projectile -- the test abilities
+## exercise one of each, but any future ability data (a melee Q
+## reslotted as a projectile, etc.) needs no code change here.
 func _resolve_ability_slot(
 	attacker: CharacterController,
 	roster: Array,
@@ -77,14 +80,27 @@ func _resolve_ability_slot(
 	if not resource:
 		return
 	if resource.is_projectile:
-		var direction := (
-			attacker.pending_ability_q_direction
-			if slot_name == "ability_q"
-			else attacker.pending_ability_e_direction
-		)
+		var direction := _pending_direction_for_slot(attacker, slot_name)
 		_maybe_launch_projectile(attacker, slot_fsm, resource.move, slot_name, direction)
 	else:
 		_resolve_melee(attacker, roster, slot_fsm, resource.move)
+
+
+## Phase 15: 4 ability slots (was 2 in Phase 3) made the original
+## inline 2-way ternary here unreadable -- a proper lookup instead of
+## growing it into a 4-way chain.
+func _pending_direction_for_slot(attacker: CharacterController, slot_name: String) -> Vector2:
+	match slot_name:
+		"ability_q":
+			return attacker.pending_ability_q_direction
+		"ability_e":
+			return attacker.pending_ability_e_direction
+		"ability_r":
+			return attacker.pending_ability_r_direction
+		"ability_f":
+			return attacker.pending_ability_f_direction
+		_:
+			return Vector2.RIGHT
 
 
 func _resolve_melee(
@@ -186,6 +202,10 @@ func _get_move_for_slot(caster: CharacterController, slot_name: String) -> MoveD
 			return caster.ability_q.move if caster.ability_q else null
 		"ability_e":
 			return caster.ability_e.move if caster.ability_e else null
+		"ability_r":
+			return caster.ability_r.move if caster.ability_r else null
+		"ability_f":
+			return caster.ability_f.move if caster.ability_f else null
 		_:
 			return null
 

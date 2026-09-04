@@ -30,21 +30,32 @@ class Checkpoint:
 	## Phase 3's independent ability slots -- each has its own ActionFsm
 	## and cooldown, exactly as reconciliation-sensitive as the shared
 	## action layer above for the same reason (activation is a one-shot,
-	## cooldown-gated trigger).
+	## cooldown-gated trigger). *_move mirrors action_move above -- found
+	## missing live during Phase 15 (see memory/gotchas.md): without it,
+	## restoring a checkpoint left current_move at whatever it happened
+	## to already be (often null), and ActionFsm.advance_frame()
+	## dereferences current_move unconditionally once state isn't
+	## NEUTRAL, crashing on replay. Latent for Q/E since Phase 3; R/F's
+	## own live test is what first hit the exact reconciliation timing
+	## that triggers it.
 	var ability_q_state: int = 0
 	var ability_q_move_frame: int = 0
 	var ability_q_cooldown_frames: int = 0
+	var ability_q_move: MoveDefinition
 	var ability_e_state: int = 0
 	var ability_e_move_frame: int = 0
 	var ability_e_cooldown_frames: int = 0
+	var ability_e_move: MoveDefinition
 	## Phase 15's 2 new class ability slots -- same reconciliation
 	## treatment as Q/E above.
 	var ability_r_state: int = 0
 	var ability_r_move_frame: int = 0
 	var ability_r_cooldown_frames: int = 0
+	var ability_r_move: MoveDefinition
 	var ability_f_state: int = 0
 	var ability_f_move_frame: int = 0
 	var ability_f_cooldown_frames: int = 0
+	var ability_f_move: MoveDefinition
 
 
 var _buffer := InputBuffer.new()

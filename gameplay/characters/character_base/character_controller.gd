@@ -490,15 +490,19 @@ func _capture_predicted_state(sequence: int) -> ClientPredictor.Checkpoint:
 	checkpoint.ability_q_state = ability_q_fsm.state
 	checkpoint.ability_q_move_frame = ability_q_fsm.move_frame
 	checkpoint.ability_q_cooldown_frames = _ability_q_cooldown_frames
+	checkpoint.ability_q_move = ability_q_fsm.current_move
 	checkpoint.ability_e_state = ability_e_fsm.state
 	checkpoint.ability_e_move_frame = ability_e_fsm.move_frame
 	checkpoint.ability_e_cooldown_frames = _ability_e_cooldown_frames
+	checkpoint.ability_e_move = ability_e_fsm.current_move
 	checkpoint.ability_r_state = ability_r_fsm.state
 	checkpoint.ability_r_move_frame = ability_r_fsm.move_frame
 	checkpoint.ability_r_cooldown_frames = _ability_r_cooldown_frames
+	checkpoint.ability_r_move = ability_r_fsm.current_move
 	checkpoint.ability_f_state = ability_f_fsm.state
 	checkpoint.ability_f_move_frame = ability_f_fsm.move_frame
 	checkpoint.ability_f_cooldown_frames = _ability_f_cooldown_frames
+	checkpoint.ability_f_move = ability_f_fsm.current_move
 	return checkpoint
 
 
@@ -514,15 +518,19 @@ func _restore_predicted_state(checkpoint: ClientPredictor.Checkpoint) -> void:
 	ability_q_fsm.state = checkpoint.ability_q_state as ActionFsm.State
 	ability_q_fsm.move_frame = checkpoint.ability_q_move_frame
 	_ability_q_cooldown_frames = checkpoint.ability_q_cooldown_frames
+	ability_q_fsm.current_move = checkpoint.ability_q_move
 	ability_e_fsm.state = checkpoint.ability_e_state as ActionFsm.State
 	ability_e_fsm.move_frame = checkpoint.ability_e_move_frame
 	_ability_e_cooldown_frames = checkpoint.ability_e_cooldown_frames
+	ability_e_fsm.current_move = checkpoint.ability_e_move
 	ability_r_fsm.state = checkpoint.ability_r_state as ActionFsm.State
 	ability_r_fsm.move_frame = checkpoint.ability_r_move_frame
 	_ability_r_cooldown_frames = checkpoint.ability_r_cooldown_frames
+	ability_r_fsm.current_move = checkpoint.ability_r_move
 	ability_f_fsm.state = checkpoint.ability_f_state as ActionFsm.State
 	ability_f_fsm.move_frame = checkpoint.ability_f_move_frame
 	_ability_f_cooldown_frames = checkpoint.ability_f_cooldown_frames
+	ability_f_fsm.current_move = checkpoint.ability_f_move
 
 
 func _begin_visual_correction_smoothing(pre_correction_position: Vector2) -> void:

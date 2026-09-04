@@ -20,6 +20,10 @@ func test_vanguard_kit_is_wired() -> void:
 	assert_false(character.ability_q.is_projectile)
 	assert_eq(character.ability_e.ability_name, "Bulwark Strike")
 	assert_false(character.ability_e.is_projectile)
+	assert_eq(character.ability_r.ability_name, "Shoulder Charge")
+	assert_false(character.ability_r.is_projectile)
+	assert_eq(character.ability_f.ability_name, "Execute")
+	assert_false(character.ability_f.is_projectile)
 	assert_eq(character.max_health, 120.0)
 	assert_eq(character.current_health, 120.0)
 
@@ -32,6 +36,10 @@ func test_ranged_mage_kit_is_wired() -> void:
 	assert_true(character.ability_q.is_projectile)
 	assert_eq(character.ability_e.ability_name, "Arcane Nova")
 	assert_true(character.ability_e.is_projectile)
+	assert_eq(character.ability_r.ability_name, "Mana Spike")
+	assert_true(character.ability_r.is_projectile)
+	assert_eq(character.ability_f.ability_name, "Meteor")
+	assert_true(character.ability_f.is_projectile)
 	assert_eq(character.max_health, 80.0)
 	assert_eq(character.current_health, 80.0)
 
@@ -44,6 +52,10 @@ func test_warden_kit_is_wired() -> void:
 	assert_false(character.ability_q.is_projectile)
 	assert_eq(character.ability_e.ability_name, "Overwhelm")
 	assert_true(character.ability_e.is_projectile)
+	assert_eq(character.ability_r.ability_name, "Restraining Web")
+	assert_true(character.ability_r.is_projectile)
+	assert_eq(character.ability_f.ability_name, "Guardian's Grasp")
+	assert_false(character.ability_f.is_projectile)
 	assert_eq(character.max_health, 100.0)
 	assert_eq(character.current_health, 100.0)
 
