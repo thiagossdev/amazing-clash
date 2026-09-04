@@ -602,6 +602,19 @@ Format:
   `is_inside_tree()` guard as defense against whatever's already
   in-flight when you do.
 
+- **2026-09-04** — Phase 18's fork committed `net/game_log.gd` but not
+  its companion `net/game_log.gd.uid` -- not caught by `gdformat`/
+  `gdlint`/GUT (none of them care whether a `.uid` file exists), only
+  surfaced when the orchestrating session's post-merge `godot4
+  --headless --import` silently generated a fresh one, which then
+  showed up as an untracked file. → **Rule**: after merging a
+  fork-built phase, `git status --short` right after the mandatory
+  `--import` pass -- a `??` on a `.uid` file means the fork's own `git
+  add` missed it (easy to do, since a `.uid` is easy to forget
+  alongside its `.gd`/`.tscn`/`.tres` and produces no lint/test
+  failure on its own) -- add and commit it immediately rather than
+  leaving it untracked.
+
 <!--
 Examples:
 
