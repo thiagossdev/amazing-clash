@@ -109,6 +109,7 @@ func _ready() -> void:
 			var err := NetworkManager.host()
 			if err != OK:
 				push_error("dev_bootstrap: failed to host (%s)" % err)
+				GameLog.error("dev_bootstrap_host_failed", {"error": err})
 			else:
 				MatchState.enter_in_progress()
 		elif "--join" in args:
@@ -119,6 +120,7 @@ func _ready() -> void:
 			var err := NetworkManager.join()
 			if err != OK:
 				push_error("dev_bootstrap: failed to join (%s)" % err)
+				GameLog.error("dev_bootstrap_join_failed", {"error": err})
 
 		if "--simulate-move" in args:
 			Input.action_press(&"move_right")

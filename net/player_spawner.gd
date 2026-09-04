@@ -159,11 +159,13 @@ func _ready() -> void:
 			if raw_value.is_valid_float():
 				_grace_period_seconds = raw_value.to_float()
 			else:
-				push_error(
-					(
-						"--dev-grace-period=%s is not a valid number -- ignoring, keeping the %s default"
-						% [raw_value, GRACE_PERIOD_SECONDS]
-					)
+				var message := (
+					"--dev-grace-period=%s is not a valid number -- ignoring, keeping the %s default"
+					% [raw_value, GRACE_PERIOD_SECONDS]
+				)
+				push_error(message)
+				GameLog.error(
+					"invalid_dev_flag", {"flag": "--dev-grace-period", "value": raw_value}
 				)
 	add_to_group(&"player_spawner")
 	var characters := get_node(characters_path)
@@ -286,6 +288,7 @@ func _begin_grace_period(peer_id: int, characters: Node) -> void:
 	_grace_timers[peer_id] = timer
 	timer.timeout.connect(func(): _expire_grace_period(peer_id, characters))
 	MatchState.broadcast_grace_period_count(_grace_timers.size())
+	GameLog.info("disconnect_grace_period_started", {"peer_id": peer_id})
 
 
 ## Called once the grace-period timer actually elapses. A no-op if
@@ -300,6 +303,7 @@ func _expire_grace_period(peer_id: int, characters: Node) -> void:
 	_invalidate_token_for(peer_id)
 	_despawn_for_peer(peer_id, characters)
 	MatchState.broadcast_grace_period_count(_grace_timers.size())
+	GameLog.info("disconnect_grace_period_expired_forfeit", {"peer_id": peer_id})
 
 
 ## Random, not cryptographic (see _reconnect_tokens' own doc comment).
@@ -356,6 +360,9 @@ func try_reclaim(token: String, new_peer_id: int) -> bool:
 	character._rpc_reassign_controller.rpc(new_peer_id)
 	MatchState.broadcast_grace_period_count(_grace_timers.size())
 	_issue_reconnect_token(new_peer_id)
+	GameLog.info(
+		"reconnect_reclaimed", {"original_peer_id": original_peer_id, "new_peer_id": new_peer_id}
+	)
 	return true
 
 
