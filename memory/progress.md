@@ -801,18 +801,6 @@ changed but this file wasn't updated.
   `test_replay_driver.gd`). 246/246 GUT passing. See `memory/plan.md`'s
   Slice 20 2nd follow-up note and `memory/verify.md`'s Phase 20 section
   for full evidence.
-- [x] **"Back to List" once a replay finishes (2026-09-04, human
-  owner's own request).** Play/Pause is a dead-looking control once
-  playback ends (`ReplayDriver.play()` is already a no-op past the
-  end) -- repurposed into a "Back to List" button (relabeled, grabs
-  keyboard focus) instead of adding a 2nd, redundant back button next
-  to the existing one. 2 new tests in `tests/unit/test_replay_player.gd`
-  (relabel + focus-grab); a 3rd test that also pressed the button was
-  dropped after it triggered a real `change_scene_to_file()` mid-suite
-  and left orphan nodes -- not something worth exercising in a unit
-  test, matching this project's existing convention of never directly
-  testing the (already pre-existing, likewise untested) plain Back
-  button's own navigation either. 248/248 GUT passing.
 - [x] **Fixed: the entire replay VCR control row was off-screen
   (2026-09-04, found live -- "enter/space deu certo. Mas não vi esse
   botão").** `ui/replay/ReplayPlayer.tscn`'s bottom `Controls` row
@@ -829,6 +817,16 @@ changed but this file wasn't updated.
   viewport size -- confirmed red (6 failures matching every affected
   control) before the fix, green after. 249/249 GUT passing. See
   `memory/gotchas.md` for the full mechanism.
+- [x] ~~"Back to List" once a replay finishes~~ -- built, then
+  reverted the same day (`git revert 5d89ebb`) once the real cause of
+  "não vi esse botão" turned out to be the off-screen-row bug above,
+  not a missing affordance: the plain `BackButton` was ALWAYS present
+  and working, just as invisible as everything else in that row until
+  the viewport fix. Once that's fixed, `BackButton` alone already
+  covers "get back to the list at any time, including once finished" --
+  repurposing Play/Pause into a 2nd copy of the same action is
+  redundant. Human owner's own call: "esse back to list, fica
+  irrelevante, já que tem o back sempre."
 
 ## Backlog (next up)
 

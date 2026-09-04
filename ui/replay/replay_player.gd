@@ -29,12 +29,6 @@ extends Node2D
 ## exactly right, confirmed by the arena/viewport math, not just the
 ## missing HitboxViewer node fixed separately the same day.
 ##
-## Once the replay finishes, Play/Pause has nothing left to do
-## (ReplayDriver.play() is already a no-op past the end) -- repurposed
-## into a "Back to List" button and given keyboard focus instead of
-## leaving a dead-looking control on screen, per the human owner's own
-## follow-up request for an obvious way back at that point.
-##
 ## The replay's own path arrives via SceneTree meta (set by ui/replay/
 ## replay_list.gd right before change_scene_to_file(), the same
 ## "read one meta key back out of the tree" hand-off this project has
@@ -66,12 +60,6 @@ var _dragging_scrubber: bool = false
 ## -1 means the camera is free (arrow-key controlled); otherwise an
 ## index into characters_path's children, wrapped every Tab press.
 var _camera_target_index: int = -1
-## Tracks whether _refresh_ui() already handled the finished-state
-## transition (button text swap + focus grab) -- re-armed the moment
-## is_finished() goes false again (seeking backward past the end),
-## so re-reaching the end via a later seek grabs focus again too, not
-## just the very first time ever.
-var _finish_ui_shown: bool = false
 
 
 func _ready() -> void:
@@ -169,15 +157,7 @@ func _character_at(index: int) -> Node2D:
 	return characters.get_child(index % characters.get_child_count()) as Node2D
 
 
-## Once the replay is finished, Play/Pause has nothing left to do
-## (ReplayDriver.play() is already a no-op past the end) -- repurposed
-## into a "Back to List" button instead of leaving a dead-looking
-## control on screen, per the human owner's own request for an obvious
-## way back once playback reaches the end.
 func _on_play_pause_pressed() -> void:
-	if _driver.is_finished():
-		_on_back_pressed()
-		return
 	if _driver.is_playing():
 		_driver.pause()
 	else:
@@ -198,15 +178,7 @@ func _on_back_pressed() -> void:
 func _refresh_ui() -> void:
 	if not is_instance_valid(_driver):
 		return
-	var play_pause_button: Button = get_node(play_pause_button_path)
-	if _driver.is_finished():
-		play_pause_button.text = "Back to List"
-		if not _finish_ui_shown:
-			_finish_ui_shown = true
-			play_pause_button.grab_focus()
-	else:
-		_finish_ui_shown = false
-		play_pause_button.text = "Pause" if _driver.is_playing() else "Play"
+	get_node(play_pause_button_path).text = "Pause" if _driver.is_playing() else "Play"
 	if not _dragging_scrubber:
 		get_node(scrubber_path).value = _driver.ticks_processed()
 	var round_wins := _driver.round_wins()
