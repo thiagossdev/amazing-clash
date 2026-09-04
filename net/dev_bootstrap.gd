@@ -36,7 +36,10 @@ extends Node
 ## so it always casts whichever ability the fallback boot (index 0)
 ## grants, not a specific boot pick (see ui/lobby/lobby.gd's own
 ## --dev-boot=<id> for testing an actual boot CHOICE instead of just
-## the cast mechanic). `-- --friendly-fire` sets
+## the cast mechanic). `-- --dev-print-log-path` prints
+## "GAME_LOG_PATH:<path>" once GameLog's file is open (Phase 18) --
+## grep this line out of a headless run's stdout to find the real
+## user://logs/ file to inspect. `-- --friendly-fire` sets
 ## MatchState.friendly_fire_enabled -- a per-match server setting
 ## decided at startup, not a live-togglable console command (who's
 ## allowed to change a match rule mid-game is a separate authority
@@ -121,6 +124,9 @@ func _ready() -> void:
 			if err != OK:
 				push_error("dev_bootstrap: failed to join (%s)" % err)
 				GameLog.error("dev_bootstrap_join_failed", {"error": err})
+
+		if "--dev-print-log-path" in args:
+			print("GAME_LOG_PATH:%s" % GameLog.current_log_path())
 
 		if "--simulate-move" in args:
 			Input.action_press(&"move_right")

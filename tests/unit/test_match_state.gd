@@ -7,6 +7,25 @@ extends GutTest
 
 const MatchStateScript := preload("res://core/match_state.gd")
 
+## Phase 18: resolve_round_result() now calls GameLog.info() -- point
+## every test in this file at a scratch dir so none of them ever touch
+## the real user://logs/ location, even the ones below that don't
+## themselves assert on log content.
+const GAME_LOG_TEST_DIR := "user://test_game_log_match_state"
+
+
+func before_each() -> void:
+	GameLog.reset_for_testing(GAME_LOG_TEST_DIR)
+
+
+func after_each() -> void:
+	var dir := DirAccess.open(GAME_LOG_TEST_DIR)
+	if dir:
+		for file_name in dir.get_files():
+			dir.remove(file_name)
+	GameLog.reset_for_testing()
+	DirAccess.remove_absolute(GAME_LOG_TEST_DIR)
+
 
 func test_decide_round_outcome_draw_does_not_change_wins() -> void:
 	var outcome := MatchState.decide_round_outcome(WinCondition.DRAW, {0: 1, 1: 0})
@@ -78,3 +97,35 @@ func test_is_early_confirm_false_at_or_above_the_threshold() -> void:
 	assert_false(ms.is_early_confirm(13.0))
 	assert_false(ms.is_early_confirm(14.5))
 	ms.free()
+
+
+## Phase 18: a fresh instance, not the real MatchState autoload -- same
+## isolation reasoning every other test above already uses, so this
+## never touches shared singleton state other tests (in this file or
+## elsewhere) might depend on.
+func test_resolve_round_result_decisive_non_final_round_logs_round_ended() -> void:
+	var ms: Node = add_child_autofree(MatchStateScript.new())
+	ms.current_phase = MatchStateScript.Phase.IN_PROGRESS
+	ms.resolve_round_result(0)
+	var events := _logged_events()
+	assert_true(events.has("round_ended"))
+	assert_false(events.has("match_ended"), "1 round win is below ROUND_TARGET (2)")
+
+
+func test_resolve_round_result_reaching_round_target_logs_match_ended() -> void:
+	var ms: Node = add_child_autofree(MatchStateScript.new())
+	ms.current_phase = MatchStateScript.Phase.IN_PROGRESS
+	ms.round_wins = {0: 1}
+	ms.resolve_round_result(0)
+	assert_true(_logged_events().has("match_ended"))
+
+
+func _logged_events() -> Array:
+	var events: Array = []
+	var file := FileAccess.open(GameLog.current_log_path(), FileAccess.READ)
+	while not file.eof_reached():
+		var line := file.get_line()
+		if not line.is_empty():
+			events.append((JSON.parse_string(line) as Dictionary)["event"])
+	file.close()
+	return events

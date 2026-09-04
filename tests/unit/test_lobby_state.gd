@@ -6,6 +6,24 @@ extends GutTest
 
 const LobbyStateScript := preload("res://net/lobby_state.gd")
 
+## Phase 18: _log_final_loadouts() now calls GameLog.info() -- point
+## every test in this file at a scratch dir, same reasoning
+## test_match_state.gd's own before_each/after_each already uses.
+const GAME_LOG_TEST_DIR := "user://test_game_log_lobby_state"
+
+
+func before_each() -> void:
+	GameLog.reset_for_testing(GAME_LOG_TEST_DIR)
+
+
+func after_each() -> void:
+	var dir := DirAccess.open(GAME_LOG_TEST_DIR)
+	if dir:
+		for file_name in dir.get_files():
+			dir.remove(file_name)
+	GameLog.reset_for_testing()
+	DirAccess.remove_absolute(GAME_LOG_TEST_DIR)
+
 
 func test_valid_class_id_passes_through() -> void:
 	assert_eq(LobbyState.resolve_class_id("warden"), "warden")
@@ -389,4 +407,25 @@ func test_registering_again_does_not_reset_an_already_chosen_boot() -> void:
 	lobby.player_boot_ids[42] = "tumbling_boots"
 	lobby._apply_registration(42, "warden")
 	assert_eq(lobby.player_boot_ids[42], "tumbling_boots")
+	lobby.free()
+
+
+func test_log_final_loadouts_logs_one_player_loadout_line_per_registered_peer() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby._apply_registration(42, "warden")
+	lobby.player_team_ids[42] = 1
+	lobby.player_weapon_ids[42] = "warhammer"
+	lobby.player_boot_ids[42] = "tumbling_boots"
+	lobby.player_perk_ids[42] = "swift"
+	lobby._log_final_loadouts()
+	var file := FileAccess.open(GameLog.current_log_path(), FileAccess.READ)
+	var line := file.get_line()
+	file.close()
+	var parsed: Dictionary = JSON.parse_string(line)
+	assert_eq(parsed["event"], "player_loadout")
+	var data: Dictionary = parsed["data"]
+	assert_eq(data["class"], "warden")
+	assert_eq(data["weapon"], "warhammer")
+	assert_eq(data["boot"], "tumbling_boots")
+	assert_eq(data["perk"], "swift")
 	lobby.free()
