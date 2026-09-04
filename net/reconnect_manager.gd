@@ -5,11 +5,19 @@ extends Node
 ## see memory/plan.md's Slice 13b block) and drives the client-side
 ## auto-reconnect attempt when the connection drops mid-match.
 ##
-## An autoload specifically because it must survive the scene reload a
-## reconnect attempt causes: the stale `TestArena.tscn` a dropped
-## connection leaves the player on gets reloaded fresh once reconnected
-## (see _rpc_receive_reconnect_result() below), which would destroy any
-## state kept on a regular scene node like PlayerSpawner along with it.
+## An autoload specifically so it survives NetworkManager.close()/
+## join() re-pointing multiplayer.multiplayer_peer out from under
+## whatever scene happens to be active. Deliberately does NOT reload
+## TestArena.tscn on a successful reconnect -- that was tried first and
+## found live to corrupt MultiplayerSpawner's own replication caches on
+## both ends (cascading "Node not found"/"Invalid packet received"
+## engine errors, see memory/gotchas.md): the client's local TestArena
+## is left exactly as the disconnect froze it (no despawn ever ran
+## against it -- see net/player_spawner.gd's own grace-period design),
+## so PlayerSpawner._rpc_reassign_controller() on the existing, still-
+## present character node is all that's needed to resume it; no reload
+## required, and none of that node's already-established replication
+## state gets invalidated.
 ##
 ## Also the fix for a real bug found via /waza:hunt during play-testing
 ## (2026-09-03, see memory/gotchas.md): a dropped connection used to
@@ -21,11 +29,6 @@ extends Node
 
 signal reconnect_status_changed
 
-const TEST_ARENA_SCENE := "res://maps/test_arena/TestArena.tscn"
-## Matches net/player_spawner.gd's own GRACE_PERIOD_SECONDS -- kept as
-## a separate constant rather than reaching into a PlayerSpawner
-## instance that may not exist right now (this client's own TestArena
-## may already be gone by the time reconnecting starts).
 const GRACE_PERIOD_SECONDS := 30.0
 const RETRY_INTERVAL_SECONDS := 1.0
 
@@ -139,7 +142,6 @@ func _rpc_receive_reconnect_result(success: bool) -> void:
 		return
 	_attempting = false
 	_status_text = ""
-	get_tree().change_scene_to_file(TEST_ARENA_SCENE)
 
 
 func _give_up() -> void:

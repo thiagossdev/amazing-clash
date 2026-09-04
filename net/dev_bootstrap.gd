@@ -45,8 +45,26 @@ extends Node
 ## all -- a real bug this project hit once, root-caused via the "authority
 ## RPC not allowed" engine error it produced.
 
+## Slice 13b: a successful reconnect reloads TestArena.tscn fresh (see
+## net/reconnect_manager.gd's own _rpc_receive_reconnect_result()),
+## which re-instantiates this same node and re-runs _ready() with the
+## SAME --join/--server cmdline args still present -- found live, that
+## re-ran NetworkManager.join() a 2nd time on an already-just-restored
+## connection, tearing it down and forcing yet another reconnect cycle
+## (observably: a 3rd distinct peer_id, orphaned duplicate character,
+## repeating forever). _ran_once is a plain static var, not per-
+## instance state, precisely because it must survive across that
+## reload (a fresh instance's own field would reset to false and never
+## catch this). Real players are unaffected -- host_join.gd's own
+## normal launch never sets --join/--server, so every block below is
+## already a no-op for them regardless of this guard.
+static var _ran_once := false
+
 
 func _ready() -> void:
+	if _ran_once:
+		return
+	_ran_once = true
 	var args := OS.get_cmdline_user_args()
 	for arg in args:
 		if arg.begins_with("--latency="):

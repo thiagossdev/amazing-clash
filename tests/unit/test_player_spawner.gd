@@ -183,3 +183,35 @@ func test_try_reclaim_same_token_twice_only_succeeds_once() -> void:
 	assert_false(
 		spawner.try_reclaim("a-real-token", 1000), "the same token can't reclaim a 2nd time"
 	)
+
+
+## Found live: multiplayer.peer_connected -> _spawn_for_peer() always
+## fires for a reconnecting peer's raw ENet connection before its own
+## reconnect-token RPC can possibly arrive, spawning a fresh throwaway
+## character for new_peer_id. Left unhandled, that duplicate survives
+## alongside the reclaimed original -- both answering to the same
+## controlling_peer_id (a client-side is_owned_by_me() would then match
+## both, driving 2 characters from 1 set of inputs). try_reclaim() must
+## remove that throwaway as part of a successful reclaim -- after
+## PlayerSpawner.RECONNECT_DUPLICATE_CLEANUP_DELAY_SECONDS, per that
+## constant's own doc comment (a live-verified interim mitigation for a
+## MultiplayerSpawner replication race, not instant). This test really
+## does wait out that real delay rather than mocking the timer, so it
+## costs real wall-clock time in the suite -- accepted deliberately to
+## exercise the exact same await path production code runs, instead of
+## asserting around a mock that could drift from it.
+func test_try_reclaim_despawns_a_duplicate_spawned_for_the_new_peer_id() -> void:
+	var setup := _spawner_characters_and_reconnecting_character()
+	var spawner: PlayerSpawner = setup[0]
+	var characters: Node = setup[1]
+	var duplicate: CharacterController = CHARACTER_SCENE.instantiate()
+	duplicate.name = "999"
+	characters.add_child(duplicate)
+	assert_true(spawner.try_reclaim("a-real-token", 999))
+	await get_tree().create_timer(spawner.RECONNECT_DUPLICATE_CLEANUP_DELAY_SECONDS + 0.1).timeout
+	assert_false(
+		characters.has_node("999"), "the throwaway spawned for the new peer_id must be removed"
+	)
+	assert_eq(
+		characters.get_child_count(), 1, "only the reclaimed original character should remain"
+	)
