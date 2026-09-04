@@ -659,11 +659,10 @@ changed but this file wasn't updated.
   disabled (not-ready vs. invalid team split) — a small UX follow-up
   from Phase 8, not done there since it wasn't asked for and doesn't
   affect correctness.
-- [ ] A real reconnect/grace-period system — a mid-match disconnect
-  currently resolves as an immediate forfeit for that team/player
-  (Phase 5's elimination mechanism, generalized to N teams in Phase 6),
-  matching "online matches should not pause," but the docs' own
-  "Reconnect" sub-state is unbuilt.
+- [x] ~~A real reconnect/grace-period system~~ — resolved by Slices
+  13a+13b (grace-period freeze + token-based reconnect), see the
+  Completed entries above. This line was stale, left over from before
+  those slices shipped.
 - [ ] The persistent build-investment layer (unlocks, respec economy)
   and a minimal pre-match loadout draft — now scoped by the confirmed
   decision (2026-09-03): **small, per-character, currency-gated** (not
