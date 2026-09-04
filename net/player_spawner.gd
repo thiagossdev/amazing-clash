@@ -89,6 +89,39 @@ const FFA_SPAWN_SLOTS := 8
 ## already use.
 const GRACE_PERIOD_SECONDS := 30.0
 
+## KNOWN LIMITATION (not fully closed by this phase, see memory/
+## gotchas.md and memory/plan.md's Slice 13b block): multiplayer.
+## peer_connected fires -- spawning a fresh throwaway character for
+## new_peer_id via the normal _spawn_for_peer() path -- the instant a
+## reconnecting peer's raw ENet connection completes, unavoidably
+## before its own reconnect-token RPC can possibly arrive (that RPC is
+## itself a round trip over the connection peer_connected just
+## reported as established; the server side of that race can't be
+## reordered away). Found live: without ANY cleanup, that throwaway
+## survives forever alongside the reclaimed original -- 2 characters
+## permanently answering to the same controlling_peer_id, the
+## reconnecting client fully predicting and driving both from 1 set of
+## inputs. queue_free()-ing the throwaway INSTANTLY was tried first and
+## made things worse -- found live, it raced MultiplayerSpawner's own
+## initial state-sync burst to the just-connected peer and produced
+## real engine errors ("Node not found", "Invalid packet received",
+## despawning a node particular peers had never finished receiving the
+## spawn for). This constant, used in _despawn_reconnect_duplicate()
+## below, is a live-verified interim mitigation, not a real fix:
+## waiting this long before freeing the throwaway let that sync burst
+## settle with zero engine errors in every trial run here, shrinking
+## the dual-control window from permanent down to about this delay's
+## length -- still a real, if brief, window, and the delay is a guess
+## calibrated against loopback, not a network-latency-derived bound
+## (Godot's MultiplayerSpawner exposes no per-peer "initial sync
+## complete" signal to key off instead). The correct fix is gating
+## _spawn_for_peer() behind Godot's own SceneMultiplayer peer-
+## authentication API (peer_authenticating / complete_authentication)
+## so a reconnecting peer's token exchange resolves BEFORE it ever
+## counts as newly connected -- out of scope for this phase, flagged
+## for follow-up.
+const RECONNECT_DUPLICATE_CLEANUP_DELAY_SECONDS := 1.0
+
 @export var characters_path: NodePath = ^"../Characters"
 
 var _next_spawn_index: int = 0
@@ -97,6 +130,12 @@ var _next_index_for_team: Dictionary = {}
 ## peer still inside its grace period. Server-only.
 var _grace_timers: Dictionary = {}
 var _grace_period_seconds: float = GRACE_PERIOD_SECONDS
+## Slice 13b: token (String) -> original peer_id, one entry per
+## currently-connected OR currently-grace-period character. Server-
+## only. Not cryptographically strong on purpose -- this is "the same
+## running client reconnecting after a drop," not an account/security
+## boundary (see memory/plan.md's Slice 13b block).
+var _reconnect_tokens: Dictionary = {}
 
 
 ## Phase 7: no longer spawns unconditionally at _ready() -- doing so
@@ -126,6 +165,7 @@ func _ready() -> void:
 						% [raw_value, GRACE_PERIOD_SECONDS]
 					)
 				)
+	add_to_group(&"player_spawner")
 	var characters := get_node(characters_path)
 	multiplayer.peer_connected.connect(func(peer_id): _spawn_for_peer(peer_id, characters))
 	multiplayer.peer_disconnected.connect(func(peer_id): _begin_grace_period(peer_id, characters))
@@ -155,6 +195,7 @@ func _spawn_for_peer(peer_id: int, characters: Node) -> void:
 	character.position = _spawn_position_for(character.team)
 	_next_spawn_index += 1
 	characters.add_child(character)
+	_issue_reconnect_token(peer_id)
 	# Perk multipliers are NOT applied here, deliberately -- this method
 	# only ever runs on the server (see _ready()'s own early return
 	# above). A perk's move_speed_multiplier/cooldown_multiplier are
@@ -256,8 +297,70 @@ func _expire_grace_period(peer_id: int, characters: Node) -> void:
 	if not _grace_timers.has(peer_id):
 		return
 	_grace_timers.erase(peer_id)
+	_invalidate_token_for(peer_id)
 	_despawn_for_peer(peer_id, characters)
 	MatchState.broadcast_grace_period_count(_grace_timers.size())
+
+
+## Random, not cryptographic (see _reconnect_tokens' own doc comment).
+## Sent to the owning peer only -- never broadcast, never logged. The
+## host's own character is spawned locally (peer_id == our own unique
+## id), and Godot's RPC layer rejects a non-call_local @rpc targeted at
+## yourself ("RPC on yourself is not allowed by selected mode", found
+## live) -- a direct call sidesteps that without changing the RPC's
+## authorization mode for the real network case.
+func _issue_reconnect_token(peer_id: int) -> void:
+	var token := "%d-%d" % [Time.get_ticks_usec(), randi()]
+	_reconnect_tokens[token] = peer_id
+	if peer_id == multiplayer.get_unique_id():
+		ReconnectManager._rpc_receive_token(token)
+	else:
+		ReconnectManager._rpc_receive_token.rpc_id(peer_id, token)
+
+
+func _invalidate_token_for(peer_id: int) -> void:
+	for token in _reconnect_tokens.keys():
+		if _reconnect_tokens[token] == peer_id:
+			_reconnect_tokens.erase(token)
+			return
+
+
+## Slice 13b: called by net/reconnect_manager.gd's own RPC handler
+## (server-only) when a peer presents a token. Server-authoritative --
+## the caller passes the RPC's own multiplayer.get_remote_sender_id(),
+## never a client-supplied id, so a peer can only ever reclaim
+## whichever character its OWN presented token actually maps to. A
+## valid token whose character has already fully despawned (grace
+## expired, or the token is simply unknown/reused) fails closed. See
+## _despawn_reconnect_duplicate()'s own doc comment for a known,
+## live-confirmed limitation of the cleanup this triggers.
+func try_reclaim(token: String, new_peer_id: int) -> bool:
+	if not _reconnect_tokens.has(token):
+		return false
+	var original_peer_id: int = _reconnect_tokens[token]
+	if not _grace_timers.has(original_peer_id):
+		return false
+	var characters := get_node(characters_path)
+	var character := characters.get_node_or_null(str(original_peer_id)) as CharacterController
+	if not character:
+		return false
+	_grace_timers.erase(original_peer_id)
+	_reconnect_tokens.erase(token)
+	_despawn_reconnect_duplicate(new_peer_id, characters)
+	character._rpc_reassign_controller.rpc(new_peer_id)
+	MatchState.broadcast_grace_period_count(_grace_timers.size())
+	return true
+
+
+## See RECONNECT_DUPLICATE_CLEANUP_DELAY_SECONDS' own doc comment above
+## for why this waits before freeing, and what that leaves unresolved.
+func _despawn_reconnect_duplicate(new_peer_id: int, characters: Node) -> void:
+	var duplicate := characters.get_node_or_null(str(new_peer_id))
+	if not duplicate:
+		return
+	_invalidate_token_for(new_peer_id)
+	await get_tree().create_timer(RECONNECT_DUPLICATE_CLEANUP_DELAY_SECONDS).timeout
+	duplicate.queue_free()
 
 
 func _despawn_for_peer(peer_id: int, characters: Node) -> void:

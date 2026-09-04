@@ -6,6 +6,8 @@ extends GutTest
 ## save/restore MatchState.match_mode so a mutation here can't leak
 ## into any other test file sharing the same autoload instance.
 
+const CHARACTER_SCENE := preload("res://gameplay/characters/character_base/Character.tscn")
+
 
 func _spawner() -> PlayerSpawner:
 	return autofree(PlayerSpawner.new())
@@ -130,3 +132,86 @@ func test_expire_grace_period_is_a_noop_when_not_tracked() -> void:
 	var characters: Node = autofree(Node.new())
 	spawner._expire_grace_period(424242, characters)
 	assert_eq(characters.get_child_count(), 0)
+
+
+## Slice 13b: try_reclaim() is server-authoritative decision logic --
+## the RPC plumbing itself (net/reconnect_manager.gd) is verified live,
+## same convention this project already uses for every other RPC-
+## triggered flow (see e.g. test_lobby_state.gd's own doc comment).
+func _spawner_characters_and_reconnecting_character() -> Array:
+	var spawner_and_characters := _spawner_and_characters()
+	var spawner: PlayerSpawner = spawner_and_characters[0]
+	var characters: Node = spawner_and_characters[1]
+	var character: CharacterController = CHARACTER_SCENE.instantiate()
+	character.name = "555"
+	characters.add_child(character)
+	spawner._grace_timers[555] = null
+	spawner._reconnect_tokens["a-real-token"] = 555
+	return [spawner, characters, character]
+
+
+func test_try_reclaim_rejects_an_unknown_token() -> void:
+	var setup := _spawner_characters_and_reconnecting_character()
+	var spawner: PlayerSpawner = setup[0]
+	assert_false(spawner.try_reclaim("not-a-real-token", 999))
+
+
+func test_try_reclaim_rejects_a_token_whose_character_is_no_longer_in_grace() -> void:
+	var setup := _spawner_characters_and_reconnecting_character()
+	var spawner: PlayerSpawner = setup[0]
+	spawner._grace_timers.erase(555)
+	assert_false(
+		spawner.try_reclaim("a-real-token", 999),
+		"grace already expired (or was never entered) -- the slot is gone"
+	)
+
+
+func test_try_reclaim_accepts_a_valid_token_and_reassigns_control() -> void:
+	var setup := _spawner_characters_and_reconnecting_character()
+	var spawner: PlayerSpawner = setup[0]
+	var character: CharacterController = setup[2]
+	assert_true(spawner.try_reclaim("a-real-token", 999))
+	assert_eq(character.controlling_peer_id, 999)
+	assert_false(spawner._grace_timers.has(555), "reclaiming cancels the grace period")
+	assert_false(spawner._reconnect_tokens.has("a-real-token"), "a token is single-use")
+
+
+func test_try_reclaim_same_token_twice_only_succeeds_once() -> void:
+	var setup := _spawner_characters_and_reconnecting_character()
+	var spawner: PlayerSpawner = setup[0]
+	assert_true(spawner.try_reclaim("a-real-token", 999))
+	assert_false(
+		spawner.try_reclaim("a-real-token", 1000), "the same token can't reclaim a 2nd time"
+	)
+
+
+## Found live: multiplayer.peer_connected -> _spawn_for_peer() always
+## fires for a reconnecting peer's raw ENet connection before its own
+## reconnect-token RPC can possibly arrive, spawning a fresh throwaway
+## character for new_peer_id. Left unhandled, that duplicate survives
+## alongside the reclaimed original -- both answering to the same
+## controlling_peer_id (a client-side is_owned_by_me() would then match
+## both, driving 2 characters from 1 set of inputs). try_reclaim() must
+## remove that throwaway as part of a successful reclaim -- after
+## PlayerSpawner.RECONNECT_DUPLICATE_CLEANUP_DELAY_SECONDS, per that
+## constant's own doc comment (a live-verified interim mitigation for a
+## MultiplayerSpawner replication race, not instant). This test really
+## does wait out that real delay rather than mocking the timer, so it
+## costs real wall-clock time in the suite -- accepted deliberately to
+## exercise the exact same await path production code runs, instead of
+## asserting around a mock that could drift from it.
+func test_try_reclaim_despawns_a_duplicate_spawned_for_the_new_peer_id() -> void:
+	var setup := _spawner_characters_and_reconnecting_character()
+	var spawner: PlayerSpawner = setup[0]
+	var characters: Node = setup[1]
+	var duplicate: CharacterController = CHARACTER_SCENE.instantiate()
+	duplicate.name = "999"
+	characters.add_child(duplicate)
+	assert_true(spawner.try_reclaim("a-real-token", 999))
+	await get_tree().create_timer(spawner.RECONNECT_DUPLICATE_CLEANUP_DELAY_SECONDS + 0.1).timeout
+	assert_false(
+		characters.has_node("999"), "the throwaway spawned for the new peer_id must be removed"
+	)
+	assert_eq(
+		characters.get_child_count(), 1, "only the reclaimed original character should remain"
+	)

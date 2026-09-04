@@ -270,3 +270,35 @@ func test_position_at_tick_falls_back_to_live_position_when_history_is_empty() -
 	var character := _spawn_character()
 	character.global_position = Vector2(50, 50)
 	assert_eq(character.position_at_tick(5), Vector2(50, 50))
+
+
+## Slice 13b: is_owned_by_me() compares controlling_peer_id, resolved
+## from the node's own name in _ready() when never set explicitly by a
+## spawner -- this keeps every OTHER test in this file (which never
+## touches controlling_peer_id at all) working unchanged.
+func test_controlling_peer_id_resolves_from_node_name_by_default() -> void:
+	var character := CHARACTER_SCENE.instantiate()
+	character.name = "777"
+	add_child_autofree(character)
+	assert_eq(character.controlling_peer_id, 777)
+
+
+func test_controlling_peer_id_can_be_set_explicitly_before_ready() -> void:
+	var character := CHARACTER_SCENE.instantiate()
+	character.name = "111"
+	character.controlling_peer_id = 111
+	add_child_autofree(character)
+	assert_eq(character.controlling_peer_id, 111)
+	assert_true(character.is_owned_by_me() == (111 == multiplayer.get_unique_id()))
+
+
+## Slice 13b reconnect: reassigning control updates controlling_peer_id
+## regardless of network role. Called directly (not via .rpc()) --
+## an @rpc-annotated function is still a normal callable function, and
+## this project's own convention is to unit-test the pure decision
+## logic this way rather than exercise the RPC transport itself in GUT
+## (see e.g. test_lobby_state.gd's own RPC handler tests).
+func test_rpc_reassign_controller_updates_controlling_peer_id() -> void:
+	var character := _spawn_character()
+	character._rpc_reassign_controller(424242)
+	assert_eq(character.controlling_peer_id, 424242)

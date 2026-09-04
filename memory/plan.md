@@ -904,12 +904,104 @@ to scoped roadmap phases, not new post-MVP scope).
   case above; same visual-verification gap as every prior UI-adjacent
   phase.
 
-### Slice 13b (Token-Based Reconnect) — NOT STARTED
+### Slice 13b (Token-Based Reconnect) — DONE (branch built, awaiting manual merge)
 
 Confirmed by the human owner 2026-09-03 (3 real forks resolved).
 Builds on 13a's grace-period tracking; the genuinely hard part of the
 original combined ask, split out on its own because of real identity/
 networking risk 13a doesn't carry.
+
+**Built on `feature/phase13b-token-reconnect`** (in a `.claude/
+worktrees/` isolated worktree, by an autonomous fork), following the
+design below as originally scoped -- no `/think` deviation was needed.
+`net/reconnect_manager.gd` (new autoload): holds the token, listens
+for `multiplayer.server_disconnected`/`.connection_failed`, and
+auto-retries `NetworkManager.join()` every second against the last
+join target until either a reconnect RPC succeeds or
+`GRACE_PERIOD_SECONDS` (30s, mirrors `PlayerSpawner`'s own) elapses,
+at which point it gives up and `ui/hud/network_stats_overlay.gd`
+returns to `MainMenu`. `CharacterController.controlling_peer_id` and
+`PlayerSpawner.try_reclaim(token, new_peer_id)` implement exactly the
+mechanism this block originally proposed, unchanged.
+
+**3 real bugs found live (2 headless processes, `net/dev_bootstrap.gd`'s
+new `--dev-kick-after=<seconds>` flag simulating a mid-match drop
+without killing the client process) that the design above did not
+anticipate** -- see `memory/gotchas.md` for full detail on each:
+1. `multiplayer.peer_connected` (and the ordinary `_spawn_for_peer()`
+   it triggers) always fires for a reconnecting peer's raw ENet
+   connection *before* its own reconnect-token RPC can possibly
+   arrive -- unavoidable, that RPC is itself a round trip over the
+   connection `peer_connected` just reported established. Left
+   unhandled, this spawned a permanent throwaway duplicate character
+   answering to the same `controlling_peer_id` as the reclaimed
+   original, so the reconnecting client fully predicted and drove
+   both from 1 set of inputs. `try_reclaim()` now despawns the
+   duplicate, but only after `PlayerSpawner.
+   RECONNECT_DUPLICATE_CLEANUP_DELAY_SECONDS` (1.0s) -- freeing it
+   instantly raced `MultiplayerSpawner`'s own initial state-sync burst
+   to the just-connected peer and produced real engine errors
+   ("Node not found", "Invalid packet received"). The delay is a
+   **live-verified interim mitigation, not a real fix**: it shrinks
+   the dual-control window from permanent down to ~1s, calibrated
+   against loopback, not a network-latency-derived bound. **Left for
+   the human owner to decide whether to invest in**: the correct fix
+   is gating `_spawn_for_peer()` behind Godot's own `SceneMultiplayer`
+   peer-authentication API (`peer_authenticating`/
+   `complete_authentication`) so a reconnecting peer's token exchange
+   resolves before it ever counts as newly connected -- a bigger
+   change than this phase's original scope.
+2. The original design (see `net/reconnect_manager.gd`'s own history)
+   reloaded `TestArena.tscn` on a successful reconnect, reasoning it
+   would give a clean scene instead of the disconnect-frozen one.
+   Live-confirmed this instead corrupted `MultiplayerSpawner`'s own
+   replication caches on both ends (the same class of cascading engine
+   errors as #1). Removed entirely: the client's local `TestArena` is
+   already left exactly as the disconnect froze it (nothing ever
+   despawns it during the grace period), so the existing controller-
+   reassignment RPC on that still-present node is all reconnection
+   needs -- no reload, no corruption, simpler than the original design.
+3. `net/dev_bootstrap.gd`'s own `--join`/`--server` flags were being
+   re-read (and `NetworkManager.join()` re-executed) every time a
+   scene reload re-ran its `_ready()` -- surfaced by bug #2's reload,
+   moot once #2 was removed, but guarded with a `static var` once-only
+   flag regardless (real players never pass these dev-only flags, so
+   they're unaffected either way).
+- **Verify**: `gdformat`/`gdlint` clean project-wide. Full GUT suite:
+  139/139 passing (was 138 before this slice), including 3 new
+  `test_character_controller_combat.gd` tests and 8 new `test_
+  player_spawner.gd` tests (4 for `try_reclaim`'s accept/reject logic,
+  1 for the live-found duplicate-cleanup bug above, matching this
+  project's "unit-test the pure decision logic, verify the RPC
+  plumbing live" convention from `test_lobby_state.gd`). Live
+  end-to-end 2-process test (`--dev-grace-period=10 --dev-kick-after=
+  4`): connect, forced mid-match disconnect, automatic reconnect using
+  the held token within the grace window, exactly 1 character remains
+  under the reconnecting peer's new id, zero engine errors on either
+  side -- re-run clean after each of the 3 fixes above.
+- **`/check` (code-review skill)**: run inline by the implementing
+  fork rather than as a separate pass (no separate specialist agents
+  available to it); its 3 findings above were fixed and live-
+  reverified rather than deferred.
+- **Merge status**: the branch is fully built, tested, and clean, but
+  **NOT YET MERGED into `main`** -- the implementing fork ran inside
+  an isolated `.claude/worktrees/` checkout, and the sandbox
+  categorically refuses any git operation that targets the shared
+  primary checkout from inside an isolated worktree (tried `cd`,
+  `git -C <path>`, and a `git worktree list`-targeted check; all
+  refused at the tool level, not a "main is busy" merge conflict).
+  **The human owner (or a session running in the primary checkout)
+  needs to run `git merge --no-ff feature/phase13b-token-reconnect`
+  from `/mnt/c/var/workspaces/godot/amazing-clash` manually**, then
+  `godot4 --headless --import` before trusting any post-merge GUT run
+  (this branch added no new `class_name`, so the Phase 9-style ~40-
+  failure cascade is unlikely, but the ship-phase skill's own
+  convention is to always re-import after a worktree-built merge).
+- **Known gap left for the human owner's decision**: the ~1s dual-
+  control window in bug #1 above -- ship as-is (rare event, brief
+  window, already a large improvement over 13a's forfeit-only
+  behavior) or invest in the `SceneMultiplayer` peer-authentication
+  redesign to close it fully.
 
 - **Identity across a peer_id change**: a per-player secret token,
   issued once (when a peer's character is spawned) and held only in

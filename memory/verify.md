@@ -767,3 +767,94 @@ in `progress.md`. No exceptions.
   Backlog) was reasoned about, not live-reproduced -- reproducing it
   needs 3 real processes timed precisely around a disconnect, not
   attempted here.
+
+### Phase 13b: token-based reconnect
+
+- [x] `tests/unit/test_character_controller_combat.gd` (3 new tests):
+  `controlling_peer_id` resolves from the node's own name by default;
+  can be set explicitly before `_ready()`; `_rpc_reassign_controller()`
+  updates it regardless of network role.
+- [x] `tests/unit/test_player_spawner.gd` (8 new tests): `try_reclaim()`
+  rejects an unknown token, rejects a token whose character is no
+  longer in grace, accepts a valid token and reassigns control
+  (cancels the grace period, invalidates the token), rejects reusing
+  the same token twice, and despawns a duplicate character spawned for
+  the new peer_id (the live-found bug below) after the real
+  `RECONNECT_DUPLICATE_CLEANUP_DELAY_SECONDS` delay elapses -- this
+  last test genuinely waits out that delay rather than mocking the
+  timer, exercising the same `await` path production code runs.
+- [x] `gdformat`/`gdlint` clean across every changed/new file
+  (`gameplay/characters/character_base/character_controller.gd`,
+  `net/dev_bootstrap.gd`, `net/player_spawner.gd`, `net/
+  reconnect_manager.gd` (new), `project.godot`, `tests/unit/
+  test_character_controller_combat.gd`, `tests/unit/
+  test_player_spawner.gd`, `ui/host_join/host_join.gd`, `ui/hud/
+  network_stats_overlay.gd`). 139/139 GUT tests total project-wide
+  (was 138).
+- [x] TDD confirmed for the live-found duplicate-spawn bug: the new
+  `test_try_reclaim_despawns_a_duplicate_spawned_for_the_new_peer_id`
+  failed against the pre-fix code (the duplicate was never despawned),
+  then passed once `_despawn_reconnect_duplicate()` was added.
+- [x] **Live 2-process end-to-end test**, `net/dev_bootstrap.gd`'s new
+  `--dev-kick-after=<seconds>` flag (server-only, force-disconnects
+  the first connected client without killing either process --
+  simulates a real mid-match drop while letting the dropped client's
+  own `ReconnectManager` autoload survive to actually retry, matching
+  a real WiFi blip): connect (character spawns) → forced disconnect at
+  t=4s → `ReconnectManager` auto-retries every 1s using the held token
+  → server's `try_reclaim()` matches it within the grace window
+  (`--dev-grace-period=10`) → the reconnecting peer's new id ends up
+  as the ONLY controller of the ORIGINAL character node (confirmed via
+  a temporary trace printing every `Characters` child's name and
+  `controlling_peer_id`, removed before the final commit) → zero
+  engine errors on either side. Re-run clean after each of the 3 real
+  bugs below was fixed.
+- [x] **3 real bugs found live, not anticipated by the original
+  design** (`memory/plan.md`'s Slice 13b block has full detail on
+  each; see `memory/gotchas.md` for the standalone gotcha entries):
+  1. A reconnecting peer's own `peer_connected` always spawns a
+     throwaway duplicate character (via the ordinary `_spawn_for_
+     peer()` path) before its reconnect-token RPC can possibly arrive.
+     First fix attempt (`queue_free()` the duplicate immediately) was
+     live-verified to be WORSE than the original bug: it raced
+     `MultiplayerSpawner`'s own initial state-sync burst to the just-
+     connected peer, producing real cascading engine errors ("Node not
+     found", "Invalid packet received", "ERR_UNAUTHORIZED" on the
+     client's own despawn-receive path). Live-tested with a 1-second
+     defer before freeing: zero errors across multiple trial runs, so
+     `RECONNECT_DUPLICATE_CLEANUP_DELAY_SECONDS := 1.0` shipped as the
+     interim mitigation -- **an honestly-documented ~1s dual-control
+     window remains** (both the reclaimed original and the not-yet-
+     despawned duplicate answer to the same `controlling_peer_id` for
+     that ~1s), not a full fix. Flagged for the human owner: a real
+     fix needs Godot's `SceneMultiplayer` peer-authentication API.
+  2. The original design reloaded `TestArena.tscn` after a successful
+     reconnect. Live-confirmed this corrupted `MultiplayerSpawner`'s
+     own replication caches on both ends (same error class as #1).
+     Removed: reconnection now resumes the client's own already-
+     disconnect-frozen scene in place, with no reload.
+  3. `net/dev_bootstrap.gd`'s `--join`/`--server` flags were being
+     re-read (and `NetworkManager.join()` re-executed) on every scene
+     reload triggered by bug #2 -- moot once #2 was removed, but
+     guarded with a `static var _ran_once` flag regardless (real
+     players never pass these dev-only flags, so this doesn't affect
+     them).
+- [x] `/check` (code-review skill) run inline by the implementing fork
+  against the full branch diff, high severity intent -- no separate
+  specialist sub-agents were available to it inside the isolated
+  worktree, so this was a single adversarial self-review pass rather
+  than the multi-persona flow. All 3 findings above were fixed and
+  live-re-verified, none deferred.
+- [ ] **Not merged into `main`** -- the implementing fork ran inside an
+  isolated `.claude/worktrees/` checkout; the sandbox refuses any git
+  operation (tried `cd`, `git -C <path>`, and a `git worktree list`
+  check targeting the shared path) that reaches outside that worktree
+  into the primary checkout. This is a hard tool-level boundary, not a
+  "`main` is busy" merge conflict -- the human owner needs to run
+  `git merge --no-ff feature/phase13b-token-reconnect` from
+  `/mnt/c/var/workspaces/godot/amazing-clash` manually, then `godot4
+  --headless --import` before trusting a post-merge GUT run.
+- [ ] **Visual verification not applicable** -- `network_stats_overlay.
+  gd`'s status-text change is the only UI surface touched, already
+  covered by the live functional test above (its `_label.text` mirrors
+  `ReconnectManager.status_text()`, observed correct throughout).

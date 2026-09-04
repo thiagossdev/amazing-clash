@@ -47,6 +47,12 @@ func _on_join_button_pressed() -> void:
 
 func _on_join_pressed(address: String) -> void:
 	var target := address if not address.is_empty() else "127.0.0.1"
+	# Slice 13b: remembered even for a first-time join, not just a
+	# reconnect -- ReconnectManager only ever *acts* on this after a
+	# real disconnect (see its own _on_disconnected()), so recording it
+	# unconditionally here is simpler than threading a "is this a
+	# reconnect" flag through every join call site.
+	ReconnectManager.remember_join_target(target, NetworkManager.DEFAULT_PORT)
 	var err := NetworkManager.join(target)
 	if err != OK:
 		_status_label.text = "Failed to join (error %s)" % err

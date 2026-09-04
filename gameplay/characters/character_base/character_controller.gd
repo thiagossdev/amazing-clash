@@ -137,6 +137,19 @@ var team: int = 0
 ## as one via action_fsm's own state machine).
 var cooldown_multiplier: float = 1.0
 
+## Slice 13b (token-based reconnect): the peer_id currently allowed to
+## drive this character -- separate from the node's own `name`, which
+## `net/player_spawner.gd` sets once at spawn (str(original_peer_id))
+## and NEVER changes again (renaming an already-MultiplayerSpawner-
+## replicated node mid-match was rejected as untested/risky in this
+## engine, see memory/plan.md's Slice 13b block). Defaults to 0 and is
+## resolved from the node's own name in _ready() if still 0 by then --
+## this keeps every pre-13b GUT test (which spawns a character and
+## sets `.name` directly, never touching this field) working
+## unchanged. A successful reconnect is the ONLY thing that ever
+## changes this after spawn, via _rpc_reassign_controller() below.
+var controlling_peer_id: int = 0
+
 var _local_sequence: int = 0
 var _server_sim: ServerSim
 var _client_predictor: ClientPredictor
@@ -178,6 +191,8 @@ var _position_history: Array[Dictionary] = []
 
 
 func _ready() -> void:
+	if controlling_peer_id == 0:
+		controlling_peer_id = str(name).to_int()
 	var is_owner := is_owned_by_me()
 	control_mode = _resolve_control_mode(NetworkManager.is_server(), is_owner)
 	if control_mode == ControlMode.AUTHORITATIVE:
@@ -242,11 +257,34 @@ func _resolve_control_mode(is_server: bool, is_owner: bool) -> ControlMode:
 	return ControlMode.PREDICTED if is_owner else ControlMode.INTERPOLATED
 
 
-## Derived from the node's own name (PlayerSpawner names every character
-## str(peer_id)), because MultiplayerSpawner replicates a node's name to
-## every peer but not arbitrary script properties.
+## Slice 13b: compares controlling_peer_id, not the node's own name --
+## the node's name stays str(original_peer_id) forever (see
+## controlling_peer_id's own doc comment), so after a reconnect
+## reassigns control to a new peer_id, this is the only correct check.
 func is_owned_by_me() -> bool:
-	return str(name) == str(multiplayer.get_unique_id())
+	return controlling_peer_id == multiplayer.get_unique_id()
+
+
+## Slice 13b: server-only, called once net/player_spawner.gd confirms
+## a reconnecting peer's token matches this character's grace-period
+## slot. Broadcast (call_local) so every peer's own copy -- including
+## the reconnecting peer's -- picks up the new controller id in one
+## step. _ready() already ran for every peer that already had this
+## node replicated (as INTERPOLATED for everyone, since the original
+## owner is gone), so the reconnecting peer's own control_mode needs
+## re-resolving here explicitly -- _ready() won't fire again for an
+## already-existing node.
+@rpc("authority", "reliable", "call_local")
+func _rpc_reassign_controller(new_peer_id: int) -> void:
+	controlling_peer_id = new_peer_id
+	if NetworkManager.is_server() or control_mode == ControlMode.AUTHORITATIVE:
+		return
+	if is_owned_by_me() and control_mode != ControlMode.PREDICTED:
+		control_mode = ControlMode.PREDICTED
+		_client_predictor = ClientPredictor.new()
+		var camera := get_tree().get_first_node_in_group(&"local_camera")
+		if camera:
+			camera.target = self
 
 
 func _physics_step_predicted(delta: float) -> void:
@@ -336,7 +374,7 @@ func _rpc_send_input(
 ) -> void:
 	if not NetworkManager.is_server():
 		return
-	if str(name) != str(multiplayer.get_remote_sender_id()):
+	if controlling_peer_id != multiplayer.get_remote_sender_id():
 		return
 	var sample := InputBuffer.Sample.new()
 	sample.sequence = sequence
