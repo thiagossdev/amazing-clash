@@ -116,13 +116,103 @@ phase independently playable/demoable even if the next never lands):
        in the client's own memory, not IP-matched), resumes the same
        character under the new peer_id via a `controlling_peer_id`
        indirection rather than a node rename. Expiring the window
-       without one falls back to 13a's own forfeit. **Not started** —
-       scope below.
+       without one falls back to 13a's own forfeit. **Done** — see
+       Slice 13b below (a follow-up fix for the token being single-use
+       shipped 2026-09-03, see `memory/gotchas.md`).
+14. Room Config UX: a "Leave Room" button (disconnects, returns to
+    Main Menu — see naming note below), Red/Blue team labels replacing
+    Team 1/Team 2 (`team_id` stays an int, label-only), symmetric
+    ready/unready for every player including the host (replacing the
+    non-host-only checkbox + host-only Start button), an automatic
+    countdown once everyone is ready, and the existing self-service
+    "Switch Team" button kept, repositioned below the ready button.
+    **Naming note**: "lobby" in the human owner's own words means
+    Main Menu (pre-connection) throughout this roadmap entry and 17
+    below — `ui/lobby/lobby.gd` is Room Config in the code's own
+    terminology (Phase 7's doc comment), a distinct screen. **Not
+    started** — scope below.
+15. Ability framework: Q/E/R/F. Each of the 3 classes gains 2 new
+    abilities (R, F) alongside its existing Q/E — 6 new
+    `AbilityResource`+`MoveDefinition` pairs, `CharacterController`
+    gains `ability_r`/`ability_f` fields mirroring the existing
+    `ability_q`/`ability_e` pattern exactly (own FSM, own cooldown,
+    own checkpoint/reconciliation fields). Content (names/numbers)
+    authored following the existing convention (same process as
+    Phases 4/6/9's own content), subject to the human owner's
+    rebalancing after playtesting. **Not started** — scope below.
+16. Loadout: Weapon + Boot. A **shared pool** of 3 weapons and 3
+    boots — any class can equip any of them (confirmed 2026-09-03: not
+    a per-class pool). `WeaponResource` defines LMB (attack) + RMB
+    (secondary), replacing each class's previously-fixed
+    `attack_move`/`skillshot_move`. `BootResource` defines an active
+    move on T (a 5th ability slot, owned by the boot pick rather than
+    the class, same FSM/cooldown/checkpoint pattern as Q/E/R/F).
+    `LobbyState` gains `player_weapon_ids`/`player_boot_ids` (same
+    shape as `player_perk_ids`); Room Config gains 2 more dropdowns.
+    **Class + weapon + boot + perk are 4 fully independent choices**
+    (confirmed 2026-09-03: the perk system from Phase 9 is NOT
+    replaced or touched). A peer that never goes through Room Config
+    (`net/dev_bootstrap.gd` headless flow) falls back to weapon/boot
+    index 0, same convention as the existing class fallback.
+    **Not started** — scope below.
+17. Rounds: best of 3. First to 2 round wins takes the match. Between
+    rounds: a loadout-adjustment window reusing Slice 14's "ready set"
+    mechanism (weapon/boot/perk only — team and class stay fixed for
+    the whole match). **Exact timing, confirmed 2026-09-04**: a 15s
+    window to pick and confirm; if every currently-connected peer
+    confirms with less than 13s elapsed, transition immediately to a
+    5s "round starting" countdown; otherwise (the 15s window fully
+    elapses without a complete confirm-set), force-lock whatever each
+    unconfirmed peer currently has selected and run a 3s "round
+    starting" countdown instead. Either countdown ends by triggering
+    the same round-start transition automatically, no button press.
+    **Not started** — scope below.
+18. Match log (`GameLog` autoload, new, separate file from the replay
+    below per the human owner's own suggestion 2026-09-03). JSONL to
+    `user://logs/<timestamp>.jsonl`: room-config choices, connect/
+    disconnect/reconnect events, round start/end, and explicit
+    `GameLog.error()`/`.warn()` calls added at points that already
+    `push_error`/`push_warning` today. **Known limitation to
+    document, not solve**: only captures errors the code explicitly
+    routes through this helper — it does not intercept the engine's
+    own native `push_error` output or crashes. **Not started** —
+    scope below.
+19. Replay recording. Separate file from the log above:
+    `user://replays/<timestamp>.replay`. Header: mode, friendly-fire,
+    round target, **`sim_seed`** (new field, reserved now for
+    future RNG the human owner plans to add — confirmed 2026-09-04 the
+    simulation has zero RNG today outside the reconnect token, which
+    doesn't affect gameplay state; adding this field now costs one
+    unused value, migrating an already-shipped replay format later to
+    add it would cost much more), and each peer's loadout per round.
+    Body: one raw `InputBuffer.Sample` per connected peer per tick —
+    **no calculated values** (position, health, damage results) are
+    ever stored, confirmed buildable specifically because the sim has
+    no RNG to also capture. **Not started** — scope below.
+20. Replay playback. A "Replays" button on Main Menu, a list screen
+    (scans `user://replays/`), and a player screen with Play/Pause/
+    Skip/Back/a scrubber. Reconstruction: an offline, non-networked
+    "replay driver" feeds the recorded `Sample`s into the same
+    deterministic simulation classes tick by tick. Any seek/scrub
+    re-simulates from tick 0 to the target tick at max speed (no
+    render, no real-time wait) since no calculated state is ever
+    persisted to the file — a deliberate MVP tradeoff; an in-memory-
+    only (never written to the replay file) checkpoint cache is
+    deferred unless this proves too slow in practice. **Not started**
+    — scope below.
 
 Post-MVP backlog: `docs/blueprint/06-post-mvp-backlog.md`, not started
 until Phase 6 ships (still true for the backlog itself; Phases 7-10
 above are pre-existing `memory/progress.md` backlog items now promoted
-to scoped roadmap phases, not new post-MVP scope).
+to scoped roadmap phases, not new post-MVP scope). Phases 14-20 above
+were designed via `/think` on 2026-09-03/04 (human owner's own request,
+covering backlog items 6/9/10 from that session's "what's missing"
+enumeration plus new Room-Config-UX/replay asks) and are meant to be
+executed the same way Phases 7-10 were: one `/ship-phase` run per
+phase, in order, via `/loop`, stopping only on a merge conflict, an
+unresolved `/check` finding, or a genuine undecided product question —
+see `memory/progress.md`'s Backlog section for the human-owner-facing
+tracking of this batch.
 
 ## Vertical Slices
 

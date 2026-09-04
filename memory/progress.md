@@ -599,6 +599,15 @@ changed but this file wasn't updated.
 
 ## Backlog (next up)
 
+- [ ] **Phases 14-20 (Room Config UX, ability framework Q/E/R/F, weapon
+  +boot loadout, best-of-3 rounds, match log, replay recording, replay
+  playback) — scope confirmed via `/think` 2026-09-03/04, running now
+  via `/loop` + `/ship-phase`, one phase at a time.** See
+  `memory/plan.md`'s roadmap list (items 14-20) for the full decided
+  scope of each, including the exact inter-round loadout-countdown
+  timing (15s pick/confirm window, 5s or 3s start countdown depending
+  on how early everyone confirms) and the `sim_seed` replay-format
+  field reserved now for RNG the human owner plans to add later.
 - [ ] LAN discovery: Linux still can't discover a Windows-hosted room
   even after confirming `ufw allow 7777/udp` + `7778/udp` (the 7777
   fix DID resolve the separate "join hangs forever" symptom -- this is
