@@ -69,6 +69,24 @@ const PERK_RESOURCES: Array[PerkResource] = [
 ## owner's own request), not a data model change.
 const TEAM_LABELS: Array[String] = ["Red", "Blue"]
 
+## Phase 16: a shared, class-independent pool of 3 weapons/boots
+## (confirmed 2026-09-03: not per-class, same "one fixed pool" shape as
+## PERK_IDS above) -- class + weapon + boot + perk are 4 fully
+## independent choices (perk is NOT replaced or touched by this phase).
+const WEAPON_IDS: Array[String] = ["iron_sword", "twin_daggers", "warhammer"]
+const BOOT_IDS: Array[String] = ["swift_boots", "warded_greaves", "tumbling_boots"]
+
+const WEAPON_RESOURCES: Array[WeaponResource] = [
+	preload("res://data/weapons/iron_sword.tres"),
+	preload("res://data/weapons/twin_daggers.tres"),
+	preload("res://data/weapons/warhammer.tres"),
+]
+const BOOT_RESOURCES: Array[BootResource] = [
+	preload("res://data/boots/swift_boots.tres"),
+	preload("res://data/boots/warded_greaves.tres"),
+	preload("res://data/boots/tumbling_boots.tres"),
+]
+
 ## Phase 14: server-only countdown that starts once is_room_ready_to_
 ## start() goes true, and auto-triggers the match the same way the old
 ## host-only Start button used to. countdown_seconds_remaining (below)
@@ -109,6 +127,13 @@ var player_team_ids: Dictionary = {}
 ## player_team_ids, never host-assigned. Defaulted to PERK_IDS[0] on
 ## registration, same "always valid, never missing" treatment as team.
 var player_perk_ids: Dictionary = {}
+
+## Phase 16: server-authoritative peer_id -> weapon/boot id, same
+## self-service authority shape and default-on-registration treatment
+## as player_perk_ids above -- a fully independent 2nd/3rd loadout
+## axis, not a replacement for perk.
+var player_weapon_ids: Dictionary = {}
+var player_boot_ids: Dictionary = {}
 
 ## Server-authoritative peer_id -> ready flag, for every registered
 ## peer INCLUDING the host (Phase 14: readying up is symmetric now --
@@ -189,6 +214,16 @@ func resolve_perk_id(requested: String) -> String:
 	return _resolve_id(requested, PERK_IDS)
 
 
+## Pure, same validate-or-default rule as resolve_class_id()/
+## resolve_perk_id().
+func resolve_weapon_id(requested: String) -> String:
+	return _resolve_id(requested, WEAPON_IDS)
+
+
+func resolve_boot_id(requested: String) -> String:
+	return _resolve_id(requested, BOOT_IDS)
+
+
 ## Shared by resolve_class_id()/resolve_perk_id() so the validate-or-
 ## default rule lives in exactly one place.
 func _resolve_id(requested: String, valid_ids: Array[String]) -> String:
@@ -216,6 +251,14 @@ func resolve_team_id(requested: int) -> int:
 
 func get_perk_id(peer_id: int, fallback: String = "") -> String:
 	return player_perk_ids.get(peer_id, fallback)
+
+
+func get_weapon_id(peer_id: int, fallback: String = "") -> String:
+	return player_weapon_ids.get(peer_id, fallback)
+
+
+func get_boot_id(peer_id: int, fallback: String = "") -> String:
+	return player_boot_ids.get(peer_id, fallback)
 
 
 func is_ready(peer_id: int) -> bool:
@@ -281,6 +324,8 @@ func reset_room() -> void:
 	player_class_ids.clear()
 	player_team_ids.clear()
 	player_perk_ids.clear()
+	player_weapon_ids.clear()
+	player_boot_ids.clear()
 	player_ready.clear()
 	room_match_mode = MatchState.MatchMode.TEAM
 	room_friendly_fire = false
@@ -345,6 +390,26 @@ func set_local_perk(perk_id: String) -> void:
 		_rpc_set_perk.rpc_id(1, perk_id)
 
 
+## Called locally by any peer to set their OWN weapon -- self-service,
+## same shape as set_local_perk(). Phase 16: fully independent of perk.
+func set_local_weapon(weapon_id: String) -> void:
+	var peer_id := multiplayer.get_unique_id()
+	if NetworkManager.is_server():
+		_apply_weapon(peer_id, weapon_id)
+		_broadcast_room_state()
+	else:
+		_rpc_set_weapon.rpc_id(1, weapon_id)
+
+
+func set_local_boot(boot_id: String) -> void:
+	var peer_id := multiplayer.get_unique_id()
+	if NetworkManager.is_server():
+		_apply_boot(peer_id, boot_id)
+		_broadcast_room_state()
+	else:
+		_rpc_set_boot.rpc_id(1, boot_id)
+
+
 ## Host-only -- called directly by the host's own Room Config controls,
 ## never over RPC (unlike set_local_team(), this really is host-only:
 ## mode/friendly-fire are match-wide settings, not a per-player choice).
@@ -368,6 +433,8 @@ func _on_peer_disconnected(peer_id: int) -> void:
 	var changed := player_class_ids.erase(peer_id)
 	player_team_ids.erase(peer_id)
 	player_perk_ids.erase(peer_id)
+	player_weapon_ids.erase(peer_id)
+	player_boot_ids.erase(peer_id)
 	player_ready.erase(peer_id)
 	if changed:
 		_broadcast_room_state()
@@ -415,6 +482,23 @@ func _rpc_set_perk(perk_id: String) -> void:
 	_broadcast_room_state()
 
 
+## any_peer, same trust reasoning as _rpc_set_perk.
+@rpc("any_peer", "reliable")
+func _rpc_set_weapon(weapon_id: String) -> void:
+	if not NetworkManager.is_server():
+		return
+	_apply_weapon(multiplayer.get_remote_sender_id(), weapon_id)
+	_broadcast_room_state()
+
+
+@rpc("any_peer", "reliable")
+func _rpc_set_boot(boot_id: String) -> void:
+	if not NetworkManager.is_server():
+		return
+	_apply_boot(multiplayer.get_remote_sender_id(), boot_id)
+	_broadcast_room_state()
+
+
 ## Pure Dictionary mutation, no RPC -- callers are responsible for
 ## broadcasting afterward. Kept separate so it stays testable without
 ## a multiplayer peer (see test_get_class_id_returns_registered_choice).
@@ -430,6 +514,10 @@ func _apply_registration(peer_id: int, class_id: String) -> void:
 		_next_team_index += 1
 	if not player_perk_ids.has(peer_id):
 		player_perk_ids[peer_id] = PERK_IDS[0]
+	if not player_weapon_ids.has(peer_id):
+		player_weapon_ids[peer_id] = WEAPON_IDS[0]
+	if not player_boot_ids.has(peer_id):
+		player_boot_ids[peer_id] = BOOT_IDS[0]
 
 
 func _apply_ready(peer_id: int, ready: bool) -> void:
@@ -444,6 +532,14 @@ func _apply_perk(peer_id: int, perk_id: String) -> void:
 	player_perk_ids[peer_id] = resolve_perk_id(perk_id)
 
 
+func _apply_weapon(peer_id: int, weapon_id: String) -> void:
+	player_weapon_ids[peer_id] = resolve_weapon_id(weapon_id)
+
+
+func _apply_boot(peer_id: int, boot_id: String) -> void:
+	player_boot_ids[peer_id] = resolve_boot_id(boot_id)
+
+
 ## Server-only: every mutation above (registration, ready, team, perk,
 ## mode, friendly-fire, and disconnect) already funnels through this
 ## one function, so it's the single choke point to re-evaluate the
@@ -453,6 +549,8 @@ func _broadcast_room_state() -> void:
 		player_class_ids,
 		player_team_ids,
 		player_perk_ids,
+		player_weapon_ids,
+		player_boot_ids,
 		player_ready,
 		room_match_mode,
 		room_friendly_fire
@@ -465,6 +563,8 @@ func _rpc_receive_room_state(
 	classes: Dictionary,
 	teams: Dictionary,
 	perks: Dictionary,
+	weapons: Dictionary,
+	boots: Dictionary,
 	ready: Dictionary,
 	mode: int,
 	friendly_fire: bool
@@ -472,6 +572,8 @@ func _rpc_receive_room_state(
 	player_class_ids = classes
 	player_team_ids = teams
 	player_perk_ids = perks
+	player_weapon_ids = weapons
+	player_boot_ids = boots
 	player_ready = ready
 	room_match_mode = mode
 	room_friendly_fire = friendly_fire
