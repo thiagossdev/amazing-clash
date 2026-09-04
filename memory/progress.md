@@ -552,6 +552,14 @@ changed but this file wasn't updated.
 
 ## Backlog (next up)
 
+- [ ] LAN discovery: Linux still can't discover a Windows-hosted room
+  even after confirming `ufw allow 7777/udp` + `7778/udp` (the 7777
+  fix DID resolve the separate "join hangs forever" symptom -- this is
+  what's left). Paused mid-investigation, no Linux machine access this
+  session -- see `net/lan_discovery.gd`'s own comment and
+  `memory/gotchas.md` for the full history and the exact next
+  commands to run (`sudo iptables -L -n -v` for Docker interference,
+  `ip addr` vs `ipconfig` for a subnet mismatch).
 - [ ] Slice 13b (token-based reconnect) -- see `memory/plan.md`'s Slice
   13b block for the full decided scope (token identity, no node
   rename, `controlling_peer_id` indirection, reconnect flow bypasses

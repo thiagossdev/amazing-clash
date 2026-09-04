@@ -32,6 +32,31 @@ extends Node
 ## Linux machine that will host: `sudo ufw allow 7777/udp` and
 ## `sudo ufw allow 7778/udp` -- an environment/firewall configuration
 ## step, not a code change.
+##
+## Follow-up (2026-09-03, same investigation): the human owner applied
+## both `ufw` rules above and re-tested. Joining a Linux-hosted room
+## now works (the 7777/udp fix was correct and complete for that
+## symptom) -- but Linux still does not discover a Windows-hosted room,
+## even with 7778/udp confirmed present in `ufw status verbose`
+## (allowing both IPv4 and IPv6). So the original single "it's ufw"
+## diagnosis was only PARTIALLY right: something beyond `ufw`'s own
+## rule table is still blocking (or never delivering) the inbound
+## discovery broadcast specifically, on the Linux side. Two leads not
+## yet checked (human owner didn't have machine access to test further
+## this session -- pick up here):
+## 1. `sudo iptables -L -n -v` (or `-S`) on the Linux machine, looking
+##    at the DOCKER/DOCKER-USER/FORWARD chains -- `ufw status` was
+##    seen to list an `allow-docker-dns` rule, confirming Docker is
+##    installed and running there. Docker is well known to insert its
+##    own iptables rules directly, independent of (and sometimes
+##    ahead of) ufw's own chain, which can make `ufw status` report
+##    "allow" while a packet still never arrives.
+## 2. Confirm both machines are actually on the same subnet: compare
+##    the Linux Wi-Fi/ethernet interface's address (`ip addr`, NOT the
+##    `docker0` bridge's `172.17.x.x`) against the Windows machine's
+##    address (`ipconfig`) -- different first 3 octets means broadcast
+##    can't cross regardless of any firewall.
+## See `memory/gotchas.md` for the full investigation history.
 
 ## Fired whenever discovered_rooms changes (a new/updated room, or one
 ## expiring) -- ui/host_join/host_join.gd listens to redraw its list.

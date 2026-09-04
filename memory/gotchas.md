@@ -358,6 +358,24 @@ Format:
   evidence against a firewall/NAT/inbound-blocking hypothesis --
   outbound-only tests can't rule out an inbound-only block.
 
+- **2026-09-03** — Follow-up on the same investigation: the `ufw`
+  diagnosis above was only partially right. After the human owner
+  applied both `ufw allow` rules, joining a Linux-hosted room started
+  working (confirming the 7777/udp piece was correct and complete),
+  but Linux still can't discover a Windows-hosted room, even with
+  7778/udp confirmed present in `ufw status verbose`. → **Rule**: a
+  confirmed root cause that explains every symptom at diagnosis time
+  can still be incomplete -- verify the fix against EACH original
+  symptom individually once applied, not just "did the overall report
+  go away," since a multi-symptom report can have more than one
+  contributing cause that happen to look identical from the outside.
+  Session ended before the human owner could test further (no machine
+  access) -- 2 leads recorded in `net/lan_discovery.gd`'s own comment
+  for whoever picks this up: Docker's own iptables rules (confirmed
+  installed on that machine via `ufw status`'s `allow-docker-dns`
+  entry) can override what `ufw status` reports as allowed; and the
+  2 machines' actual subnets were never directly compared.
+
 <!--
 Examples:
 
