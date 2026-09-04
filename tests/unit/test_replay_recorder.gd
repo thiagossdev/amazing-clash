@@ -68,20 +68,20 @@ func test_sample_to_dict_converts_vectors_to_arrays_and_keeps_every_field() -> v
 func test_start_recording_is_a_noop_when_not_server() -> void:
 	var original_peer: MultiplayerPeer = multiplayer.multiplayer_peer
 	multiplayer.multiplayer_peer = null
-	ReplayRecorder.start_recording("TEAM", true, 2, [])
+	ReplayRecorder.start_recording(MatchState.MatchMode.TEAM, true, 2, [])
 	assert_eq(ReplayRecorder.current_replay_path(), "", "no file should ever have been opened")
 	multiplayer.multiplayer_peer = original_peer
 
 
 func test_start_recording_writes_a_header_line() -> void:
 	var loadouts := [{"peer_id": 1, "class": "vanguard", "weapon": "iron_sword"}]
-	ReplayRecorder.start_recording("TEAM", true, 2, loadouts)
+	ReplayRecorder.start_recording(MatchState.MatchMode.TEAM, true, 2, loadouts)
 	var path := ReplayRecorder.current_replay_path()
 	assert_ne(path, "", "a replay file should have been opened")
 	var lines := _read_all_lines(path)
 	assert_eq(lines.size(), 1)
 	assert_eq(lines[0]["type"], "header")
-	assert_eq(lines[0]["mode"], "TEAM")
+	assert_eq(lines[0]["mode"], MatchState.MatchMode.TEAM)
 	assert_eq(lines[0]["friendly_fire"], true)
 	assert_eq(lines[0]["round_target"], 2)
 	assert_true(lines[0].has("sim_seed"), "sim_seed must be reserved even though unused today")
@@ -94,7 +94,7 @@ func test_record_loadout_change_is_a_noop_before_start_recording() -> void:
 
 
 func test_record_loadout_change_writes_after_start_recording() -> void:
-	ReplayRecorder.start_recording("TEAM", false, 2, [])
+	ReplayRecorder.start_recording(MatchState.MatchMode.TEAM, false, 2, [])
 	ReplayRecorder.record_loadout_change(5, "twin_daggers", "tumbling_boots", "adept")
 	var lines := _read_all_lines(ReplayRecorder.current_replay_path())
 	assert_eq(lines.size(), 2, "header + 1 loadout_change")
@@ -106,7 +106,7 @@ func test_record_loadout_change_writes_after_start_recording() -> void:
 
 
 func test_tick_samples_for_the_same_tick_batch_into_one_record() -> void:
-	ReplayRecorder.start_recording("TEAM", false, 2, [])
+	ReplayRecorder.start_recording(MatchState.MatchMode.TEAM, false, 2, [])
 	var sample_a := InputBuffer.Sample.new()
 	sample_a.sequence = 1
 	var sample_b := InputBuffer.Sample.new()
@@ -126,7 +126,7 @@ func test_tick_samples_for_the_same_tick_batch_into_one_record() -> void:
 
 
 func test_record_match_end_flushes_the_final_pending_tick() -> void:
-	ReplayRecorder.start_recording("TEAM", false, 2, [])
+	ReplayRecorder.start_recording(MatchState.MatchMode.TEAM, false, 2, [])
 	var sample := InputBuffer.Sample.new()
 	ReplayRecorder.record_tick_sample(50, 1, sample)
 	ReplayRecorder.record_match_end(0, {"0": 2})
@@ -139,7 +139,7 @@ func test_record_match_end_flushes_the_final_pending_tick() -> void:
 
 
 func test_record_round_end_writes_a_line() -> void:
-	ReplayRecorder.start_recording("TEAM", false, 2, [])
+	ReplayRecorder.start_recording(MatchState.MatchMode.TEAM, false, 2, [])
 	ReplayRecorder.record_round_end(1, 0, false, {"0": 1})
 	var lines := _read_all_lines(ReplayRecorder.current_replay_path())
 	assert_eq(lines.size(), 2)
@@ -150,7 +150,7 @@ func test_record_round_end_writes_a_line() -> void:
 
 
 func test_record_match_end_stops_recording_further_calls() -> void:
-	ReplayRecorder.start_recording("TEAM", false, 2, [])
+	ReplayRecorder.start_recording(MatchState.MatchMode.TEAM, false, 2, [])
 	ReplayRecorder.record_match_end(0, {})
 	var path_after_end := ReplayRecorder.current_replay_path()
 	ReplayRecorder.record_round_end(2, 0, false, {})
@@ -160,8 +160,8 @@ func test_record_match_end_stops_recording_further_calls() -> void:
 
 
 func test_reset_for_testing_starts_a_fresh_file() -> void:
-	ReplayRecorder.start_recording("TEAM", false, 2, [])
+	ReplayRecorder.start_recording(MatchState.MatchMode.TEAM, false, 2, [])
 	var first_path := ReplayRecorder.current_replay_path()
 	ReplayRecorder.reset_for_testing(TEST_REPLAY_DIR)
-	ReplayRecorder.start_recording("TEAM", false, 2, [])
+	ReplayRecorder.start_recording(MatchState.MatchMode.TEAM, false, 2, [])
 	assert_ne(ReplayRecorder.current_replay_path(), first_path, "reset must open a distinct file")

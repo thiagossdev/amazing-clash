@@ -56,7 +56,11 @@ var _pending_samples: Array = []
 ## place (PlayerSpawner's own index-0 fallback applies instead), which
 ## matches the human owner's own framing of this feature as recording
 ## "as escolhas dos jogadores."
-func start_recording(mode: String, friendly_fire: bool, round_target: int, loadouts: Array) -> void:
+## `mode` is the raw MatchState.MatchMode int, matching
+## GameLog.info("round_loading", {"mode": mode})'s own convention
+## (not a display string) -- directly re-usable by Phase 20's
+## reconstruction, no separate enum<->string mapping to maintain.
+func start_recording(mode: int, friendly_fire: bool, round_target: int, loadouts: Array) -> void:
 	if not NetworkManager.is_server():
 		return
 	_ensure_file_open()
