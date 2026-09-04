@@ -262,41 +262,68 @@ func test_high_speed_playback_still_spawns_a_projectile() -> void:
 ## Found live 2026-09-04 (human owner: "enter/space deu certo. Mas não
 ## vi esse botão"): the entire bottom Controls row (PlayPauseButton/
 ## SkipBackButton/SkipForwardButton/Scrubber/BackButton) was positioned
-## at y:740-780, past this project's own default viewport height (648,
-## `display/window/size/viewport_height`) -- genuinely off-screen since
-## Phase 20's original build, undetected because this environment has
-## no way to screenshot Godot's real renderer (every prior UI phase's
-## own flagged gap). Keyboard activation (grab_focus() + Enter/Space)
-## still worked regardless -- Godot's focus/action system doesn't
-## require on-screen visibility -- which is exactly why this shipped
-## unnoticed until real hands-on play-testing caught it. This test
-## checks every Control under Controls fits within the real viewport
-## rect, so any FUTURE control added off-screen by mistake fails loudly
-## here instead of silently shipping invisible again.
+## at a fixed y:740-780, past this project's own default viewport
+## height at the time (648) -- genuinely off-screen since Phase 20's
+## original build, undetected because this environment has no way to
+## screenshot Godot's real renderer (every prior UI phase's own flagged
+## gap). Keyboard activation (grab_focus() + Enter/Space) still worked
+## regardless -- Godot's focus/action system doesn't require on-screen
+## visibility -- which is exactly why this shipped unnoticed until real
+## hands-on play-testing caught it.
+##
+## Since then (2026-09-04, same day): this project adopted an explicit
+## design resolution (`display/window/size/viewport_width/height` =
+## 1920x1080, decoupled from the actual startup window via
+## `window_width/height_override` = 1280x720, matching the pattern
+## `amazing-dungeons` already validated) and switched this row to
+## anchor-based positioning (bottom/right-pinned, not fixed absolute
+## coordinates) specifically so it keeps fitting regardless of the
+## design resolution ever changing again -- reads each Control's own
+## RESOLVED `position`/`size` (which anchors already fold in), not the
+## raw `offset_*` values a `Control` with non-default anchors no longer
+## maps 1:1 to screen coordinates.
 func test_every_control_fits_inside_the_real_viewport() -> void:
 	var player: Node2D = add_child_autofree(REPLAY_PLAYER_SCENE.instantiate())
-	var viewport_size := Vector2(
-		ProjectSettings.get_setting("display/window/size/viewport_width"),
-		ProjectSettings.get_setting("display/window/size/viewport_height")
-	)
+	# Godot's own Control anchor resolution uses get_viewport().
+	# get_visible_rect(), not the design values in ProjectSettings
+	# directly -- confirmed live 2026-09-04 that in --headless mode
+	# specifically, that rect comes back SQUARE (matching viewport_width
+	# for both axes, e.g. 1920x1920 instead of 1920x1080), a real Godot
+	# headless-environment quirk, not a bug in this scene's own anchors.
+	# Comparing against this same rect (not ProjectSettings) keeps the
+	# test meaningful and passing in both environments: it always checks
+	# "did this Control's anchors resolve within whatever Godot itself
+	# just used", the actual invariant that matters, not a hardcoded
+	# expectation of what that reference size ought to be.
+	var viewport_size := player.get_viewport().get_visible_rect().size
 	var controls := player.get_node("Controls")
 	for control in controls.get_children():
 		if control is not Control:
 			continue
 		var rect: Control = control
+		assert_gte(
+			rect.position.x,
+			0.0,
+			"%s's left edge (%s) must not sit before the viewport" % [control.name, rect.position.x]
+		)
+		assert_gte(
+			rect.position.y,
+			0.0,
+			"%s's top edge (%s) must not sit before the viewport" % [control.name, rect.position.y]
+		)
 		assert_lte(
-			rect.offset_right,
+			rect.position.x + rect.size.x,
 			viewport_size.x,
 			(
 				"%s's right edge (%s) must not exceed the viewport width (%s)"
-				% [control.name, rect.offset_right, viewport_size.x]
+				% [control.name, rect.position.x + rect.size.x, viewport_size.x]
 			)
 		)
 		assert_lte(
-			rect.offset_bottom,
+			rect.position.y + rect.size.y,
 			viewport_size.y,
 			(
 				"%s's bottom edge (%s) must not exceed the viewport height (%s)"
-				% [control.name, rect.offset_bottom, viewport_size.y]
+				% [control.name, rect.position.y + rect.size.y, viewport_size.y]
 			)
 		)

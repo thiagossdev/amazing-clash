@@ -58,35 +58,48 @@ offset_bottom = 60.0
 theme_override_font_sizes/font_size = 20
 
 [node name="PlayPauseButton" type="Button" parent="Controls"]
+anchor_top = 1.0
+anchor_bottom = 1.0
 offset_left = 20.0
-offset_top = 590.0
+offset_top = -100.0
 offset_right = 120.0
-offset_bottom = 630.0
+offset_bottom = -40.0
 text = "Pause"
 
 [node name="SkipBackButton" type="Button" parent="Controls"]
+anchor_top = 1.0
+anchor_bottom = 1.0
 offset_left = 140.0
-offset_top = 590.0
+offset_top = -100.0
 offset_right = 240.0
-offset_bottom = 630.0
+offset_bottom = -40.0
 text = "<< 5s"
 
 [node name="SkipForwardButton" type="Button" parent="Controls"]
+anchor_top = 1.0
+anchor_bottom = 1.0
 offset_left = 260.0
-offset_top = 590.0
+offset_top = -100.0
 offset_right = 360.0
-offset_bottom = 630.0
+offset_bottom = -40.0
 text = "5s >>"
 
 [node name="Scrubber" type="HSlider" parent="Controls"]
+anchor_right = 1.0
+anchor_top = 1.0
+anchor_bottom = 1.0
 offset_left = 380.0
-offset_top = 600.0
-offset_right = 1020.0
-offset_bottom = 620.0
+offset_top = -80.0
+offset_right = -130.0
+offset_bottom = -60.0
 
 [node name="BackButton" type="Button" parent="Controls"]
-offset_left = 1040.0
-offset_top = 590.0
-offset_right = 1130.0
-offset_bottom = 630.0
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -110.0
+offset_top = -100.0
+offset_right = -20.0
+offset_bottom = -40.0
 text = "Back"

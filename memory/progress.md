@@ -873,6 +873,31 @@ changed but this file wasn't updated.
   the free camera's own pan (arrow keys) to solve, not a wider default
   zoom. 250/250 GUT passing (no test asserted on the removed zoom
   value).
+- [x] **Explicit design resolution + anchor-based UI project-wide
+  (2026-09-04, human owner's own request: "quero que já defina uma
+  resolução de design explícito, usar anchors é muito mais robusto",
+  after comparing notes with `amazing-dungeons`' own already-validated
+  fix for the exact same bug class).** `project.godot` gained
+  `window/size/viewport_width/height` = 1920x1080 (design/base
+  resolution) decoupled from `window_width/height_override` = 1280x720
+  (actual startup window), matching `amazing-dungeons`' own pattern
+  exactly. Every project-owned UI scene with fixed absolute `offset_*`
+  positioning (`ui/main_menu/MainMenu.tscn`, `ui/character_select/
+  CharacterSelect.tscn`, `ui/host_join/HostJoin.tscn`, `ui/lobby/
+  Lobby.tscn`, `ui/replay/ReplayList.tscn`, `ui/replay/
+  ReplayPlayer.tscn`'s own Controls row, and `maps/test_arena/
+  TestArena.tscn`'s `MatchHud`/`RoundIntermissionOverlay`) converted to
+  anchor-based (mostly screen-centered) positioning -- resolution-
+  independent going forward instead of tuned-for-one-specific-size.
+  **Found and fixed a 2nd, more fundamental bug the same conversion
+  immediately surfaced**: 5 scenes' own ROOT node is a plain `Control`
+  that was never itself anchored to fill the screen, so every child's
+  percentage-based anchor silently resolved against a zero-sized
+  parent instead of the real viewport -- see `memory/gotchas.md` for
+  the full mechanism. New general-purpose regression test
+  (`tests/unit/test_ui_viewport_bounds.gd`, covering every scene
+  above) confirmed this red, then green after anchoring each root to
+  Godot's "Full Rect" preset. 258/258 GUT passing project-wide.
 
 ## Backlog (next up)
 

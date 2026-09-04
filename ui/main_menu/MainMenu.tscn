@@ -4,31 +4,47 @@
 
 [node name="MainMenu" type="Control" unique_id=1537258124]
 layout_mode = 3
-anchors_preset = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("1_menu")
 
 [node name="TitleLabel" type="Label" parent="." unique_id=2024041975]
 layout_mode = 0
-offset_left = 450.0
-offset_top = 250.0
-offset_right = 750.0
-offset_bottom = 300.0
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = -74.0
+offset_right = 150.0
+offset_bottom = -24.0
 theme_override_font_sizes/font_size = 32
 text = "AMAZING//CLASH"
 horizontal_alignment = 1
 
 [node name="PlayButton" type="Button" parent="." unique_id=1233254650]
 layout_mode = 0
-offset_left = 550.0
-offset_top = 400.0
-offset_right = 650.0
-offset_bottom = 440.0
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -50.0
+offset_top = 76.0
+offset_right = 50.0
+offset_bottom = 116.0
 text = "Play"
 
 [node name="ReplaysButton" type="Button" parent="."]
 layout_mode = 0
-offset_left = 550.0
-offset_top = 450.0
-offset_right = 650.0
-offset_bottom = 490.0
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -50.0
+offset_top = 126.0
+offset_right = 50.0
+offset_bottom = 166.0
 text = "Replays"

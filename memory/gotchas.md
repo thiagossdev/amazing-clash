@@ -785,6 +785,37 @@ Format:
   trap. Fixed by adding the same `_update_visual_feedback()` call to
   `replay_step_authoritative()`.
 
+- **2026-09-04** — Adopting an explicit design resolution (1920x1080,
+  matching `amazing-dungeons`' own already-validated pattern) and
+  converting `ui/main_menu/MainMenu.tscn`/`ui/character_select/
+  CharacterSelect.tscn`/`ui/host_join/HostJoin.tscn`/`ui/lobby/
+  Lobby.tscn`/`ui/replay/ReplayList.tscn`'s children to anchor-based
+  (mostly screen-centered) positioning, a new regression test
+  (`tests/unit/test_ui_viewport_bounds.gd`) immediately caught a 2nd,
+  more fundamental gap in the same 5 scenes: each one's own ROOT node
+  is itself a `Control` (`anchors_preset = 0`, no explicit anchor/
+  offset values), which defaults to Godot's own zero-size `Control` --
+  a CHILD's percentage-based anchor (0.5 = "50% of the parent") resolves
+  against THAT zero-sized parent, not the real viewport, when the
+  parent Control itself was never told to fill the screen. Every
+  centered child came back at a large NEGATIVE screen position (its raw
+  offset value, unchanged, since 50% of 0 is still 0). `ui/replay/
+  ReplayPlayer.tscn` never hit this because its Controls live under a
+  `CanvasLayer`, which has no "size" of its own for children to anchor
+  against -- their anchors resolve straight against the viewport. →
+  **Rule**: when a scene's own top-level node is a plain `Control`
+  (not a `CanvasLayer`), that root Control must ALSO be anchored to
+  fill the screen (Godot's "Full Rect" preset: `anchors_preset = 15`,
+  `anchor_right`/`anchor_bottom = 1.0`, `grow_horizontal`/
+  `grow_vertical = 2`) before ANY percentage-based anchor on its
+  children means anything real -- converting children to anchors
+  without first checking the root's own sizing is an incomplete fix
+  that LOOKS correct (percentages, sensible-looking offset math) while
+  still being just as broken as fixed pixel coordinates were. Caught
+  entirely by the new automated test, not by inspection -- this is
+  exactly the kind of bug this project's "no way to screenshot Godot's
+  real renderer" gap makes invisible any other way.
+
 <!--
 Examples:
 
