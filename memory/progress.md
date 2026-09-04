@@ -604,13 +604,17 @@ changed but this file wasn't updated.
   auto-triggers the match with no more host-only Start button. Room
   Config's UI: a Ready/Not Ready toggle button on every row (Switch
   Team nested below it on the local row), Red/Blue team labels, and a
-  new Leave Room button returning to Main Menu. 6 new GUT tests (146
+  new Leave Room button returning to Main Menu. `/check` (high
+  severity) found 2 real bugs -- stale `LobbyState` registries surviving
+  a Leave Room -> re-host cycle, and no guard against the countdown
+  re-triggering mid-match -- both fixed (`reset_room()`,
+  `_countdown_still_valid()`) and re-verified. 9 new GUT tests (149
   total, was 140). Live 2-process test: both peers ready -> auto-starts
-  with zero engine errors; only one ready -> never starts. See
-  `memory/plan.md`'s Slice 14 block and `memory/verify.md`'s Phase 14
-  section for full evidence, including the 2 gaps left deliberately
-  unverified (the Leave Room button's own click path, and the exact
-  mid-countdown-cancel race) and why.
+  with zero engine errors; only one ready -> never starts; re-verified
+  after the `/check` fixes. See `memory/plan.md`'s Slice 14 block and
+  `memory/verify.md`'s Phase 14 section for full evidence, including
+  the 2 gaps left deliberately unverified (the Leave Room button's own
+  click path, and the exact mid-countdown-cancel race) and why.
 
 ## Backlog (next up)
 

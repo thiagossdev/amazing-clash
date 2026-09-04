@@ -1207,31 +1207,53 @@ as scoped, no deviation.
   test doesn't have to eat a real 7s wait. `--dev-ready` now applies to
   either role (previously client-only, since only clients had a ready
   checkbox).
-- **Tests**: `tests/unit/test_lobby_state.gd` grew from 25 to 31 tests
+- **Tests**: `tests/unit/test_lobby_state.gd` grew from 25 to 35 tests
   -- the 4 old `all_non_host_ready()` tests replaced with 5 `all_ready()`
   tests (including the new "empty room is never ready" and "host itself
-  must ready up too" cases), plus 1 `team_label()` test and 4
+  must ready up too" cases), plus 1 `team_label()` test, 4
   `is_room_ready_to_start()` tests (not ready, invalid team split, valid
-  split, FFA bypasses the split check entirely). The countdown
-  coroutine's own timing/RPC-broadcast behavior is verified live, not
-  unit-tested, matching this file's own stated convention ("the
-  Node-based registry ... is verified tactilely instead") -- only the
-  pure predicates it's built from are unit-tested. 146/146 GUT tests
-  passing project-wide (was 140).
+  split, FFA bypasses the split check entirely), 1 `reset_room()` test,
+  and 2 `_countdown_still_valid()` tests (both from `/check`'s 2 real
+  findings below). The countdown coroutine's own timing/RPC-broadcast
+  behavior is verified live, not unit-tested, matching this file's own
+  stated convention ("the Node-based registry ... is verified tactilely
+  instead") -- only the pure predicates it's built from are
+  unit-tested. 149/149 GUT tests passing project-wide (was 140).
+- **`/check` (code-review skill), high severity, full branch diff**:
+  found 2 real bugs, both fixed and re-verified, none deferred.
+  1. `LobbyState`'s registries (ready flags, class/team/perk picks,
+     `_countdown_generation`) survived a Leave Room -> re-host/re-join
+     cycle, since it's an autoload -- a stale `player_ready[1] = true`
+     from a PREVIOUS room could auto-start the new one with no Ready
+     press ever happening in it. Fixed: `reset_room()` runs at the top
+     of `register_local_player()`, the one function every fresh room
+     entry already goes through; deliberately does no RPC calls
+     (unlike `_cancel_countdown()`) since it must be safe to call on a
+     client too.
+  2. `_recompute_countdown()`/`_run_countdown()` had no guard against
+     `MatchState.current_phase` already being past `LOBBY`. A peer
+     disconnecting or a new peer direct-IP-joining mid-match still runs
+     `LobbyState`'s own registry mutations (LAN advertising stops, but
+     the port itself doesn't), which could make
+     `is_room_ready_to_start()` resolve true again and re-trigger
+     `MatchState.enter_loading()` mid-match, forcing every already-
+     in-match peer back to `LOADING`. Fixed: both now check
+     `MatchState.current_phase == Phase.LOBBY` via a new
+     `_countdown_still_valid()` helper.
 - **Verify**: `gdformat`/`gdlint` clean on every changed file. Live
   2-process test (`--dev-countdown-pre-delay=0.3
-  --dev-countdown-seconds=1.0`): both peers set `--dev-ready` -> both
-  reach `IN_PROGRESS` automatically with zero button presses and zero
-  engine errors; a 2nd run with only the host readying up -> neither
-  peer ever transitions out of `LOBBY`, confirming an incomplete
-  ready-set never auto-starts. The specific mid-countdown cancel race
-  (someone un-readies while the countdown is already running) is
-  covered by construction (the generation-token re-check before every
-  `await`) and by `is_room_ready_to_start()`'s own unit tests, not by a
-  dedicated live scenario -- no existing dev flag can deterministically
-  un-ready a peer mid-countdown without adding one solely for this
-  test, which was judged not worth a permanent flag for a single
-  verification run.
+  --dev-countdown-seconds=1.0`), re-run after the `/check` fixes above:
+  both peers set `--dev-ready` -> both reach `IN_PROGRESS` automatically
+  with zero button presses and zero engine errors; a 2nd run with only
+  the host readying up -> neither peer ever transitions out of `LOBBY`,
+  confirming an incomplete ready-set never auto-starts. The specific
+  mid-countdown cancel race (someone un-readies while the countdown is
+  already running) is covered by construction (the generation-token
+  re-check before every `await`) and by `is_room_ready_to_start()`'s
+  own unit tests, not by a dedicated live scenario -- no existing dev
+  flag can deterministically un-ready a peer mid-countdown without
+  adding one solely for this test, which was judged not worth a
+  permanent flag for a single verification run.
 - **Known, deliberately unverified gap**: the Leave Room button itself
   (click -> `NetworkManager.close()` -> scene change to `MainMenu`) was
   not exercised by a dedicated live/dev-flag test -- it composes 3

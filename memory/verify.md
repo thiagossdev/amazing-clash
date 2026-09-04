@@ -901,12 +901,14 @@ in `progress.md`. No exceptions.
   a solo host who has readied is ready; the host itself not readying
   blocks it now, where it never used to; a non-host peer not reporting
   still blocks it; every registered peer including the host reporting
-  makes it true), 1 `team_label()` test (0 -> "Red", 1 -> "Blue"), and
-  4 `is_room_ready_to_start()` tests (blocked while not everyone's
-  ready; blocked in Team mode with an invalid split; true in Team mode
-  with a valid split; true in FFA regardless of team split). 10 new
-  tests total (146 project-wide, was 136 before this phase -- the
-  Phase 13b reissue fix landed in between at 140).
+  makes it true), 1 `team_label()` test (0 -> "Red", 1 -> "Blue"), 4
+  `is_room_ready_to_start()` tests (blocked while not everyone's ready;
+  blocked in Team mode with an invalid split; true in Team mode with a
+  valid split; true in FFA regardless of team split), 1 `reset_room()`
+  test, and 2 `_countdown_still_valid()` tests (the last 3 added in
+  response to `/check`'s 2 real findings, see below). 14 new tests
+  total (149 project-wide, was 136 before this phase -- the Phase 13b
+  reissue fix landed in between at 140).
 - [x] **TDD confirmed**: ran just these 10 new tests before writing
   any implementation -- all failed with `Invalid call: Nonexistent
   function 'all_ready'/'team_label'/'is_room_ready_to_start'`, i.e. a
@@ -920,18 +922,19 @@ in `progress.md`. No exceptions.
   added out of their required group order; fixed by moving them next
   to the file's existing signal/const declarations instead of inline
   where they were logically discussed).
-- [x] Full GUT suite: 146/146 passing.
+- [x] Full GUT suite: 149/149 passing.
 - [x] **Live 2-process test** (`--dev-autoplay --dev-class=<id>
   --dev-host`/`--dev-join=127.0.0.1` `--dev-ready
   --dev-countdown-pre-delay=0.3 --dev-countdown-seconds=1.0`, temporary
   `print()` traces in `core/match_state.gd`'s `_rpc_enter_loading`/
-  `_rpc_enter_in_progress`, removed before the final commit): both
-  peers set `--dev-ready` -> both processes log `phase=LOADING` then
+  `_rpc_enter_in_progress`, removed before each commit): both peers set
+  `--dev-ready` -> both processes log `phase=LOADING` then
   `phase=IN_PROGRESS` with zero button presses and zero engine errors.
   Re-run with only the host setting `--dev-ready` (client never
   readies) -> neither process ever logs a phase transition within the
   same wait window, confirming an incomplete ready-set never
-  auto-starts.
+  auto-starts. Re-run a 3rd time after the `/check` fixes below to
+  confirm the new guards didn't regress the happy path.
 - [ ] **Known, deliberately unverified gaps** (see `memory/plan.md`'s
   Slice 14 block for the full reasoning): (1) the Leave Room button's
   own click path was not exercised by a dedicated live/dev-flag test --
@@ -947,10 +950,18 @@ in `progress.md`. No exceptions.
   `is_room_ready_to_start()`'s own unit tests instead; (3) the same "no
   way to screenshot Godot's real renderer in this environment" gap
   every UI-adjacent phase has flagged since Phase 7.
-- [ ] **`/check` (code-review skill)**: run at high severity against
-  the branch's full diff before merge -- see this phase's own report
-  for findings and their disposition (fixed, or deferred with a stated
-  reason).
+- [x] **`/check` (code-review skill)**, high severity, full branch
+  diff. 2 real findings, both fixed and re-verified, none deferred:
+  1. `LobbyState`'s registries survived a Leave Room -> re-host/re-join
+     cycle (it's an autoload) -- a stale `player_ready[1] = true` from
+     a PREVIOUS room could auto-start the new one with no Ready press
+     in it. Fixed with `reset_room()`, called at the top of
+     `register_local_player()`.
+  2. The countdown had no guard against `MatchState.current_phase`
+     already being past `LOBBY` -- a mid-match disconnect or a new
+     direct-IP join could still touch `LobbyState`'s registries and
+     re-trigger `MatchState.enter_loading()` mid-match. Fixed with a
+     new `_countdown_still_valid()` check.
 - [ ] **Not merged into `main`** -- built on `feature/phase14-room-
   config-ux` from a fork's own isolated worktree; the same hard
   sandbox boundary Phase 13b hit (a worktree-scoped fork cannot reach
