@@ -150,7 +150,16 @@ func seek_to_frame(target_frame: int) -> void:
 	_is_playing = false
 	_reset_playback_state()
 	var clamped_target := clampi(target_frame, 0, _tick_record_count)
-	while _ticks_processed < clamped_target and not _is_finished:
+	# A target at or past the last recorded tick also consumes any
+	# trailing non-tick records (round_end/match_end) rather than
+	# stopping the instant the tick count is reached -- otherwise
+	# seeking to "the end" would leave is_finished() false forever,
+	# since match_end is itself a non-tick record one step past the
+	# last tick.
+	var play_to_end := target_frame >= _tick_record_count
+	while not _is_finished and _record_cursor < _records.size():
+		if not play_to_end and _ticks_processed >= clamped_target:
+			break
 		_apply_next_tick_record()
 	_is_playing = was_playing and not _is_finished
 	state_changed.emit()
@@ -172,7 +181,16 @@ func skip_seconds(seconds: float) -> void:
 ## noise" boundary (a corrupt replay file is user-supplied data, not a
 ## code invariant).
 static func parse_line(line: String) -> Dictionary:
-	var parsed = JSON.parse_string(line)
+	# The instance API (not the static JSON.parse_string() convenience
+	# wrapper) is deliberate: JSON.parse_string() prints a real engine
+	# error on malformed input even though it also returns null
+	# gracefully -- noisy for a boundary that's expected to sometimes
+	# see a corrupt/truncated line (a crash mid-write), found live via
+	# this file's own test_parse_line_malformed_json_returns_empty_dict.
+	var json := JSON.new()
+	if json.parse(line) != OK:
+		return {}
+	var parsed: Variant = json.get_data()
 	if typeof(parsed) != TYPE_DICTIONARY or not parsed.has("type"):
 		return {}
 	var data: Dictionary = parsed
@@ -385,3 +403,4 @@ func _spawn_characters() -> void:
 		character.team = entry["team"]
 		character.position = position_calculator._spawn_position_for(entry["team"])
 		characters.add_child(character)
+	position_calculator.free()
