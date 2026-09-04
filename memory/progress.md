@@ -615,19 +615,49 @@ changed but this file wasn't updated.
   `memory/verify.md`'s Phase 14 section for full evidence, including
   the 2 gaps left deliberately unverified (the Leave Room button's own
   click path, and the exact mid-countdown-cancel race) and why.
+- [x] **Phase 15 (Ability framework Q/E/R/F) implemented, live-verified,
+  on `feature/phase15-ability-rf`**: each of the 3 classes gains 2 new
+  abilities on R/F, mirroring the existing Q/E slot pattern exactly
+  (own FSM, own cooldown, independent of every other slot). 8 new
+  ability+move pairs authored (Vanguard: Shoulder Charge/Execute;
+  Ranged Mage: Mana Spike/Meteor; Warden: Restraining Web/Guardian's
+  Grasp), calibrated against each class's existing Q/E numbers, a first
+  pass subject to rebalancing. Found and fixed 2 real bugs: (1) a
+  reconciliation crash, latent for Q/E since Phase 3 -- `ClientPredictor.
+  Checkpoint` never restored an ability slot's `current_move`, only
+  `.state`/`.move_frame`, so a replay landing on a restored active slot
+  dereferenced a null move; (2) the F1 debug hitbox viewer only drew
+  Q/E's melee hitboxes, the exact same gap the human owner already
+  caught once for Q/E itself during Phase 3 -- found via self-review
+  before it could repeat for R/F. 158/158 GUT tests passing (was 149).
+  Live 2-process test: server (Vanguard) cast Shoulder Charge/Execute,
+  client (Ranged Mage) cast Mana Spike/Meteor, zero engine errors after
+  the reconciliation fix. `/check`'s async background dispatch had no
+  way to retrieve a result from inside this isolated worker fork (no
+  task-list/task-output access available to it) -- fell back to an
+  inline adversarial self-review, same convention Phase 13b's fork used
+  when no specialist sub-agents were available. See `memory/plan.md`'s
+  Slice 15 block, `memory/gotchas.md`, and `memory/verify.md`'s Phase 15
+  section for full evidence.
 
 ## Backlog (next up)
 
-- [ ] **Phases 15-20 (ability framework Q/E/R/F, weapon+boot loadout,
-  best-of-3 rounds, match log, replay recording, replay playback) —
-  scope confirmed via `/think` 2026-09-03/04, running now via `/loop` +
-  `/ship-phase`, one phase at a time. Phase 14 (Room Config UX) is
-  DONE, see the Completed entry above.** See
+- [ ] **Phases 16-20 (weapon+boot loadout, best-of-3 rounds, match log,
+  replay recording, replay playback) — scope confirmed via `/think`
+  2026-09-03/04, running now via `/loop` + `/ship-phase`, one phase at
+  a time. Phases 14-15 are DONE, see the Completed entries above.** See
   `memory/plan.md`'s roadmap list (items 14-20) for the full decided
   scope of each, including the exact inter-round loadout-countdown
   timing (15s pick/confirm window, 5s or 3s start countdown depending
   on how early everyone confirms) and the `sim_seed` replay-format
   field reserved now for RNG the human owner plans to add later.
+- [ ] **/check's background-dispatch mechanism didn't work from inside
+  an isolated worker fork** (Phase 15) -- no task-id was returned, and
+  no `TaskList`/`TaskOutput` access was available to retrieve a result
+  even if one existed. Not a blocker (inline self-review is an accepted
+  fallback, same as Phase 13b), but worth the human owner's attention:
+  if this recurs across Phases 16-20, every one of them will be doing
+  self-review instead of the dedicated multi-persona `/check` pass.
 - [ ] LAN discovery: Linux still can't discover a Windows-hosted room
   even after confirming `ufw allow 7777/udp` + `7778/udp` (the 7777
   fix DID resolve the separate "join hangs forever" symptom -- this is

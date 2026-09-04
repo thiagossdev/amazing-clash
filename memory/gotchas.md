@@ -487,6 +487,52 @@ Format:
   declaration, before writing the functions that use it, to catch this
   in one small diff instead of a larger reshuffle later.
 
+- **2026-09-04** — Phase 15 (ability_r/ability_f): `ClientPredictor.
+  Checkpoint` restored an ability slot's `.state`/`.move_frame` on
+  reconciliation but never `.current_move` -- only the SHARED
+  `action_fsm`'s checkpoint field (`action_move`) ever had this right,
+  since Phase 3 wrote `ability_q`/`ability_e`'s checkpoint fields as a
+  visually-similar-looking but incomplete copy of it.
+  `ActionFsm.advance_frame()` dereferences `current_move`
+  unconditionally the moment `state` isn't `NEUTRAL` -- a
+  reconciliation replay landing on a restored non-`NEUTRAL` slot with
+  `current_move` still null (or stale from a previous cast) crashed the
+  CLIENT ONLY with a real engine error ("Invalid access to property or
+  key 'startup_frames' on a base object of type 'Nil'"), never the
+  server (which never reconciles). Latent for Q/E since Phase 3 --
+  their own live tests never happened to hit the exact reconciliation
+  timing that triggers it; R/F's own live test (heavier, held-input
+  cast pressure from `Input.action_press` firing every tick) is what
+  first exposed it. → **Rule**: when a "capture into a Checkpoint,
+  restore from it" pattern already exists correctly for one field
+  (`action_move`) and you're copying its shape for a sibling field
+  (`ability_q`'s own equivalent), diff the copy against the original
+  line-by-line rather than pattern-matching by eye -- a plausible-
+  looking partial copy that's missing one field compiles fine, passes
+  every existing test (nothing exercised the missing field's absence),
+  and only crashes under a specific runtime timing nobody happened to
+  trigger yet. Fixed once, for all 4 slots (Q/E/R/F) at the same time,
+  not just the 2 new ones.
+
+- **2026-09-04** — Same phase, found via self-review before it could
+  repeat itself: `ui/debug/hitbox_viewer.gd`'s F1 overlay draws
+  `action_fsm`/each ability slot's melee hitbox by an explicit
+  if-check per named slot (`if character.ability_q and not
+  character.ability_q.is_projectile: ...`), NOT generically like
+  `CombatResolver._resolve_ability_slot()` does -- so adding a new
+  ability slot to `CharacterController` silently does not extend this
+  file, even though it looks like it should from the pattern. This is
+  the exact same class of bug the human owner already caught once for
+  Q/E during Phase 3 play-testing (documented in that file's own doc
+  comment) -- R/F would have repeated it verbatim had self-review not
+  caught it first. → **Rule**: when a file's own doc comment already
+  says "the human owner caught this exact mistake once before," treat
+  that as a standing checklist item for every future change that adds
+  the same kind of thing (here: a new ability slot) -- grep for every
+  OTHER file that pattern-matches on a slot by name (not just the 2
+  files a phase's own scope says to touch) before considering the
+  phase done.
+
 <!--
 Examples:
 

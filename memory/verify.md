@@ -970,3 +970,92 @@ in `progress.md`. No exceptions.
   feature/phase14-room-config-ux` from
   `/mnt/c/var/workspaces/godot/amazing-clash`, then `godot4 --headless
   --import` before trusting a post-merge GUT run.
+
+### Phase 15: Ability framework Q/E/R/F
+
+- [x] `tests/unit/test_input_buffer.gd` (new, 2 tests): pack/unpack
+  round-trips every one of the 6 ability flags independently (attack,
+  skillshot, Q, E, R, F), plus an all-zero-flags case. Never unit-tested
+  before this phase.
+- [x] `tests/unit/test_character_controller_combat.gd` (+7 tests):
+  ability_r/ability_f start their own move, ability_r stays on cooldown
+  after its move ends, ability_f can be cast again once cooldown
+  elapses (a deliberate subset of Q/E's own exhaustive coverage --
+  `_advance_ability_slot()`'s decision logic is already proven, these
+  confirm R/F are wired to it), all 4 slots independent of each other
+  in one call, `_is_any_action_active()` includes R/F, and the
+  reconciliation regression test (see below).
+- [x] `tests/unit/test_character_classes.gd` (+12 asserts): R/F wiring
+  (ability name + `is_projectile`) confirmed for all 3 real classes.
+- [x] **TDD confirmed for the live-found reconciliation bug**: wrote
+  `test_restoring_a_predicted_checkpoint_preserves_ability_r_current_
+  move` first, ran it standalone -- failed with the EXACT engine error
+  the live test produced ("Invalid access to property or key
+  'startup_frames' on a base object of type 'Nil'"), i.e. the unit test
+  reproduces the live symptom, not just a logic assertion. Green after
+  adding `ability_q/e/r/f_move` to `ClientPredictor.Checkpoint` and
+  restoring them in `_restore_predicted_state()`.
+- [x] `gdformat --check` / `gdlint` clean on every changed/new file
+  (`gameplay/characters/character_base/character_controller.gd`,
+  `gameplay/combat/combat_resolver.gd`, `input/input_buffer.gd`,
+  `net/client_predictor.gd`, `net/dev_bootstrap.gd`, `ui/debug/
+  hitbox_viewer.gd`, plus 16 new `.tres` content files and 4 changed
+  `.tscn` scenes -- not gdlint-applicable, syntax-checked via `godot4
+  --headless --import` instead).
+- [x] Full GUT suite: 158/158 passing (was 149).
+- [x] **Live 2-process test** (`--simulate-ability-r
+  --simulate-ability-f` on both server and client), with temporary
+  `[VERIFY]` `print()` instrumentation in `character_controller.gd`'s
+  `_advance_ability_slot()` and `combat_resolver.gd`'s
+  `_maybe_launch_projectile()`/`_apply_hit()`, removed before the final
+  commit: **first run** (before the reconciliation fix) reproduced the
+  exact crash on the CLIENT ONLY (never the server, which never
+  reconciles) -- `SCRIPT ERROR: Invalid access to property or key
+  'startup_frames'/'recovery_frames' on a base object of type 'Nil'`,
+  repeating every time the client's held `ability_r`/`ability_f` input
+  triggered a reconciliation replay landing on an already-ACTIVE slot.
+  **Second run** (after the fix): zero engine errors on either peer.
+  Server (Vanguard) logged casting Shoulder Charge and Execute; client
+  (Ranged Mage) logged casting Mana Spike and Meteor, with matching
+  `[VERIFY] projectile launch` lines for both `ability_r`/`ability_f`
+  slots -- confirming the generalized `_get_move_for_slot()`/
+  `_pending_direction_for_slot()` dispatch correctly resolves the new
+  slot names on both ends.
+- [x] **Self-review** (adversarial, in place of `/check`'s multi-persona
+  pass -- see the gap noted below): `git diff main...feature/phase15-
+  ability-rf` read in full. Found and fixed 2 real issues:
+  1. The reconciliation crash above.
+  2. `ui/debug/hitbox_viewer.gd`'s F1 overlay only drew `action_fsm`/
+     `ability_q`/`ability_e`'s melee hitboxes -- the same gap the human
+     owner already caught once for Q/E during Phase 3 play-testing
+     (documented in that file's own doc comment). R/F's melee abilities
+     would have hit correctly server-side with no debug box ever
+     appearing. Fixed by extending the same drawing logic to R/F.
+  `grep -rln "ability_q\b" --include="*.gd" .` swept every file in the
+  project referencing the pattern this phase extends -- confirmed no
+  other call site needed the same treatment beyond the 2 fixed above.
+- [ ] **`/check` (code-review skill) did not run as designed**: invoking
+  it launched an async background dispatch ("forked execution, running
+  in the background") with no task-id returned and no `TaskList`/
+  `TaskOutput` access available to this isolated worker fork to
+  retrieve a result even if one existed. Fell back to the inline
+  self-review above, the same accepted convention Phase 13b's fork used
+  when no specialist sub-agents were available to it. Flagged in
+  `memory/progress.md`'s Backlog for the human owner's attention --
+  worth checking whether this recurs for Phases 16-20.
+- [ ] **Not merged into `main`** -- built on `feature/phase15-ability-rf`
+  from a fork's own isolated worktree; the same hard sandbox boundary
+  Phases 13b/14 hit applies here too. The orchestrating session needs
+  to run `git merge --no-ff feature/phase15-ability-rf` from
+  `/mnt/c/var/workspaces/godot/amazing-clash`, then `godot4 --headless
+  --import` before trusting a post-merge GUT run.
+- [ ] **Known, deliberately unverified gaps**: Warden's own R/F weren't
+  live-cast in the 2-peer test above (only Vanguard and Ranged Mage
+  connect) -- covered instead by `test_character_classes.gd`'s wiring
+  assertions, same reasoning Phase 4's own Slice used for Ranged Mage's
+  kit when only Vanguard was live-cast. ability_r_fsm/ability_f_fsm
+  state still isn't replicated to a remote `INTERPOLATED` peer, same
+  pre-existing Phase 3 limitation as Q/E. Content numbers (damage/
+  cooldown/hitstun for all 8 new abilities) are a first pass, not
+  playtested. Same "no way to screenshot Godot's real renderer" gap
+  every phase since Phase 1 has flagged.

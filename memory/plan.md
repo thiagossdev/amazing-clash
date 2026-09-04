@@ -139,7 +139,7 @@ phase independently playable/demoable even if the next never lands):
     own checkpoint/reconciliation fields). Content (names/numbers)
     authored following the existing convention (same process as
     Phases 4/6/9's own content), subject to the human owner's
-    rebalancing after playtesting. **Not started** — scope below.
+    rebalancing after playtesting. **Done** — see Slice 15 below.
 16. Loadout: Weapon + Boot. A **shared pool** of 3 weapons and 3
     boots — any class can equip any of them (confirmed 2026-09-03: not
     a per-class pool). `WeaponResource` defines LMB (attack) + RMB
@@ -1265,6 +1265,108 @@ as scoped, no deviation.
   for one button. Also the same "no way to screenshot Godot's real
   renderer in this environment" gap every UI-adjacent phase has flagged
   since Phase 7.
+
+### Slice 15 (Ability Framework Q/E/R/F) — DONE
+
+Confirmed by the human owner via `/think` 2026-09-03/04, built exactly
+as scoped, no deviation.
+
+- **Built on `feature/phase15-ability-rf`**: `CharacterController` gains
+  `ability_r`/`ability_f` (`AbilityResource`) fields, `ability_r_fsm`/
+  `ability_f_fsm` (`ActionFsm`), `_ability_r_cooldown_frames`/
+  `_ability_f_cooldown_frames`, `pending_ability_r_direction`/
+  `pending_ability_f_direction`, mirroring `ability_q`/`ability_e`
+  exactly -- own FSM, own cooldown, independent of every other slot
+  and of melee/skillshot, same as Phase 3 established. `InputBuffer.
+  Sample` grew `ability_r_pressed`/`ability_f_pressed`;
+  `pack_ability_flags`/`unpack_ability_flags` extended from 4 to 6
+  bits (bit order: attack, skillshot, Q, E, R, F). `CombatResolver`
+  resolves all 4 slots generically through the same `_resolve_ability_
+  slot()`/`_get_move_for_slot()` dispatch Phase 3 built; the original
+  2-way ternary picking a projectile slot's pending aim direction was
+  replaced with `_pending_direction_for_slot()` (a proper `match`) once
+  a 3rd/4th slot would have made it unreadable as inline ternaries.
+- **Content** (8 new `AbilityResource`+`MoveDefinition` pairs, 2 per
+  class, numbers calibrated against each class's own existing Q/E
+  magnitude -- a first pass, subject to the human owner's rebalancing
+  after playtesting):
+  - **Vanguard** (melee frontline): R "Shoulder Charge" (melee, 60f
+    cooldown, 12 dmg, a fast low-commitment poke) / F "Execute" (melee,
+    220f cooldown, 35 dmg, a slow high-damage finisher).
+  - **Ranged Mage** (ranged skillshot): R "Mana Spike" (projectile, 50f
+    cooldown, 8 dmg, faster/cheaper than Q's own Frost Shard) / F
+    "Meteor" (projectile, 240f cooldown, 34 dmg, an ultimate-scale
+    nuke).
+  - **Warden** (support/control): R "Restraining Web" (projectile, 140f
+    cooldown, 6 dmg but 40f hitstun -- pure control, matching Warden's
+    established damage-light/hitstun-heavy identity) / F "Guardian's
+    Grasp" (melee, 160f cooldown, 12 dmg, 45f hitstun).
+  - Debug fixtures "Guard Break" (melee) / "Ice Lance" (projectile)
+    added to `Character.tscn` for the generic GUT test scene, mirroring
+    `debug_ability_q`/`debug_ability_e`.
+- **1 real bug found live, not anticipated by the original design**:
+  `ClientPredictor.Checkpoint` restored an ability slot's `.state`/
+  `.move_frame` on reconciliation but never `.current_move` (only the
+  shared `action_fsm`'s checkpoint field had this right) --
+  `ActionFsm.advance_frame()` dereferences `current_move`
+  unconditionally once `state` isn't `NEUTRAL`, so a reconciliation
+  replay landing on a restored non-`NEUTRAL` ability slot crashed the
+  client ("Invalid access to property or key 'startup_frames' on a
+  base object of type 'Nil'"). **Latent for Q/E since Phase 3** --
+  R/F's own live test is what first hit the exact reconciliation timing
+  that triggers it, not something new to R/F's own logic. Fixed by
+  adding `ability_q_move`/`ability_e_move`/`ability_r_move`/
+  `ability_f_move` to `Checkpoint` and capturing/restoring them
+  alongside `.state`/`.move_frame`, closing the gap for all 4 slots at
+  once. See `memory/gotchas.md`.
+- **1 more real gap found via self-review, before it could repeat a
+  known mistake**: `ui/debug/hitbox_viewer.gd`'s F1 overlay only ever
+  drew `action_fsm`/`ability_q`/`ability_e`'s melee hitboxes -- the
+  exact same gap the human owner already caught once during Phase 3
+  play-testing for Q/E itself (see that file's own doc comment). Left
+  unfixed, R/F's melee abilities (Vanguard's Shoulder Charge/Execute,
+  Warden's Guardian's Grasp) would have hit correctly server-side with
+  no debug box ever appearing, again reasonably misreadable as "the
+  hit isn't landing." Fixed by extending the same drawing logic to
+  R/F.
+- **Tests**: `tests/unit/test_input_buffer.gd` (new, 2 tests --
+  pack/unpack round-trips every one of the 6 flags independently,
+  never unit-tested before this phase). `tests/unit/
+  test_character_controller_combat.gd` grew 7 tests: R/F start/
+  cooldown-blocks/cooldown-elapses (a deliberate subset of Q/E's own
+  exhaustive coverage -- `_advance_ability_slot()`'s decision logic is
+  already proven, these just confirm R/F are wired to it), all-4-slots-
+  independent, `_is_any_action_active()` includes R/F, and the
+  reconciliation regression test above (confirmed red against the
+  pre-fix code, reproducing the exact engine error, green after).
+  `tests/unit/test_character_classes.gd` grew R/F wiring assertions for
+  all 3 real classes. 158/158 GUT tests passing project-wide (was 149).
+- **`/check` (code-review skill)**: the async background dispatch this
+  phase's fork tried to use had no way to retrieve a result from inside
+  an isolated worker fork (no task-list/task-output access) -- fell
+  back to the same "run inline as adversarial self-review, no separate
+  specialist agents available" convention Phase 13b's own fork used.
+  Found and fixed the 2 issues above; a `grep` sweep for every other
+  file referencing `ability_q` confirmed no other call site needed the
+  same R/F extension.
+- **Verify**: `gdformat`/`gdlint` clean project-wide. Live 2-process
+  test (`--simulate-ability-r --simulate-ability-f` on both peers):
+  server (Vanguard) cast Shoulder Charge and Execute, client (Ranged
+  Mage) cast Mana Spike and Meteor, both projectile slots launched and
+  replicated identically on both peers' own logs -- zero engine errors
+  on either side, re-run clean after the reconciliation fix (the
+  un-fixed run reproduced the exact crash above on the client only).
+  Warden's own R/F weren't live-cast in this 2-peer run (only 2 of the
+  3 classes connect); covered instead by `test_character_classes.gd`'s
+  wiring assertions, same reasoning Phase 4's own Slice used for Ranged
+  Mage's kit.
+- **Known, deliberately unverified gap**: ability_r_fsm/ability_f_fsm
+  state (like Q/E's before them) still isn't replicated to a remote
+  `INTERPOLATED` peer -- a remote player's R/F cast won't visually show
+  as active on other clients, same pre-existing Phase 3 limitation,
+  not a new one. Also the same "no way to screenshot Godot's real
+  renderer" visual-verification gap every phase since Phase 1 has
+  flagged.
 
 ## MVP Status
 
