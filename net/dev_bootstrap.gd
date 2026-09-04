@@ -29,10 +29,22 @@ extends Node
 ## decided at startup, not a live-togglable console command (who's
 ## allowed to change a match rule mid-game is a separate authority
 ## question, not opened here). `-- --simulate-self-eliminate` directly
-## zeroes this peer's own character's health ~1s in (bypassing hit
-## geometry entirely) so Phase 5's elimination/win-condition/HUD chain
-## can be exercised deterministically without depending on 2 characters
-## actually connecting a hit. `-- --dev-kick-after=<seconds>` (server
+## zeroes this peer's own character's health ~1s after EVERY
+## Phase.IN_PROGRESS transition (not just the first -- Phase 17
+## generalized this from a single one-shot timer to a repeating
+## EventBus.match_state_changed listener, so the SAME flag can also
+## force a full best-of-3 sequence: this peer "loses" every round until
+## round_wins reaches ROUND_TARGET, all in one continuous live run,
+## with no new flag needed) so Phase 5's elimination/win-condition/HUD
+## chain, and Phase 17's own round transitions, can be exercised
+## deterministically without depending on 2 characters actually
+## connecting a hit. `-- --dev-auto-confirm-intermission` (Phase 17)
+## watches EventBus.match_state_changed and presses Confirm the instant
+## ROUND_INTERMISSION begins, so a live test doesn't have
+## to simulate a real dropdown/button click to exercise the confirm-set
+## countdown deterministically; combine with core/match_state.gd's own
+## --dev-intermission-*= overrides to avoid eating the real 15s/5s/3s
+## waits. `-- --dev-kick-after=<seconds>` (server
 ## only, Slice 13b) force-disconnects the first connected client after
 ## the delay, simulating a real mid-match drop for live reconnect
 ## testing -- see this function's own trailing block. `-- --free-for-all` sets
@@ -69,85 +81,116 @@ static var _ran_once := false
 
 
 func _ready() -> void:
-	if _ran_once:
-		return
-	_ran_once = true
 	var args := OS.get_cmdline_user_args()
-	for arg in args:
-		if arg.begins_with("--latency="):
-			NetworkManager.artificial_latency_ms = arg.trim_prefix("--latency=").to_int()
-	if "--friendly-fire" in args:
-		MatchState.friendly_fire_enabled = true
-	if "--free-for-all" in args:
-		MatchState.match_mode = MatchState.MatchMode.FREE_FOR_ALL
 
-	if "--server" in args:
-		var err := NetworkManager.host()
-		if err != OK:
-			push_error("dev_bootstrap: failed to host (%s)" % err)
-		else:
-			MatchState.enter_in_progress()
-	elif "--join" in args:
-		# Slice 13b: mirrors ui/host_join/host_join.gd's own
-		# remember_join_target() call -- without it, this headless
-		# dev-join path would have no address to auto-reconnect to.
-		ReconnectManager.remember_join_target("127.0.0.1", NetworkManager.DEFAULT_PORT)
-		var err := NetworkManager.join()
-		if err != OK:
-			push_error("dev_bootstrap: failed to join (%s)" % err)
+	if not _ran_once:
+		_ran_once = true
+		for arg in args:
+			if arg.begins_with("--latency="):
+				NetworkManager.artificial_latency_ms = arg.trim_prefix("--latency=").to_int()
+		if "--friendly-fire" in args:
+			MatchState.friendly_fire_enabled = true
+		if "--free-for-all" in args:
+			MatchState.match_mode = MatchState.MatchMode.FREE_FOR_ALL
 
-	if "--simulate-move" in args:
-		Input.action_press(&"move_right")
-		await get_tree().create_timer(1.0).timeout
-		Input.action_press(&"dash")
+		if "--server" in args:
+			var err := NetworkManager.host()
+			if err != OK:
+				push_error("dev_bootstrap: failed to host (%s)" % err)
+			else:
+				MatchState.enter_in_progress()
+		elif "--join" in args:
+			# Slice 13b: mirrors ui/host_join/host_join.gd's own
+			# remember_join_target() call -- without it, this headless
+			# dev-join path would have no address to auto-reconnect to.
+			ReconnectManager.remember_join_target("127.0.0.1", NetworkManager.DEFAULT_PORT)
+			var err := NetworkManager.join()
+			if err != OK:
+				push_error("dev_bootstrap: failed to join (%s)" % err)
 
-	if "--simulate-attack" in args:
-		await get_tree().create_timer(1.2).timeout
-		Input.action_press(&"attack")
+		if "--simulate-move" in args:
+			Input.action_press(&"move_right")
+			await get_tree().create_timer(1.0).timeout
+			Input.action_press(&"dash")
 
-	if "--simulate-skillshot" in args:
-		await get_tree().create_timer(1.4).timeout
-		Input.action_press(&"skillshot")
+		if "--simulate-attack" in args:
+			await get_tree().create_timer(1.2).timeout
+			Input.action_press(&"attack")
 
-	if "--simulate-ability-q" in args:
-		await get_tree().create_timer(1.6).timeout
-		Input.action_press(&"ability_q")
+		if "--simulate-skillshot" in args:
+			await get_tree().create_timer(1.4).timeout
+			Input.action_press(&"skillshot")
 
-	if "--simulate-ability-e" in args:
-		await get_tree().create_timer(1.8).timeout
-		Input.action_press(&"ability_e")
+		if "--simulate-ability-q" in args:
+			await get_tree().create_timer(1.6).timeout
+			Input.action_press(&"ability_q")
 
-	if "--simulate-ability-r" in args:
-		await get_tree().create_timer(2.0).timeout
-		Input.action_press(&"ability_r")
+		if "--simulate-ability-e" in args:
+			await get_tree().create_timer(1.8).timeout
+			Input.action_press(&"ability_e")
 
-	if "--simulate-ability-f" in args:
-		await get_tree().create_timer(2.2).timeout
-		Input.action_press(&"ability_f")
+		if "--simulate-ability-r" in args:
+			await get_tree().create_timer(2.0).timeout
+			Input.action_press(&"ability_r")
 
-	if "--simulate-boot-active" in args:
-		await get_tree().create_timer(2.4).timeout
-		Input.action_press(&"ability_t")
+		if "--simulate-ability-f" in args:
+			await get_tree().create_timer(2.2).timeout
+			Input.action_press(&"ability_f")
 
+		if "--simulate-boot-active" in args:
+			await get_tree().create_timer(2.4).timeout
+			Input.action_press(&"ability_t")
+
+		# Slice 13b live-test hook: simulates a real mid-match drop
+		# (server forcibly severing one client's ENet connection)
+		# without killing either process -- the dropped client's own
+		# ReconnectManager autoload survives (it's the process staying
+		# alive that lets it hold the token and auto-retry), same as a
+		# real WiFi blip. Only meaningful on --server; disconnects the
+		# first non-host peer found.
+		for arg in args:
+			if arg.begins_with("--dev-kick-after="):
+				var delay := arg.trim_prefix("--dev-kick-after=").to_float()
+				await get_tree().create_timer(delay).timeout
+				var peers := multiplayer.get_peers()
+				if not peers.is_empty():
+					multiplayer.multiplayer_peer.disconnect_peer(peers[0])
+
+	# Phase 17: these 2 listeners must re-register on EVERY _ready()
+	# call, including the scene reload a round transition causes --
+	# unlike everything above (guarded by _ran_once, which must NOT
+	# re-fire on reload, see this file's own Slice 13b doc comment),
+	# these need a fresh connection each time since the OLD DevBootstrap
+	# node (and its own previously-connected lambda) is freed by the
+	# reload. Godot auto-disconnects a lambda Callable when its owning
+	# script instance is freed, so the stale connection from the
+	# previous instance cleans itself up on its own -- no manual
+	# disconnect needed. Caught by reasoning through this file's own
+	# Slice 13b history before ever running it, not by observing a live
+	# failure first: registering these 2 listeners behind the same
+	# _ran_once guard as everything else above would have made round 2
+	# of a --simulate-self-eliminate live test never self-eliminate
+	# again, since the listener that would have fired belonged to an
+	# already-freed node from round 1's own DevBootstrap instance.
 	if "--simulate-self-eliminate" in args:
-		await get_tree().create_timer(1.0).timeout
-		var characters := get_node_or_null(^"../Characters")
-		var own_character := (
-			characters.get_node_or_null(str(multiplayer.get_unique_id())) if characters else null
+		EventBus.match_state_changed.connect(
+			func(new_phase: int):
+				if new_phase != MatchState.Phase.IN_PROGRESS:
+					return
+				await get_tree().create_timer(1.0).timeout
+				var characters := get_node_or_null(^"../Characters")
+				var own_character := (
+					characters.get_node_or_null(str(multiplayer.get_unique_id()))
+					if characters
+					else null
+				)
+				if own_character:
+					own_character.take_damage(9999.0)
 		)
-		if own_character:
-			own_character.take_damage(9999.0)
 
-	# Slice 13b live-test hook: simulates a real mid-match drop (server
-	# forcibly severing one client's ENet connection) without killing
-	# either process -- the dropped client's own ReconnectManager
-	# autoload survives (it's the process staying alive that lets it
-	# hold the token and auto-retry), same as a real WiFi blip. Only
-	# meaningful on --server; disconnects the first non-host peer found.
-	for arg in args:
-		if arg.begins_with("--dev-kick-after="):
-			var delay := arg.trim_prefix("--dev-kick-after=").to_float()
-			await get_tree().create_timer(delay).timeout
-			var peers := multiplayer.get_peers()
-			if not peers.is_empty():
-				multiplayer.multiplayer_peer.disconnect_peer(peers[0])
+	if "--dev-auto-confirm-intermission" in args:
+		EventBus.match_state_changed.connect(
+			func(new_phase: int):
+				if new_phase == MatchState.Phase.ROUND_INTERMISSION:
+					MatchState.set_local_loadout_confirmed(true)
+		)
