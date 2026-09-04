@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="BootResource" format=3]
+
+[ext_resource type="Script" path="res://gameplay/items/boot_resource.gd" id="1_boot"]
+[ext_resource type="Resource" path="res://data/abilities/boot_guard_stomp.tres" id="2_abty"]
+
+[resource]
+script = ExtResource("1_boot")
+boot_name = "Warded Greaves"
+active_ability = ExtResource("2_abty")

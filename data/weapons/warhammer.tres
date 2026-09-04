@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="WeaponResource" format=3]
+
+[ext_resource type="Script" path="res://gameplay/items/weapon_resource.gd" id="1_wpn"]
+[ext_resource type="Resource" path="res://data/moves/warhammer_attack.tres" id="2_atkmv"]
+[ext_resource type="Resource" path="res://data/moves/warhammer_skillshot.tres" id="3_sklmv"]
+
+[resource]
+script = ExtResource("1_wpn")
+weapon_name = "Warhammer"
+attack_move = ExtResource("2_atkmv")
+skillshot_move = ExtResource("3_sklmv")
