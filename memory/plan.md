@@ -928,6 +928,7 @@ mechanism this block originally proposed, unchanged.
 new `--dev-kick-after=<seconds>` flag simulating a mid-match drop
 without killing the client process) that the design above did not
 anticipate** -- see `memory/gotchas.md` for full detail on each:
+
 1. `multiplayer.peer_connected` (and the ordinary `_spawn_for_peer()`
    it triggers) always fires for a reconnecting peer's raw ENet
    connection *before* its own reconnect-token RPC can possibly
@@ -967,6 +968,7 @@ anticipate** -- see `memory/gotchas.md` for full detail on each:
    moot once #2 was removed, but guarded with a `static var` once-only
    flag regardless (real players never pass these dev-only flags, so
    they're unaffected either way).
+
 - **Verify**: `gdformat`/`gdlint` clean project-wide. Full GUT suite:
   139/139 passing (was 138 before this slice), including 3 new
   `test_character_controller_combat.gd` tests and 8 new `test_
