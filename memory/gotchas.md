@@ -471,6 +471,22 @@ Format:
   re-check every existing caller's assumptions before adding a 2nd one,
   not just the new caller's own correctness.
 
+- **2026-09-04** — Phase 14: added a new `signal`/`const` block placed
+  right next to the code that logically discusses it (a countdown's
+  signal and its tuning constants, added inline where the countdown
+  logic itself was being written) instead of grouped with the file's
+  existing signal/const declarations at the top. `gdlint` failed with
+  `class-definitions-order` -- it enforces one strict category order
+  (signals, then enums, then constants, then exported vars, then public
+  vars, then private vars) across the WHOLE file, not just "don't
+  interleave inside one section." → **Rule**: in this project's
+  GDScript files, always add a new signal/const/var next to the file's
+  EXISTING declarations of that same category, never inline near the
+  function that uses it, however locally logical that placement feels
+  -- run `gdlint` immediately after adding any new top-level
+  declaration, before writing the functions that use it, to catch this
+  in one small diff instead of a larger reshuffle later.
+
 <!--
 Examples:
 
