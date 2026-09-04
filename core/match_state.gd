@@ -132,8 +132,10 @@ func _on_peer_disconnected(peer_id: int) -> void:
 		enter_in_progress()
 
 
-## Server-only: called by ui/lobby/lobby.gd's host-only Start button
-## with the mode chosen in Room Config. Every peer reacts by scene-
+## Server-only: called by net/lobby_state.gd's own _start_match() (Phase
+## 14: automatically, once the room's ready-countdown completes -- there
+## is no more host-only Start button, see ui/lobby/lobby.gd) with the
+## mode chosen in Room Config. Every peer reacts by scene-
 ## changing to TestArena.tscn; the actual match doesn't start until
 ## every one of them reports back ready, see report_loaded() below.
 ## Phase 8: broadcasts mode here (rather than leaving match_mode

@@ -101,8 +101,10 @@ func start_advertising() -> void:
 
 
 ## Host-only: stops the beacon. Called once the room stops accepting
-## new joiners (Room Config's Start button, see ui/lobby/lobby.gd) --
-## advertising a room nobody can actually join anymore is pointless.
+## new joiners -- the ready-countdown auto-starting the match (Phase
+## 14, net/lobby_state.gd's own _start_match()) or the host itself
+## pressing Leave Room (ui/lobby/lobby.gd) -- advertising a room nobody
+## can actually join anymore is pointless.
 func stop_advertising() -> void:
 	if _advertise_socket:
 		_advertise_socket.close()
