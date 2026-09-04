@@ -198,8 +198,8 @@ phase independently playable/demoable even if the next never lands):
     render, no real-time wait) since no calculated state is ever
     persisted to the file — a deliberate MVP tradeoff; an in-memory-
     only (never written to the replay file) checkpoint cache is
-    deferred unless this proves too slow in practice. **Not started**
-    — scope below.
+    deferred unless this proves too slow in practice. **Done** — see
+    Slice 20 below.
 
 Post-MVP backlog: `docs/blueprint/06-post-mvp-backlog.md`, not started
 until Phase 6 ships (still true for the backlog itself; Phases 7-10
@@ -1822,6 +1822,181 @@ as scoped, no deviation.
   disk-full/permission failure mid-recording, same class of gap
   `GameLog` itself already left open. No playback, no reconstruction,
   no UI -- entirely Slice 20's own separate scope, not attempted here.
+
+### Slice 20 (Replay Playback: `ReplayDriver`) — DONE
+
+Confirmed by the human owner via `/think` 2026-09-03/04, built exactly
+as scoped, no deviation. This is the last phase in the Phases 14-20
+batch -- see the note at the end of this block.
+
+- **Built on `feature/phase20-replay-playback`**: a new `ReplayDriver`
+  (`net/replay_driver.gd`, `class_name`, not an autoload -- one
+  instance per playback session, owned by `ui/replay/ReplayPlayer.tscn`)
+  parses a `.replay` file (Slice 19's own JSONL format) fully into
+  memory, then reconstructs the match by reusing the REAL simulation
+  rather than reimplementing it: every replayed character resolves
+  `ControlMode.AUTHORITATIVE` (`NetworkManager.is_server()` is `true`
+  by default with no real `MultiplayerPeer` assigned, confirmed live),
+  and each recorded `tick` record is replayed via a new
+  `CharacterController.replay_step_authoritative(sample)` -- a thin
+  public wrapper that pushes the recorded `Sample` into that
+  character's own `ServerSim` buffer, then calls the EXACT
+  `_physics_step_authoritative()` method a live server tick already
+  calls. Feeding the same inputs through the same deterministic code
+  (confirmed zero RNG in gameplay-affecting logic outside the
+  reconnect token, Slice 19's own note) reproduces the match exactly.
+- **`controlling_peer_id` offset (`CONTROLLING_PEER_ID_OFFSET`,
+  `1_000_000`)**: a real, load-bearing detail, not cosmetic. Without
+  it, `is_owned_by_me()` would be `true` for whichever replayed
+  character happens to carry peer_id 1 (the original host, in most
+  real matches), and `_physics_step_authoritative()`'s own `if
+  is_owned_by_me(): _server_sim.record_input(_sample_local_input(...))`
+  would push a SECOND, bogus, real-OS-input-derived sample into that
+  character's buffer for the same tick, right alongside the correct
+  recorded one -- corrupting the exact 1:1 tick-to-sample
+  correspondence replay fidelity depends on. The node's own `name`
+  (used by `_apply_*_from_lobby_state()`'s `str(name).to_int()`
+  lookups) stays the real peer_id; only `controlling_peer_id` is
+  offset.
+- **Loadout application reuses `LobbyState` directly** (the same
+  "populate the global registry, let `_ready()`'s existing
+  `_apply_weapon_from_lobby_state()`/etc. pick it up" trick, not a
+  parallel code path) -- `_spawn_characters()` writes each replayed
+  peer's current weapon/boot/perk into `LobbyState.player_weapon_ids`/
+  etc. before instantiating. **Considered and confirmed safe, not
+  guessed**: this pollutes the global `LobbyState` autoload with
+  replay peer_ids that have nothing to do with a real session, but
+  `register_local_player()` (always the first thing a fresh real
+  host/join does) calls `reset_room()` first, which clears every one
+  of those dictionaries -- the same safety net Phase 14's own `/check`
+  finding already built for the "Leave Room -> re-host" case. No new
+  guard needed; this rides on existing protection.
+- **Seeking (`seek_to_frame()`/`skip_seconds()`)**: always re-simulates
+  from tick 0 -- the confirmed MVP tradeoff, no checkpoint cache (this
+  roadmap item's own note). Operates on a dense 0-based frame index
+  (`ticks_processed()`), NOT the raw recorded `tick` field (`Engine.
+  get_physics_frames()`, which neither starts at 0 nor increments by
+  exactly 1 between consecutive tick records -- Slice 19's own doc
+  comment). Seeking to or past the last tick also consumes trailing
+  non-tick records (`round_end`/`match_end`) rather than stopping
+  exactly at the tick count, so seeking to "the end" actually reaches
+  `is_finished()`.
+- **1 real bug found via live verification, not by the unit tests**:
+  `_spawn_characters()` originally used `queue_free()` (deferred
+  removal). Two calls in the same frame -- `load_replay()` then an
+  immediate `seek_to_frame()`, or a `round_end` followed by the new
+  round's own first tick within the same `_apply_next_tick_record()`
+  call (see that function's own doc comment for why one call can
+  process several non-tick records in a row) -- raced a name
+  collision: the still-not-yet-removed old node still held the name
+  `str(peer_id)`, so Godot silently auto-renamed the freshly-added
+  replacement to a generic fallback name instead, breaking every
+  `str(name).to_int()`-keyed lookup (`_ready()`'s own `LobbyState`
+  application, `_apply_tick()`'s own character lookup) for it. Found
+  by recording a real 2-process best-of-3 match, then playing that
+  EXACT file back and comparing reconstructed final state against the
+  recording -- the first attempt showed 4 characters (2 real + 2
+  ghost, generically named) at a mid-match seek instead of 2. Fixed
+  with an immediate `free()`.
+- **UI**: Main Menu gains a "Replays" button. `ui/replay/ReplayList.tscn`
+  (`replay_list.gd`) scans `user://replays/` for `.replay` files,
+  lists them by filename (timestamp is already baked in, no need to
+  parse every header just to list them), hands the chosen path to the
+  next scene via `get_tree().set_meta("replay_path_to_play", ...)`
+  (persists across `change_scene_to_file()` since the `SceneTree`
+  itself isn't recreated on a scene change, only the current scene
+  root) -- simpler than a new autoload just to carry one `String`
+  across a single scene change. `ui/replay/ReplayPlayer.tscn`
+  (`replay_player.gd`) duplicates `TestArena.tscn`'s own wall collision
+  geometry (so replayed movement stays bounded identically -- `move_
+  and_slide()` depends on real physics bodies actually being in the
+  scene, not just the recorded velocity input) and parks `ArenaCamera`
+  statically at `ARENA_CENTER` (no replayed character is ever `is_
+  owned_by_me()`, so none would ever claim the camera the normal way --
+  a static whole-arena spectator view is the correct behavior here
+  anyway, not a gap). Controls: Play/Pause, Skip Back/Forward (+/-5s,
+  `SKIP_SECONDS`), a scrubber (`HSlider`) seeking on `drag_ended`, not
+  every intermediate `value_changed` during the drag -- `seek_to_
+  frame()` re-simulates from tick 0 every call, so seeking on every
+  drag-frame would re-simulate the whole match dozens of times a
+  second. A round/score status label. No editing, no export, no
+  sharing -- pure local playback only, per this roadmap item's own
+  scope.
+- **Known limitation, documented not solved**: spawn position is a
+  calculated value, deliberately never recorded to the replay file
+  (this project's own "no calculated values" design, confirmed
+  workable specifically because the sim has no RNG to also capture).
+  `_spawn_characters()` reuses the real `net/player_spawner.gd`
+  position formula (via a throwaway, never-added-to-tree
+  `PlayerSpawner` instance -- confirmed its position math touches no
+  tree/self-node state before reusing it) against `_roster`'s own
+  stored order (`LobbyState.player_class_ids`' Dictionary insertion
+  order at record time, i.e. registration order), which matches a real
+  match's own connection order for the common host-then-clients case
+  this project's small match sizes always have -- but isn't a value
+  this driver can independently verify against the file itself.
+- **Tests**: `tests/unit/test_replay_driver.gd` (new, 14 tests) --
+  `parse_line()`'s JSON float-to-int casting per record type (the
+  concrete gotcha Slice 19's own fork found and documented, applied
+  here to every field this phase's own reader touches),
+  `sample_from_dict()` round-tripping through `ReplayRecorder`'s own
+  `sample_to_dict()`, `load_replay()`'s error paths (missing file,
+  header-less file), `total_ticks()` counting only `tick` records,
+  `seek_to_frame()`'s from-scratch re-simulation and end-of-file
+  clamping, `round_end`/`match_end` bookkeeping. TDD-confirmed for the
+  `queue_free()`/`free()` bug above and for `JSON.parse_string()`'s own
+  noisy-engine-error-on-malformed-input behavior (switched to the
+  instance `JSON` API, `json.parse()` returning an `Error` code, to
+  fail silently at this expected boundary -- a corrupt/truncated
+  replay line, e.g. from a crash mid-write). 231/231 GUT tests passing
+  project-wide (was 217).
+- **`/check`**: async background dispatch not attempted (confirmed
+  dead end by every prior fork this batch). Inline adversarial
+  self-review of the full diff against `main` -- confirmed the
+  `LobbyState` pollution question above is actually safe rather than
+  assuming it, found no other issues.
+- **Verify**: `gdformat`/`gdlint`/full GUT suite all clean. **Live
+  record-then-playback comparison**: ran a real 2-process best-of-3
+  match through the real Room Config flow (host Vanguard/Iron Sword,
+  client Ranged Mage/Iron Sword, client self-eliminating each round),
+  producing a real on-disk `.replay` file (1 header, 362 `tick`
+  records, 2 `round_end`, 1 `match_end`, winner 0, `round_wins {0: 2}`
+  -- confirmed by direct file inspection). Loaded that EXACT file
+  through `ReplayDriver` in a separate run (a GUT test, not a bare
+  custom `SceneTree` script -- found live that a hand-rolled `-s`
+  script doesn't get the project's own autoload singletons registered
+  as global identifiers the way GUT's own test runner does, so
+  `NetworkManager`/`MatchState` etc. failed to resolve there; GUT
+  already solves this correctly, reuse it for this kind of check
+  instead of a raw script). Seeking to a mid-match frame (50) showed
+  exactly 2 characters (not 4 -- see the bug above), named correctly,
+  with plausible non-zero health/position for both. Seeking to the
+  very end reproduced the recording's own final state exactly:
+  `ticks_processed() == 362`, `is_finished() == true`,
+  `final_winner() == 0`, `round_wins()[0] == 2`.
+- **Known, deliberately unverified gaps**: same "no way to screenshot
+  Godot's real renderer in this headless environment" limitation every
+  UI-adjacent phase since Phase 7 has flagged -- the VCR controls'
+  actual visual appearance/layout was never seen with eyes. No
+  automated test drives the scrubber's own drag UI (verified via the
+  underlying `seek_to_frame()`/`ticks_processed()` API directly
+  instead, same "unit-test the pure logic, verify the mechanism live"
+  split this project has used since Phase 1). Performance of the
+  from-scratch reseek approach on a MUCH longer match than this
+  phase's own ~6-second live test was never measured -- flagged, not
+  solved, per this roadmap item's own accepted MVP tradeoff.
+
+**This closes the entire Phases 14-20 batch** (Room Config UX, Q/E/R/F
+ability framework, weapon+boot loadout, best-of-3 rounds, match log,
+replay recording, replay playback), all designed via `/think`
+2026-09-03/04 and shipped via `/loop` + `/ship-phase`, one phase per
+run, each on its own branch merged `--no-ff` into `main` by the
+orchestrating session (no fork can merge into the primary checkout,
+confirmed hard sandbox boundary since Phase 13b). See `memory/
+progress.md`'s Backlog section for what's left for the human owner
+across this whole batch (the ~1s dual-control reconnect window,
+content rebalancing for the Phase 15/16 numbers, the LAN discovery
+investigation, and anything newly surfaced here).
 
 ## MVP Status
 
