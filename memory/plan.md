@@ -129,8 +129,8 @@ phase independently playable/demoable even if the next never lands):
     **Naming note**: "lobby" in the human owner's own words means
     Main Menu (pre-connection) throughout this roadmap entry and 17
     below — `ui/lobby/lobby.gd` is Room Config in the code's own
-    terminology (Phase 7's doc comment), a distinct screen. **Not
-    started** — scope below.
+    terminology (Phase 7's doc comment), a distinct screen. **Done** —
+    see Slice 14 below.
 15. Ability framework: Q/E/R/F. Each of the 3 classes gains 2 new
     abilities (R, F) alongside its existing Q/E — 6 new
     `AbilityResource`+`MoveDefinition` pairs, `CharacterController`
@@ -1166,6 +1166,105 @@ anticipate** -- see `memory/gotchas.md` for full detail on each:
   `_ensure_tracking_own_character()` null-peer guard is a trivial,
   uncontroversial part of that fix regardless of the rest of the UX
   decision -- implement it as part of 13b, not deferred further.
+
+### Slice 14 (Room Config UX) — DONE
+
+Confirmed by the human owner via `/think` 2026-09-03/04, built exactly
+as scoped, no deviation.
+
+- **Built on `feature/phase14-room-config-ux`**: `net/lobby_state.gd`'s
+  `all_non_host_ready(host_peer_id)` is replaced by `all_ready()` --
+  the host now readies up like every other peer, so there is no more
+  host-only Start button. `is_room_ready_to_start()` (a new pure
+  predicate: `all_ready()` AND, in Team mode, `has_valid_team_split()`)
+  gates a server-only countdown coroutine (`_recompute_countdown()`,
+  called from the single `_broadcast_room_state()` choke point every
+  mutation already funnels through): a silent 2s `PRE_DELAY_SECONDS`
+  window, then a broadcast, client-visible 5s `COUNTDOWN_SECONDS`
+  countdown (`countdown_seconds_remaining`, `countdown_changed`
+  signal), after which `_start_match()` runs the exact same
+  `MatchState.enter_loading(...)` transition the old Start button used
+  to trigger directly. A `_countdown_generation` token lets an
+  in-flight coroutine detect it's been superseded (someone un-readied,
+  a new peer joined, the team split broke) and exit cleanly at its next
+  `await` -- peers who were already ready never need to re-click
+  anything; the countdown simply restarts from the top once the full
+  ready-set re-forms. `TEAM_LABELS`/`team_label()` add Red/Blue display
+  labels -- `team_id` itself stays a plain int (0/1), label-only.
+  `ui/lobby/lobby.gd`'s Room Config screen: every player row now shows
+  a Ready/Not Ready toggle `Button` (not a `CheckBox`, per the human
+  owner's own spec) with the existing self-service "Switch Team"
+  button nested directly below it in a small `VBoxContainer`; a new
+  "Leave Room" button (any peer, host or client) calls
+  `NetworkManager.close()` and returns to `MainMenu.tscn`. The old
+  `StartButton`/`WaitingLabel` nodes are gone from `Lobby.tscn`,
+  replaced by `LeaveButton` and a repurposed `StatusLabel` that shows
+  the live countdown text.
+- **Dev testing support**: `--dev-countdown-pre-delay=<seconds>`/
+  `--dev-countdown-seconds=<seconds>` (read directly in
+  `LobbyState._ready()`, same self-contained `is_valid_float()`-guarded
+  convention as `PlayerSpawner`'s own `--dev-grace-period=`) so a live
+  test doesn't have to eat a real 7s wait. `--dev-ready` now applies to
+  either role (previously client-only, since only clients had a ready
+  checkbox).
+- **Tests**: `tests/unit/test_lobby_state.gd` grew from 25 to 35 tests
+  -- the 4 old `all_non_host_ready()` tests replaced with 5 `all_ready()`
+  tests (including the new "empty room is never ready" and "host itself
+  must ready up too" cases), plus 1 `team_label()` test, 4
+  `is_room_ready_to_start()` tests (not ready, invalid team split, valid
+  split, FFA bypasses the split check entirely), 1 `reset_room()` test,
+  and 2 `_countdown_still_valid()` tests (both from `/check`'s 2 real
+  findings below). The countdown coroutine's own timing/RPC-broadcast
+  behavior is verified live, not unit-tested, matching this file's own
+  stated convention ("the Node-based registry ... is verified tactilely
+  instead") -- only the pure predicates it's built from are
+  unit-tested. 149/149 GUT tests passing project-wide (was 140).
+- **`/check` (code-review skill), high severity, full branch diff**:
+  found 2 real bugs, both fixed and re-verified, none deferred.
+  1. `LobbyState`'s registries (ready flags, class/team/perk picks,
+     `_countdown_generation`) survived a Leave Room -> re-host/re-join
+     cycle, since it's an autoload -- a stale `player_ready[1] = true`
+     from a PREVIOUS room could auto-start the new one with no Ready
+     press ever happening in it. Fixed: `reset_room()` runs at the top
+     of `register_local_player()`, the one function every fresh room
+     entry already goes through; deliberately does no RPC calls
+     (unlike `_cancel_countdown()`) since it must be safe to call on a
+     client too.
+  2. `_recompute_countdown()`/`_run_countdown()` had no guard against
+     `MatchState.current_phase` already being past `LOBBY`. A peer
+     disconnecting or a new peer direct-IP-joining mid-match still runs
+     `LobbyState`'s own registry mutations (LAN advertising stops, but
+     the port itself doesn't), which could make
+     `is_room_ready_to_start()` resolve true again and re-trigger
+     `MatchState.enter_loading()` mid-match, forcing every already-
+     in-match peer back to `LOADING`. Fixed: both now check
+     `MatchState.current_phase == Phase.LOBBY` via a new
+     `_countdown_still_valid()` helper.
+- **Verify**: `gdformat`/`gdlint` clean on every changed file. Live
+  2-process test (`--dev-countdown-pre-delay=0.3
+  --dev-countdown-seconds=1.0`), re-run after the `/check` fixes above:
+  both peers set `--dev-ready` -> both reach `IN_PROGRESS` automatically
+  with zero button presses and zero engine errors; a 2nd run with only
+  the host readying up -> neither peer ever transitions out of `LOBBY`,
+  confirming an incomplete ready-set never auto-starts. The specific
+  mid-countdown cancel race (someone un-readies while the countdown is
+  already running) is covered by construction (the generation-token
+  re-check before every `await`) and by `is_room_ready_to_start()`'s
+  own unit tests, not by a dedicated live scenario -- no existing dev
+  flag can deterministically un-ready a peer mid-countdown without
+  adding one solely for this test, which was judged not worth a
+  permanent flag for a single verification run.
+- **Known, deliberately unverified gap**: the Leave Room button itself
+  (click -> `NetworkManager.close()` -> scene change to `MainMenu`) was
+  not exercised by a dedicated live/dev-flag test -- it composes 3
+  primitives (`NetworkManager.close()`, `LanDiscovery.stop_advertising()`,
+  `get_tree().change_scene_to_file(...)`) each already independently
+  live-verified elsewhere in this exact shape (`ui/host_join/host_join.gd`,
+  `ui/hud/network_stats_overlay.gd`), so this was accepted as covered by
+  reuse rather than building a new `--dev-leave-after=<seconds>` flag
+  for one button. Also the same "no way to screenshot Godot's real
+  renderer in this environment" gap every UI-adjacent phase has flagged
+  since Phase 7.
 
 ## MVP Status
 

@@ -79,38 +79,50 @@ func test_is_ready_reflects_registered_flag() -> void:
 	lobby.free()
 
 
-func test_all_non_host_ready_true_when_no_other_peers() -> void:
+## Phase 14: ready is now symmetric -- the host's own flag counts too
+## (replaces the old all_non_host_ready(), which deliberately skipped
+## peer 1). See net/lobby_state.gd's own doc comment.
+func test_all_ready_false_when_no_one_is_registered() -> void:
 	var lobby := LobbyStateScript.new()
-	lobby.player_class_ids[1] = "vanguard"
-	assert_true(lobby.all_non_host_ready(1))
+	assert_false(lobby.all_ready())
 	lobby.free()
 
 
-func test_all_non_host_ready_false_when_a_peer_has_not_reported() -> void:
+func test_all_ready_true_for_a_solo_host_who_has_readied_up() -> void:
 	var lobby := LobbyStateScript.new()
 	lobby.player_class_ids[1] = "vanguard"
-	lobby.player_class_ids[2] = "warden"
-	assert_false(lobby.all_non_host_ready(1))
+	lobby.player_ready[1] = true
+	assert_true(lobby.all_ready())
 	lobby.free()
 
 
-func test_all_non_host_ready_ignores_the_host_own_flag() -> void:
+func test_all_ready_false_when_the_host_has_not_readied_up() -> void:
 	var lobby := LobbyStateScript.new()
 	lobby.player_class_ids[1] = "vanguard"
 	lobby.player_class_ids[2] = "warden"
 	lobby.player_ready[2] = true
-	assert_true(lobby.all_non_host_ready(1))
+	assert_false(lobby.all_ready())
 	lobby.free()
 
 
-func test_all_non_host_ready_true_once_every_non_host_peer_reports() -> void:
+func test_all_ready_false_when_a_non_host_peer_has_not_reported() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby.player_class_ids[1] = "vanguard"
+	lobby.player_class_ids[2] = "warden"
+	lobby.player_ready[1] = true
+	assert_false(lobby.all_ready())
+	lobby.free()
+
+
+func test_all_ready_true_once_every_registered_peer_including_host_reports() -> void:
 	var lobby := LobbyStateScript.new()
 	lobby.player_class_ids[1] = "vanguard"
 	lobby.player_class_ids[2] = "warden"
 	lobby.player_class_ids[3] = "ranged_mage"
+	lobby.player_ready[1] = true
 	lobby.player_ready[2] = true
 	lobby.player_ready[3] = true
-	assert_true(lobby.all_non_host_ready(1))
+	assert_true(lobby.all_ready())
 	lobby.free()
 
 
@@ -134,6 +146,119 @@ func test_has_valid_team_split_true_when_2_teams_have_members() -> void:
 	lobby.player_team_ids[1] = 0
 	lobby.player_team_ids[2] = 1
 	assert_true(lobby.has_valid_team_split())
+	lobby.free()
+
+
+func test_team_label_maps_ids_to_red_and_blue() -> void:
+	assert_eq(LobbyState.team_label(0), "Red")
+	assert_eq(LobbyState.team_label(1), "Blue")
+
+
+## Found by /check (Phase 14): LobbyState is an autoload, so its
+## registries used to survive across a Leave Room -> re-host cycle --
+## a stale player_ready[1] = true from a PREVIOUS room could let the
+## new room's countdown auto-start with no Ready press ever happening
+## in it. reset_room() is called at the top of register_local_player(),
+## the one function every fresh room entry (Host or Join) already goes
+## through.
+func test_reset_room_clears_every_previous_rooms_state() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby.player_class_ids[1] = "vanguard"
+	lobby.player_team_ids[1] = 0
+	lobby.player_perk_ids[1] = "swift"
+	lobby.player_ready[1] = true
+	lobby.room_match_mode = MatchState.MatchMode.FREE_FOR_ALL
+	lobby.room_friendly_fire = true
+	lobby.reset_room()
+	assert_true(lobby.player_class_ids.is_empty())
+	assert_true(lobby.player_team_ids.is_empty())
+	assert_true(lobby.player_perk_ids.is_empty())
+	assert_true(lobby.player_ready.is_empty())
+	assert_eq(lobby.room_match_mode, MatchState.MatchMode.TEAM)
+	assert_false(lobby.room_friendly_fire)
+	lobby.free()
+
+
+## Found by /check (Phase 14): a peer disconnecting or a new peer
+## direct-IP-joining mid-match still runs LobbyState's own registry
+## mutations (_on_peer_disconnected/_apply_registration), which could
+## make is_room_ready_to_start() resolve true again off leftover Room
+## Config state and re-trigger the countdown mid-match. The countdown
+## is only ever a Room Config (Phase.LOBBY) concern. Phase saved/
+## restored per this file's own established isolation convention (see
+## test_player_spawner.gd's _spawner_and_characters()).
+func test_countdown_still_valid_false_once_the_match_has_left_lobby() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby.player_class_ids[1] = "vanguard"
+	lobby.player_ready[1] = true
+	lobby._countdown_generation = 1
+	var original_phase := MatchState.current_phase
+	MatchState.current_phase = MatchState.Phase.IN_PROGRESS
+	assert_false(lobby._countdown_still_valid(1))
+	MatchState.current_phase = original_phase
+	lobby.free()
+
+
+func test_countdown_still_valid_true_while_still_in_the_lobby() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby.player_class_ids[1] = "vanguard"
+	lobby.player_ready[1] = true
+	lobby._countdown_generation = 1
+	var original_phase := MatchState.current_phase
+	MatchState.current_phase = MatchState.Phase.LOBBY
+	assert_true(lobby._countdown_still_valid(1))
+	MatchState.current_phase = original_phase
+	lobby.free()
+
+
+## Phase 14: is_room_ready_to_start() is the pure predicate the
+## server-only countdown coroutine gates on -- everyone ready, AND (FFA,
+## which has no team-split concept, OR a valid team split). The
+## countdown/RPC broadcast itself is verified live, same convention as
+## the rest of this file's own registry logic.
+func test_is_room_ready_to_start_false_when_not_everyone_is_ready() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby.player_class_ids[1] = "vanguard"
+	assert_false(lobby.is_room_ready_to_start())
+	lobby.free()
+
+
+func test_is_room_ready_to_start_false_in_team_mode_with_an_invalid_split() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby.player_class_ids[1] = "vanguard"
+	lobby.player_class_ids[2] = "warden"
+	lobby.player_ready[1] = true
+	lobby.player_ready[2] = true
+	lobby.player_team_ids[1] = 0
+	lobby.player_team_ids[2] = 0
+	lobby.room_match_mode = MatchState.MatchMode.TEAM
+	assert_false(lobby.is_room_ready_to_start())
+	lobby.free()
+
+
+func test_is_room_ready_to_start_true_in_team_mode_with_a_valid_split() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby.player_class_ids[1] = "vanguard"
+	lobby.player_class_ids[2] = "warden"
+	lobby.player_ready[1] = true
+	lobby.player_ready[2] = true
+	lobby.player_team_ids[1] = 0
+	lobby.player_team_ids[2] = 1
+	lobby.room_match_mode = MatchState.MatchMode.TEAM
+	assert_true(lobby.is_room_ready_to_start())
+	lobby.free()
+
+
+func test_is_room_ready_to_start_true_in_ffa_regardless_of_team_split() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby.player_class_ids[1] = "vanguard"
+	lobby.player_class_ids[2] = "warden"
+	lobby.player_ready[1] = true
+	lobby.player_ready[2] = true
+	lobby.player_team_ids[1] = 0
+	lobby.player_team_ids[2] = 0
+	lobby.room_match_mode = MatchState.MatchMode.FREE_FOR_ALL
+	assert_true(lobby.is_room_ready_to_start())
 	lobby.free()
 
 

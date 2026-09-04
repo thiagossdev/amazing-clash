@@ -39,19 +39,19 @@ offset_top = 160.0
 offset_right = 830.0
 offset_bottom = 460.0
 
-[node name="StartButton" type="Button" parent="." unique_id=2054886002]
-layout_mode = 0
-offset_left = 550.0
-offset_top = 500.0
-offset_right = 650.0
-offset_bottom = 540.0
-text = "Start"
-
-[node name="WaitingLabel" type="Label" parent="." unique_id=1896039166]
+[node name="StatusLabel" type="Label" parent="." unique_id=1896039166]
 layout_mode = 0
 offset_left = 450.0
 offset_top = 500.0
 offset_right = 830.0
 offset_bottom = 540.0
-text = "Waiting for host..."
+text = ""
 horizontal_alignment = 1
+
+[node name="LeaveButton" type="Button" parent="." unique_id=3517294885]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 140.0
+offset_bottom = 56.0
+text = "Leave Room"

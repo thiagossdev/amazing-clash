@@ -596,13 +596,33 @@ changed but this file wasn't updated.
   test_player_spawner.gd`, confirmed red before the fix, green after.
   140/140 GUT passing, `gdformat`/`gdlint` clean. See
   `memory/gotchas.md` and `memory/plan.md`'s Slice 13b block.
+- [x] **Phase 14 (Room Config UX) implemented, live-verified, on
+  `feature/phase14-room-config-ux`**: `LobbyState.all_ready()` (host
+  included) replaces `all_non_host_ready()`; a server-only countdown
+  (`is_room_ready_to_start()` gate, 2s silent pre-delay + broadcast 5s
+  visible countdown, cancel-and-restart on any ready-set change)
+  auto-triggers the match with no more host-only Start button. Room
+  Config's UI: a Ready/Not Ready toggle button on every row (Switch
+  Team nested below it on the local row), Red/Blue team labels, and a
+  new Leave Room button returning to Main Menu. `/check` (high
+  severity) found 2 real bugs -- stale `LobbyState` registries surviving
+  a Leave Room -> re-host cycle, and no guard against the countdown
+  re-triggering mid-match -- both fixed (`reset_room()`,
+  `_countdown_still_valid()`) and re-verified. 9 new GUT tests (149
+  total, was 140). Live 2-process test: both peers ready -> auto-starts
+  with zero engine errors; only one ready -> never starts; re-verified
+  after the `/check` fixes. See `memory/plan.md`'s Slice 14 block and
+  `memory/verify.md`'s Phase 14 section for full evidence, including
+  the 2 gaps left deliberately unverified (the Leave Room button's own
+  click path, and the exact mid-countdown-cancel race) and why.
 
 ## Backlog (next up)
 
-- [ ] **Phases 14-20 (Room Config UX, ability framework Q/E/R/F, weapon
-  +boot loadout, best-of-3 rounds, match log, replay recording, replay
-  playback) — scope confirmed via `/think` 2026-09-03/04, running now
-  via `/loop` + `/ship-phase`, one phase at a time.** See
+- [ ] **Phases 15-20 (ability framework Q/E/R/F, weapon+boot loadout,
+  best-of-3 rounds, match log, replay recording, replay playback) —
+  scope confirmed via `/think` 2026-09-03/04, running now via `/loop` +
+  `/ship-phase`, one phase at a time. Phase 14 (Room Config UX) is
+  DONE, see the Completed entry above.** See
   `memory/plan.md`'s roadmap list (items 14-20) for the full decided
   scope of each, including the exact inter-round loadout-countdown
   timing (15s pick/confirm window, 5s or 3s start countdown depending
