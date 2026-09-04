@@ -765,6 +765,26 @@ Format:
   regression tests, confirmed red (all 3 -- stashing the whole fixed
   file together reverted both bugs at once) then green.
 
+- **2026-09-04** — Direct regression from the fix immediately above:
+  disabling `CharacterController`'s automatic `_physics_process()`
+  during replay (to stop the phantom-tick bug) silently disabled
+  `_update_visual_feedback()` (hit flash, swing pulse) too --
+  `replay_step_authoritative()` calls `_physics_step_authoritative()`
+  but never called `_update_visual_feedback()` on its own; that was
+  only ever reachable through the real `_physics_process()` override's
+  own trailing call, one line after the control-mode `match`. Found
+  live (human owner: "Antes eu estava vendo os flash de damage hit e
+  agora não mais") immediately after the previous fix shipped.
+  → **Rule**: when disabling a node's automatic per-frame callback and
+  replacing it with an explicit call to "the same underlying step,"
+  read the ENTIRE original callback, not just the branch that looks
+  like the interesting part -- a trailing call after a `match`/`if` is
+  easy to mentally treat as separate from "the real logic" and leave
+  behind. `character_controller.gd:290-298`'s own shape (a `match` on
+  `control_mode`, then one more unconditional call) is exactly this
+  trap. Fixed by adding the same `_update_visual_feedback()` call to
+  `replay_step_authoritative()`.
+
 <!--
 Examples:
 

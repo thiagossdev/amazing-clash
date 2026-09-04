@@ -399,6 +399,13 @@ func _physics_step_predicted(delta: float) -> void:
 func replay_step_authoritative(sample: InputBuffer.Sample) -> void:
 	_server_sim.record_input(sample)
 	_physics_step_authoritative(sample.delta)
+	# Found live 2026-09-04 ("Antes eu estava vendo os flash de damage
+	# hit e agora não mais"): _update_visual_feedback() (hit flash, swing
+	# pulse) is normally only reached via the real _physics_process()
+	# override below -- disabling that during replay (net/replay_driver.gd's
+	# own _spawn_characters() fix, same day) silently took this with it,
+	# since replay_step_authoritative() never called it on its own.
+	_update_visual_feedback()
 
 
 func _physics_step_authoritative(delta: float) -> void:

@@ -850,6 +850,17 @@ changed but this file wasn't updated.
   their respective fixes, green after. 249/249 GUT passing. See
   `memory/gotchas.md` for the full mechanism and the swept sibling
   nodes that were NOT affected.
+- [x] **Fixed: hit-flash/swing-pulse visuals disappeared during
+  replay (2026-09-04, direct regression from the fix immediately
+  above -- "Antes eu estava vendo os flash de damage hit e agora
+  não mais").** Disabling `CharacterController`'s automatic
+  `_physics_process()` during replay also silently disabled
+  `_update_visual_feedback()`, which was only ever reachable through
+  that same callback's own trailing call -- `replay_step_
+  authoritative()` never called it directly. Fixed by adding that
+  call. New regression test in `tests/unit/
+  test_character_controller_combat.gd`, confirmed red then green.
+  250/250 GUT passing. See `memory/gotchas.md` for the full mechanism.
 
 ## Backlog (next up)
 

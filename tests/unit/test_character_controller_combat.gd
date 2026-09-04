@@ -466,6 +466,24 @@ func test_no_action_and_no_recent_hit_is_neutral_modulate() -> void:
 	assert_eq(character.get_node(character.visual_path).modulate, character.NEUTRAL_MODULATE)
 
 
+## Found live 2026-09-04 (human owner: "Antes eu estava vendo os flash
+## de damage hit e agora não mais"): replay_step_authoritative() (the
+## per-tick entry point net/replay_driver.gd drives replayed characters
+## through) called _physics_step_authoritative() but never
+## _update_visual_feedback() -- only reachable, until this fix, via the
+## real _physics_process() override, which replay deliberately disables
+## (see net/replay_driver.gd's own _spawn_characters()). controlling_
+## peer_id is offset here the same way ReplayDriver's own
+## CONTROLLING_PEER_ID_OFFSET is, so is_owned_by_me() stays false and
+## this doesn't also push a 2nd, local-input-derived sample.
+func test_replay_step_authoritative_also_updates_the_hit_flash() -> void:
+	var character := _spawn_character()
+	character.controlling_peer_id = 999_999
+	character.take_damage(10.0)
+	character.replay_step_authoritative(_sample())
+	assert_eq(character.get_node(character.visual_path).modulate, character.HIT_FLASH_MODULATE)
+
+
 func test_position_at_tick_reads_from_recorded_history() -> void:
 	var character := _spawn_character()
 	character._position_history = [
