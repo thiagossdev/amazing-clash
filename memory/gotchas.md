@@ -816,6 +816,40 @@ Format:
   exactly the kind of bug this project's "no way to screenshot Godot's
   real renderer" gap makes invisible any other way.
 
+- **2026-09-04** — `/hunt` (human owner: "depois que abandonei uma
+  partida não consegui criar outras partidas" / "dou ready e o
+  countdown não inicia"). `ui/hud/match_menu.gd`'s new Abandon Match
+  button was the FIRST code path that ever disconnects while
+  `MatchState.current_phase` is past `Phase.LOBBY` (every previous way
+  to leave only ever happened pre-match). Nothing ever reset
+  `current_phase` back to `LOBBY` on a fresh room entry, so it stayed
+  stuck at whatever phase the abandoned match last reached; net/
+  lobby_state.gd's own `_recompute_countdown()` deliberately refuses to
+  start a countdown whenever `current_phase != Phase.LOBBY` (added on
+  purpose in Phase 14 to stop a mid-match disconnect from re-
+  triggering it), so the NEW room's very first Ready press silently did
+  nothing. Worse: `core/match_state.gd`'s own `round_wins` doc comment
+  already CLAIMED "a fresh LobbyState.register_local_player() call...
+  clears it, like every other MatchState field" -- that was aspirational,
+  never actually implemented; `reset_room()` only ever cleared its OWN
+  fields (`net/lobby_state.gd`), never reached into `MatchState` at
+  all. The Scope Blast sweep this same pattern implies (an autoload's
+  per-match state must reset on a fresh room entry, not just
+  `LobbyState`'s own registries) found a 2nd, live sibling bug:
+  `net/replay_recorder.gd`'s `_file` handle is only ever closed by
+  `record_match_end()`, which an abandoned match also never reaches --
+  the next match's `start_recording()` silently appended into the
+  SAME abandoned match's file instead of starting fresh (its own
+  `_ensure_file_open()` guard exists to avoid reopening mid-match, not
+  to protect a genuinely NEW match's own "start" bookend). → **Rule**:
+  a doc comment describing what a reset function "already does" is a
+  claim, not evidence -- read the actual reset function's body before
+  trusting what a DIFFERENT file's comment says about it. And: any new
+  code path that can disconnect/leave from a state a previous code path
+  never could (mid-match, not just pre-match) needs its own audit of
+  every autoload holding match-scoped state, not just the one registry
+  the bug report happens to point at first.
+
 <!--
 Examples:
 

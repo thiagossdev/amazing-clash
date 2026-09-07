@@ -913,6 +913,198 @@ changed but this file wasn't updated.
   visibility, the doubled font size), confirmed red (stashed the
   change, re-ran -- real engine errors, the nodes didn't exist) then
   green. 263/263 GUT passing.
+- [x] **Placeholder weapon sprite + attack-swing animation (2026-09-04,
+  human owner's own request: "Quero adicionar sprite para armas,
+  animação de ataque").** Investigated first: every character in this
+  project is a flat `Polygon2D` (`Visual`), with zero `.png`/`Sprite2D`/
+  `AnimationPlayer` anywhere in the repo -- unlike `amazing-nauts`'
+  fully drawn part-based rig (`animation/*_rig/`). Confirmed scope with
+  the human owner via 2 questions rather than guessing: placeholder
+  programmer art now (swappable for real sprites later without a
+  redesign), and a single weapon node + procedural swing rather than a
+  multi-part rig (that would need real full-character art, not just a
+  weapon). `WeaponResource` gained `visual_length`/`visual_width`/
+  `visual_color`; all 3 weapon `.tres` files got distinct values so
+  Iron Sword/Twin Daggers/Warhammer read as visually different blades.
+  Every character scene (`Character`/`Vanguard`/`RangedMage`/`Warden`)
+  gained a `WeaponVisual` `Polygon2D` sibling of `Visual`, rebuilt by
+  `_rebuild_weapon_visual()` whenever `_apply_weapon_from_lobby_state()`
+  runs. Swing driven from the existing single `_update_visual_feedback()`
+  hookpoint (deliberately not a 2nd call site -- see the "read the
+  ENTIRE original callback" gotcha this project already learned the
+  hard way): rests at `get_aim_direction()` while `action_fsm` is
+  NEUTRAL, sweeps through a `WEAPON_SWING_ARC` (110°) centered on that
+  aim line across the weapon move's own startup+active+recovery frame
+  window while `action_fsm` runs `attack_move`/`skillshot_move` --
+  ability slots (Q/E/R/F) intentionally do not move it, only the
+  equipped weapon's own swing. 5 new tests in
+  `tests/unit/test_character_controller_combat.gd`, confirmed red first
+  (stashed the implementation -- the whole test file failed to even
+  *parse*, a missing-typed-property load error, same class as the
+  `assert_lte` gotcha) then green. Verified live via a real 2-process
+  headless `--server`/`--join --simulate-attack` run: no runtime errors.
+  268/268 GUT passing (was 263, 5 new).
+- [x] **Weapon visual follow-up: hand position instead of body center
+  (2026-09-04, human owner's own request: "posicionar as armas nas
+  posição das mãos, no caso Left and Right, em vez de centro").**
+  Clarified via a question first (only 1 weapon is ever equipped, not
+  1 per hand) -- the human owner's answer surfaced a real per-weapon
+  distinction: "No caso da Twins Danger é uma arma, mas ambas as
+  mãos" (Twin Daggers is 1 weapon, held in both hands at once, unlike
+  Iron Sword/Warhammer's single-hand grip). `WeaponVisual`'s pivot
+  moved from body center to `HAND_OFFSET_RIGHT` (rotated by
+  `get_aim_direction()` every tick, so the hand position turns with
+  the character rather than staying fixed in world space).
+  `WeaponResource` gained `dual_wielded` (true only for Twin Daggers);
+  every character scene gained a 2nd blade node
+  (`WeaponVisualOffhand`, hidden by default), rebuilt with the same
+  polygon/color and revealed at the mirrored `HAND_OFFSET_LEFT` only
+  when the equipped weapon is `dual_wielded` -- both hands share the
+  same swing rotation, only the position differs. 3 new tests,
+  confirmed red first (stashed the implementation -- parse error, same
+  class as before) then green. Live 2-process headless check: no
+  runtime errors. 271/271 GUT passing (was 268, 3 new).
+- [x] **Weapon visual follow-up 2: alternating Twin Daggers hands +
+  body rotation (2026-09-04, human owner's own request: "Na twins
+  danger, primeiro ataca com a Right e depois com a Left e não as duas
+  ao mesmo tempo. Rotacionar o jogador também junto com as armas.
+  Atualmente não dá a ideal que o corpo tá acompanhando a direção da
+  visão").** 2 independent fixes: (1) `Visual` (the body Polygon2D)
+  now sets `rotation = get_aim_direction().angle()` in
+  `_update_visual_feedback()`, same rest angle the weapon already
+  used -- the body visibly turns to face aim direction, not just the
+  blade. (2) `_weapon_active_hand_is_right` (new field) toggles every
+  time `apply_input()` starts a NEW `attack_move`/`skillshot_move`
+  (stays fixed for that move's whole duration, not every tick); for a
+  `dual_wielded` weapon (Twin Daggers), only that hand's blade actually
+  swings through `WEAPON_SWING_ARC` while the other rests at the aim
+  angle -- single-handed weapons are unaffected (only the right hand
+  is ever visible for those). Added to `ClientPredictor.Checkpoint`
+  (`weapon_active_hand_is_right`) and wired into `_capture_predicted_
+  state()`/`_restore_predicted_state()`, mirroring `action_state`/
+  `action_move`'s own existing reconciliation treatment -- without it,
+  replaying an un-acked input after a rollback would toggle the hand
+  from the wrong starting parity. 3 new tests, confirmed red first
+  (this time a genuine runtime `SCRIPT ERROR: Invalid access to
+  property` rather than a parse error -- GDScript's static checker
+  didn't flag the missing members at load time on this occasion, only
+  at the actual property-access call), then green. Also fixed a real
+  `gdlint` violation caught along the way: the 2 new fields were
+  initially inserted between 2 existing PUBLIC vars, tripping
+  `class-definitions-order` (private `_`-prefixed vars must group
+  after public ones) -- moved next to `_hit_flash_frames_remaining`/
+  `_previous_health_for_flash`, the other purely-cosmetic private
+  state. Live 2-process headless check: no runtime errors. 274/274 GUT
+  passing (was 271, 3 new).
+  **Known limitation surfaced, not fixed this pass**: `_apply_snapshot()`
+  only replicates `action_fsm.state`/`move_frame` to a remote
+  INTERPOLATED peer, never `action_fsm.current_move` -- so a remote
+  Twin Daggers character's weapon swing (and now the alternating-hand
+  choice) doesn't actually render its arc for OTHER players watching
+  it, only for the swinging player's own AUTHORITATIVE/PREDICTED
+  copies. This predates this session's weapon-visual work and is the
+  same class of gap already accepted for ability_q/e/r/f (see the
+  existing Backlog item below) -- not solved here since the snapshot
+  RPC's own parameter count is already documented as being at its
+  practical limit.
+- [x] **In-match ESC menu (2026-09-04, human owner's own request:
+  "Implementar um menu in game, ao apertar ESC, com opção de abandonar
+  a partida e voltar ao main menu").** New `ui/hud/match_menu.gd`
+  (`CanvasLayer`, inline in `maps/test_arena/TestArena.tscn` like
+  `MatchHud`/`RoundIntermissionOverlay`/`NetworkStatsOverlay` -- not a
+  separate reusable `.tscn`, matching that specific sibling precedent
+  rather than `ArenaCamera`/`HitboxViewer`'s). Toggled by `ui_cancel`
+  (already redefined with `physical_keycode` in `project.godot`, per
+  `memory/gotchas.md`'s 2026-09-02 entry -- confirmed still correctly
+  wired by `test_network_stats_overlay_console.gd`'s own passing
+  Escape-closes-the-console test). "Resume" just closes it; "Abandon
+  Match" reuses `ui/lobby/lobby.gd`'s own Leave Room disconnect path
+  verbatim (`LanDiscovery.stop_advertising()` + `NetworkManager.
+  close()`, then `MainMenu.tscn`) -- leaving mid-match is otherwise
+  indistinguishable from any other disconnect (crash, network drop),
+  so the existing grace-period/reconnect system (Slices 13a/13b)
+  already covers what every other peer sees; no new server-side logic
+  needed. `InputManager.suppress_gameplay_input` doubles as the
+  interlock against `NetworkStatsOverlay`'s own debug console (also a
+  `ui_cancel` consumer): this menu refuses to open while that flag is
+  already true, and the console's own `_input()` only ever reads
+  `ui_cancel` while its own console is visible -- correct regardless of
+  which `CanvasLayer`'s `_input()` the engine dispatches first, no
+  dependency on node order. 7 new tests (`tests/unit/test_match_menu.gd`,
+  new file, following `test_network_stats_overlay_console.gd`'s own
+  established pattern for testing an in-scene `ui_cancel` consumer; 1
+  more in `tests/unit/test_ui_viewport_bounds.gd` extending its
+  existing per-`CanvasLayer` sweep), confirmed red first (`git stash
+  push -u` the new/modified files -- real engine errors, the node
+  didn't exist) then green. Live 2-process headless boot: no runtime
+  errors. Deliberately NOT tested: `_on_abandon_pressed()`'s full body
+  (would trigger a real `change_scene_to_file()` and leak orphan nodes
+  into the shared test SceneTree, the same reason a similar test was
+  removed during the replay-playback work) -- only wiring is verified,
+  matching this project's own established convention for this exact
+  class of 1-line scene-navigation delegation (`ui/lobby/lobby.gd`'s
+  own Leave Room button has never had one either). 281/281 GUT passing
+  (was 274, 7 new).
+- [x] **`/hunt`: abandoning a match blocked every future match
+  (2026-09-04, human owner: "depois que abandonei uma partida não
+  consegui criar outras partidas" then "dou ready e o countdown não
+  inicia").** Root cause: `MatchState.current_phase` was never reset
+  back to `Phase.LOBBY` on a fresh room entry -- `ui/hud/match_menu.gd`'s
+  new Abandon Match button was the first path that ever disconnects
+  while phase is past LOBBY, so it stayed stuck there, and `net/
+  lobby_state.gd`'s own `_recompute_countdown()` (by design, since
+  Phase 14) refuses to start a countdown whenever phase isn't LOBBY --
+  every Ready press in the new room silently did nothing. Fix: new
+  `MatchState.reset_for_new_room()`, called from `LobbyState.
+  register_local_player()` (the same "always the first thing a fresh
+  room entry does" hook `reset_room()` itself already documents) --
+  clears `current_phase`, `round_wins`, `current_round`,
+  `player_loadout_confirmed`, `intermission_seconds_remaining`,
+  `team_alive_counts`, `winning_team`, `players_in_grace_period`,
+  `_loaded_peer_ids`, `_intermission_generation`. Leaves `match_mode`/
+  `friendly_fire_enabled` alone (always freshly set by `_start_match()`/
+  `enter_loading()` before anything reads them again). **Scope Blast**
+  found a 2nd, live sibling bug in the same "state not reset across an
+  abandon → new match" pattern: `net/replay_recorder.gd`'s `_file`
+  handle is only ever closed by `record_match_end()`, which an
+  abandoned match also never reaches, so the next match's `start_
+  recording()` silently kept appending into the SAME abandoned match's
+  file instead of starting fresh. Fixed by force-closing any already-
+  open file at the top of `start_recording()` itself, so a genuinely
+  new match's own "start" bookend no longer depends on the PREVIOUS
+  match's "end" bookend having run. Checked and ruled safe to leave:
+  `ReconnectManager._token` (re-issued fresh by `PlayerSpawner` at
+  spawn time, well before any reconnect could occur in the new match --
+  a stale token is simply overwritten, never read first) and `GameLog`
+  (deliberately per-PROCESS, not per-match, per its own doc comment --
+  "opened once per process lifetime... kept for the whole match/
+  process", so it not resetting is the documented design, not a bug).
+  3 new regression tests (`tests/unit/test_match_state.gd`:
+  `reset_for_new_room()` clears every field, and unblocks
+  `_countdown_still_valid()`'s own real guard; `tests/unit/
+  test_replay_recorder.gd`: a 2nd `start_recording()` without a prior
+  `record_match_end()` still opens a fresh file), confirmed red first
+  (`git stash` the fixes -- real assertion failures, not parse errors)
+  then green. Live 2-process headless boot: no runtime errors. 284/284
+  GUT passing (was 281, 3 new).
+- [x] **Room Config: lock self-service picks once ready (2026-09-04,
+  human owner's own request: "bloquear qualquer mudança depois de
+  ready, somente pode apertar not ready").** `ui/lobby/lobby.gd`'s
+  Switch Team button (a fixed node) is now `disabled` whenever the
+  local peer is ready; the 3 per-row self-service options
+  (`_build_perk_option()`/`_build_weapon_option()`/`_build_boot_
+  option()`, only ever built for the local peer's own row) get the
+  same treatment. `ReadyButton` itself is deliberately NEVER disabled
+  -- un-readying must always stay possible. Scoped to per-player
+  self-service controls only, not the host-only mode/friendly-fire
+  settings (a different, room-wide category the request wasn't about).
+  UI-level lock only, matching this codebase's existing convention --
+  no other self-service setter (`set_local_team`/`set_local_perk`/etc.)
+  has a server-side anti-tamper check either, and this is a
+  cooperative LAN context, not adversarial. 3 new tests
+  (`tests/unit/test_lobby.gd`), confirmed red first (`git stash` the
+  fix -- real assertion failures) then green. 287/287 GUT passing (was
+  284, 3 new).
 
 ## Backlog (next up)
 
@@ -943,6 +1135,18 @@ changed but this file wasn't updated.
   a STUN/TURN server don't exist in this project yet, and need their
   own hosting/provider decisions via a future `/think` before this is
   scheduled.
+  **Proposed direction for signaling/accounts/matchmaking, 2026-09-05**:
+  `docs/blueprint/07-backend-service.md` (new file) — a Rails 8.1 +
+  SQLite service (users/rooms/matches/match_players, Action Cable for
+  signaling), reviewed against this project's real data model (best-
+  of-3 round tracking, the 4 independent loadout axes, `MatchState.
+  winning_team`/draw semantics) rather than a generic schema. Human
+  owner's own explicit sequencing: the Rails service gets built and
+  proven out standalone first (accounts/login working on its own),
+  Godot-side integration (an HTTP client reporting from the same hooks
+  `GameLog.info()` already uses, plus the actual `WebRTCMultiplayerPeer`
+  swap above) only starts once that API exists. Hosting/provider/
+  matchmaking-scope questions remain open, same as above.
 - [ ] **`/check`'s background-dispatch mechanism doesn't work from
   inside an isolated worker fork -- confirmed recurring, not a one-off**
   (Phase 15, then Phase 16 skipped even attempting it, going straight
@@ -1001,7 +1205,13 @@ changed but this file wasn't updated.
 - [ ] Decide how (or whether) to replicate ability_q/e/r/f `ActionFsm`
   state to remote `INTERPOLATED` peers — the snapshot RPC is at a
   practical parameter-count limit; likely needs a packed-int
-  restructure before a 4th+ ability slot makes this worse.
+  restructure before a 4th+ ability slot makes this worse. **Same gap
+  also affects the weapon-visual work** (2026-09-04): `action_fsm.
+  current_move` itself isn't replicated either (only `state`/
+  `move_frame` are), so a remote INTERPOLATED character's weapon swing
+  and Twin Daggers hand-alternation don't render for other players —
+  a packed-int restructure would need to cover this too, not just the
+  4 ability slots.
 - [x] ~~Phase 10 (LAN room discovery)~~ — done, see the Phase 10 entry
   above. The roadmap's original Slices 7-10 "lobby" ask is fully
   complete.
