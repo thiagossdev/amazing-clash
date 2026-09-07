@@ -466,6 +466,126 @@ func test_no_action_and_no_recent_hit_is_neutral_modulate() -> void:
 	assert_eq(character.get_node(character.visual_path).modulate, character.NEUTRAL_MODULATE)
 
 
+## Human owner's 2026-09-04 ask ("sprite para armas, animação de
+## ataque"): WeaponVisual is rebuilt from the equipped weapon's own
+## placeholder-art fields (visual_length/visual_width/visual_color),
+## not a fixed shape -- so 2 different weapons read as visually
+## distinct blades. Compares against the live LobbyState.WEAPON_
+## RESOURCES entry rather than a hardcoded number, so this doesn't
+## break every time weapon.tres balance numbers change.
+func test_weapon_visual_rebuilds_from_the_equipped_weapon() -> void:
+	var character := _spawn_character_with_weapon(801, "warhammer")
+	var weapon: WeaponResource = LobbyState.WEAPON_RESOURCES[LobbyState.WEAPON_IDS.find(
+		"warhammer"
+	)]
+	var weapon_visual: Polygon2D = character.get_node(character.weapon_visual_path)
+	assert_eq(weapon_visual.color, weapon.visual_color)
+	var half_width := weapon.visual_width / 2.0
+	assert_eq(
+		weapon_visual.polygon,
+		PackedVector2Array(
+			[
+				Vector2(0, -half_width),
+				Vector2(weapon.visual_length, -half_width),
+				Vector2(weapon.visual_length, half_width),
+				Vector2(0, half_width),
+			]
+		)
+	)
+
+
+func test_weapon_visual_rests_at_the_aim_direction_when_neutral() -> void:
+	var character := _spawn_character()
+	character.current_aim_direction = Vector2.DOWN
+	character._update_visual_feedback()
+	var weapon_visual: Polygon2D = character.get_node(character.weapon_visual_path)
+	assert_eq(weapon_visual.rotation, Vector2.DOWN.angle())
+
+
+## Human owner's 2026-09-04 follow-up ask ("posicionar as armas nas
+## posição das mãos... em vez de centro"): the blade's pivot is no
+## longer the body's exact center -- it's HAND_OFFSET_RIGHT, rotated by
+## the current aim direction so the hand position turns together with
+## the character rather than staying fixed in world space.
+func test_weapon_visual_is_offset_to_a_hand_position_not_body_center() -> void:
+	var character := _spawn_character()
+	character.current_aim_direction = Vector2.DOWN
+	character._update_visual_feedback()
+	var weapon_visual: Polygon2D = character.get_node(character.weapon_visual_path)
+	assert_eq(weapon_visual.position, character.HAND_OFFSET_RIGHT.rotated(Vector2.DOWN.angle()))
+	assert_ne(weapon_visual.position, Vector2.ZERO)
+
+
+## Twin Daggers is 1 weapon held in both hands at once (human owner's
+## own clarification, 2026-09-04: "No caso da Twins Danger é uma arma,
+## mas ambas as mãos") -- WeaponResource.dual_wielded, not a 2nd
+## independent weapon pick. WeaponVisualOffhand mirrors the same blade
+## shape at HAND_OFFSET_LEFT and becomes visible only for this weapon.
+func test_dual_wielded_weapon_shows_a_2nd_blade_at_the_other_hand() -> void:
+	var character := _spawn_character_with_weapon(802, "twin_daggers")
+	var weapon: WeaponResource = LobbyState.WEAPON_RESOURCES[LobbyState.WEAPON_IDS.find(
+		"twin_daggers"
+	)]
+	character._update_visual_feedback()
+	var offhand: Polygon2D = character.get_node(character.weapon_visual_offhand_path)
+	var main_hand: Polygon2D = character.get_node(character.weapon_visual_path)
+	assert_true(offhand.visible)
+	assert_eq(offhand.color, weapon.visual_color)
+	assert_eq(offhand.polygon, main_hand.polygon)
+	assert_eq(
+		offhand.position, character.HAND_OFFSET_LEFT.rotated(character.get_aim_direction().angle())
+	)
+	assert_ne(offhand.position, main_hand.position)
+
+
+func test_single_handed_weapon_hides_the_offhand_blade() -> void:
+	var character := _spawn_character_with_weapon(803, "iron_sword")
+	character._update_visual_feedback()
+	var offhand: Polygon2D = character.get_node(character.weapon_visual_offhand_path)
+	assert_false(offhand.visible)
+
+
+## Frame counts chosen so the move's midpoint (2 of 4 total frames)
+## lands on a clean fraction -- the swing should be exactly on the aim
+## line there, half a WEAPON_SWING_ARC past where it started.
+func test_weapon_visual_starts_the_swing_before_the_aim_line() -> void:
+	var character := _spawn_character()
+	var move := MoveDefinition.new()
+	move.startup_frames = 1
+	move.active_frames = 1
+	move.recovery_frames = 2
+	character.action_fsm.start_move(move)
+	character._update_visual_feedback()
+	var weapon_visual: Polygon2D = character.get_node(character.weapon_visual_path)
+	assert_almost_eq(weapon_visual.rotation, -character.WEAPON_SWING_ARC / 2.0, 0.0001)
+
+
+func test_weapon_visual_reaches_the_aim_line_at_the_moves_midpoint() -> void:
+	var character := _spawn_character()
+	var move := MoveDefinition.new()
+	move.startup_frames = 1
+	move.active_frames = 1
+	move.recovery_frames = 2
+	character.action_fsm.start_move(move)
+	character.action_fsm.advance_frame()
+	character.action_fsm.advance_frame()
+	character._update_visual_feedback()
+	var weapon_visual: Polygon2D = character.get_node(character.weapon_visual_path)
+	assert_almost_eq(weapon_visual.rotation, character.get_aim_direction().angle(), 0.0001)
+
+
+## Ability slots (Q/E/R/F) are class skills, not the equipped weapon's
+## own swing -- only action_fsm (attack_move/skillshot_move) should
+## move WeaponVisual. Confirms casting an ability alone doesn't also
+## sweep the weapon blade.
+func test_weapon_visual_ignores_ability_slots_and_stays_at_rest() -> void:
+	var character := _spawn_character()
+	character.ability_q_fsm.state = ActionFsm.State.ACTIVE
+	character._update_visual_feedback()
+	var weapon_visual: Polygon2D = character.get_node(character.weapon_visual_path)
+	assert_eq(weapon_visual.rotation, character.get_aim_direction().angle())
+
+
 ## Found live 2026-09-04 (human owner: "Antes eu estava vendo os flash
 ## de damage hit e agora não mais"): replay_step_authoritative() (the
 ## per-tick entry point net/replay_driver.gd drives replayed characters
@@ -528,3 +648,55 @@ func test_rpc_reassign_controller_updates_controlling_peer_id() -> void:
 	var character := _spawn_character()
 	character._rpc_reassign_controller(424242)
 	assert_eq(character.controlling_peer_id, 424242)
+
+
+## Human owner's 2026-09-04 ask ("Rotacionar o jogador também junto com
+## as armas. Atualmente não dá a ideia que o corpo tá acompanhando a
+## direção da visão"): the body (Visual) now tracks aim direction the
+## same way the weapon's own rest angle does -- not the swing arc, just
+## which way the character faces.
+func test_body_visual_rotates_to_match_aim_direction() -> void:
+	var character := _spawn_character()
+	character.current_aim_direction = Vector2.UP
+	character._update_visual_feedback()
+	var visual: Polygon2D = character.get_node(character.visual_path)
+	assert_eq(visual.rotation, Vector2.UP.angle())
+
+
+## Human owner's 2026-09-04 follow-up ("Na twins danger, primeiro ataca
+## com a Right e depois com a Left e não as duas ao mesmo tempo"):
+## _weapon_active_hand_is_right toggles exactly when a new attack_move
+## starts (apply_input()), so consecutive separate attacks alternate
+## which of the 2 always-visible blades actually swings -- the other
+## stays at rest (rotation == aim angle) instead of swinging in lockstep.
+func test_twin_daggers_alternates_hands_between_separate_attacks() -> void:
+	var character := _spawn_character_with_weapon(805, "twin_daggers")
+	var base_angle := character.get_aim_direction().angle()
+	var right_hand: Polygon2D = character.get_node(character.weapon_visual_path)
+	var left_hand: Polygon2D = character.get_node(character.weapon_visual_offhand_path)
+
+	character.apply_input(_sample(true))
+	character._update_visual_feedback()
+	assert_ne(right_hand.rotation, base_angle, "the 1st attack should swing the right hand")
+	assert_eq(
+		left_hand.rotation, base_angle, "the left hand should stay at rest during the 1st attack"
+	)
+
+	character.action_fsm.state = ActionFsm.State.NEUTRAL
+	character.apply_input(_sample(true))
+	character._update_visual_feedback()
+	assert_ne(left_hand.rotation, base_angle, "the 2nd attack should swing the left hand instead")
+	assert_eq(right_hand.rotation, base_angle, "the right hand should rest during the 2nd attack")
+
+
+## Same reconciliation reasoning as test_restoring_a_predicted_checkpoint_
+## preserves_ability_r_current_move() above: _weapon_active_hand_is_right
+## must round-trip through a Checkpoint, or replaying an un-acked input
+## after a rollback would toggle it from the wrong starting parity.
+func test_restoring_a_predicted_checkpoint_preserves_weapon_active_hand() -> void:
+	var character := _spawn_character_with_weapon(806, "twin_daggers")
+	character.apply_input(_sample(true))
+	var checkpoint := character._capture_predicted_state(1)
+	character._weapon_active_hand_is_right = not character._weapon_active_hand_is_right
+	character._restore_predicted_state(checkpoint)
+	assert_eq(character._weapon_active_hand_is_right, checkpoint.weapon_active_hand_is_right)

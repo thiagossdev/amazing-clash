@@ -40,6 +40,29 @@ const HIT_FLASH_MODULATE := Color(2.2, 2.2, 2.2, 1.0)
 const ACTIVE_SWING_MODULATE := Color(1.35, 1.35, 1.35, 1.0)
 const NEUTRAL_MODULATE := Color(1.0, 1.0, 1.0, 1.0)
 
+## WeaponVisual's swing, driven only by action_fsm (the equipped
+## weapon's own attack_move/skillshot_move slot -- ability_q/e/r/f are
+## class skills, not weapon swings, and keep their existing modulate-
+## only feedback above). Total arc swept from start_move() to move end,
+## centered on get_aim_direction(); half before the aim line, half past
+## it, so an instant (0-frame) move would show no swing at all rather
+## than a full arc snapping into place on the first frame.
+const WEAPON_SWING_ARC := deg_to_rad(110.0)
+
+## WeaponVisual's pivot, offset from body center to a hand-like
+## position instead of growing out of the character's middle (human
+## owner's own 2026-09-04 request: "posicionar as armas nas posição das
+## mãos... em vez de centro"). Defined in the character's own
+## un-rotated local frame (aim pointing along +X) and rotated by
+## get_aim_direction() every tick in _update_weapon_visual_rotation(),
+## so the hand position turns together with the character instead of
+## staying fixed in world space. HAND_OFFSET_LEFT is the same offset
+## mirrored across the forward axis (negated Y) -- only used by dual-
+## wielded weapons (WeaponResource.dual_wielded), see
+## _rebuild_weapon_visual().
+const HAND_OFFSET_RIGHT := Vector2(8.0, 14.0)
+const HAND_OFFSET_LEFT := Vector2(8.0, -14.0)
+
 ## Phase 11 (lag compensation): how many of this character's own recent
 ## positions _position_history keeps, at 1 entry/physics tick (60Hz) --
 ## ~400ms of history, generous headroom over the max compensation
@@ -51,6 +74,15 @@ const POSITION_HISTORY_MAX_ENTRIES := 24
 ## Which child node's local `position` absorbs the reconciliation-
 ## smoothing offset.
 @export var visual_path: NodePath = ^"Visual"
+## Placeholder-art weapon node (Polygon2D, rebuilt by _rebuild_weapon_
+## visual() from the equipped WeaponResource's visual_* fields), swung
+## by _update_visual_feedback() while action_fsm runs the weapon's own
+## attack_move/skillshot_move.
+@export var weapon_visual_path: NodePath = ^"WeaponVisual"
+## 2nd blade, only ever shown for a dual_wielded weapon (Twin Daggers) --
+## hidden and left at rest for every other weapon. See
+## _rebuild_weapon_visual().
+@export var weapon_visual_offhand_path: NodePath = ^"WeaponVisualOffhand"
 ## Phase 3's 2 independent test ability slots -- Q and E, each its own
 ## cooldown, castable while melee/skillshot are on cooldown or vice
 ## versa. Phase 15 adds ability_r/ability_f below, mirroring these 2
@@ -188,6 +220,21 @@ var _visual_position_error: Vector2 = Vector2.ZERO
 ## Local-only, purely cosmetic (see _update_visual_feedback()).
 var _hit_flash_frames_remaining: int = 0
 var _previous_health_for_flash: float = 0.0
+## Set from the equipped WeaponResource.dual_wielded by
+## _rebuild_weapon_visual() -- read by _update_weapon_visual_rotation()
+## to decide whether the offhand blade is a 2nd independent hand
+## (Twin Daggers) or just hidden dead weight (every other weapon).
+var _weapon_is_dual_wielded: bool = false
+## Human owner's 2026-09-04 ask ("Na twins danger, primeiro ataca com a
+## Right e depois com a Left"): toggled by apply_input() every time a
+## NEW attack_move/skillshot_move starts (not every tick -- it stays
+## fixed for that move's whole duration), so a dual_wielded weapon's 2
+## hands swing on alternating attacks instead of both at once. Meaningless
+## for a single-handed weapon (only the right-hand blade is ever
+## visible there). Part of ClientPredictor.Checkpoint for the same
+## reconciliation reason action_state/action_move are -- see that
+## class's own doc comment.
+var _weapon_active_hand_is_right: bool = false
 ## Server-only: frames remaining where this character's own simulation
 ## step is entirely frozen (both movement and the action layer) --
 ## applied to both attacker and defender on a confirmed hit (see
@@ -277,6 +324,36 @@ func _apply_weapon_from_lobby_state() -> void:
 	var weapon := LobbyState.WEAPON_RESOURCES[LobbyState.WEAPON_IDS.find(weapon_id)]
 	attack_move = weapon.attack_move
 	skillshot_move = weapon.skillshot_move
+	_rebuild_weapon_visual(weapon)
+
+
+## Human owner's 2026-09-04 ask ("sprite para armas, animação de
+## ataque"): rebuilds WeaponVisual's polygon/color from the equipped
+## weapon's placeholder-art fields so each of the 3 weapons reads as a
+## visually distinct blade at rest, before any swing is applied.
+## dual_wielded weapons (Twin Daggers) additionally rebuild
+## WeaponVisualOffhand with the same blade shape and reveal it; every
+## other weapon hides it -- see _update_weapon_visual_rotation() for
+## the 2 hands' actual positions.
+func _rebuild_weapon_visual(weapon: WeaponResource) -> void:
+	var blade_polygon := PackedVector2Array(
+		[
+			Vector2(0, -weapon.visual_width / 2.0),
+			Vector2(weapon.visual_length, -weapon.visual_width / 2.0),
+			Vector2(weapon.visual_length, weapon.visual_width / 2.0),
+			Vector2(0, weapon.visual_width / 2.0),
+		]
+	)
+	var weapon_visual := get_node_or_null(weapon_visual_path)
+	if weapon_visual:
+		weapon_visual.polygon = blade_polygon
+		weapon_visual.color = weapon.visual_color
+	var weapon_visual_offhand := get_node_or_null(weapon_visual_offhand_path)
+	if weapon_visual_offhand:
+		weapon_visual_offhand.polygon = blade_polygon
+		weapon_visual_offhand.color = weapon.visual_color
+		weapon_visual_offhand.visible = weapon.dual_wielded
+	_weapon_is_dual_wielded = weapon.dual_wielded
 
 
 ## Same reasoning and fallback shape as _apply_weapon_from_lobby_state()
@@ -607,6 +684,7 @@ func _capture_predicted_state(sequence: int) -> ClientPredictor.Checkpoint:
 	checkpoint.boot_active_move_frame = boot_active_fsm.move_frame
 	checkpoint.boot_active_cooldown_frames = _boot_active_cooldown_frames
 	checkpoint.boot_active_move = boot_active_fsm.current_move
+	checkpoint.weapon_active_hand_is_right = _weapon_active_hand_is_right
 	return checkpoint
 
 
@@ -639,6 +717,7 @@ func _restore_predicted_state(checkpoint: ClientPredictor.Checkpoint) -> void:
 	boot_active_fsm.move_frame = checkpoint.boot_active_move_frame
 	_boot_active_cooldown_frames = checkpoint.boot_active_cooldown_frames
 	boot_active_fsm.current_move = checkpoint.boot_active_move
+	_weapon_active_hand_is_right = checkpoint.weapon_active_hand_is_right
 
 
 func _begin_visual_correction_smoothing(pre_correction_position: Vector2) -> void:
@@ -664,18 +743,65 @@ func _begin_visual_correction_smoothing(pre_correction_position: Vector2) -> voi
 ## is the more important of the two to read clearly).
 func _update_visual_feedback() -> void:
 	var visual := get_node_or_null(visual_path)
-	if not visual:
+	if visual:
+		if current_health < _previous_health_for_flash:
+			_hit_flash_frames_remaining = HIT_FLASH_FRAMES
+		_previous_health_for_flash = current_health
+		if _hit_flash_frames_remaining > 0:
+			_hit_flash_frames_remaining -= 1
+			visual.modulate = HIT_FLASH_MODULATE
+		elif _is_any_action_active():
+			visual.modulate = ACTIVE_SWING_MODULATE
+		else:
+			visual.modulate = NEUTRAL_MODULATE
+		# Human owner's 2026-09-04 ask ("Rotacionar o jogador também
+		# junto com as armas... corpo tá acompanhando a direção da
+		# visão"): the body tracks aim direction the same as the
+		# weapon's own rest angle -- not the swing arc itself, just
+		# which way the character is facing.
+		visual.rotation = get_aim_direction().angle()
+	_update_weapon_visual_rotation()
+
+
+## Both hands share the same swing_rotation while their own hand is the
+## one swinging -- only their HAND_OFFSET_RIGHT/HAND_OFFSET_LEFT
+## position ever differs, rotated by base_angle so the hand stays on
+## the correct side of the character as they turn. Rest angle equals
+## get_aim_direction() -- the weapon simply points where the character
+## aims when action_fsm is NEUTRAL, or while it's the OTHER hand's turn
+## to swing. While action_fsm runs a move, sweeps through
+## WEAPON_SWING_ARC centered on that same aim line, keyed to
+## move_frame/total-frame progress so the swing always spans exactly
+## the move's own startup+active+recovery window, however long that
+## particular weapon's frame data is.
+##
+## _weapon_is_dual_wielded decides whether _weapon_active_hand_is_right
+## actually matters: a single-handed weapon always swings the right
+## hand (the offhand stays hidden -- _rebuild_weapon_visual() controls
+## that), while a dual_wielded weapon (Twin Daggers) alternates which
+## of its 2 always-visible blades swings, one full attack at a time
+## (human owner's own 2026-09-04 ask: "primeiro ataca com a Right e
+## depois com a Left e não as duas ao mesmo tempo").
+func _update_weapon_visual_rotation() -> void:
+	var weapon_visual := get_node_or_null(weapon_visual_path)
+	var weapon_visual_offhand := get_node_or_null(weapon_visual_offhand_path)
+	if not weapon_visual and not weapon_visual_offhand:
 		return
-	if current_health < _previous_health_for_flash:
-		_hit_flash_frames_remaining = HIT_FLASH_FRAMES
-	_previous_health_for_flash = current_health
-	if _hit_flash_frames_remaining > 0:
-		_hit_flash_frames_remaining -= 1
-		visual.modulate = HIT_FLASH_MODULATE
-	elif _is_any_action_active():
-		visual.modulate = ACTIVE_SWING_MODULATE
-	else:
-		visual.modulate = NEUTRAL_MODULATE
+	var base_angle := get_aim_direction().angle()
+	var swing_rotation := base_angle
+	if action_fsm.state != ActionFsm.State.NEUTRAL and action_fsm.current_move:
+		var move := action_fsm.current_move
+		var total_frames := move.startup_frames + move.active_frames + move.recovery_frames
+		var progress := float(action_fsm.move_frame) / float(maxi(total_frames, 1))
+		swing_rotation = base_angle - WEAPON_SWING_ARC / 2.0 + WEAPON_SWING_ARC * progress
+	var right_hand_swings := not _weapon_is_dual_wielded or _weapon_active_hand_is_right
+	var left_hand_swings := _weapon_is_dual_wielded and not _weapon_active_hand_is_right
+	if weapon_visual:
+		weapon_visual.position = HAND_OFFSET_RIGHT.rotated(base_angle)
+		weapon_visual.rotation = swing_rotation if right_hand_swings else base_angle
+	if weapon_visual_offhand:
+		weapon_visual_offhand.position = HAND_OFFSET_LEFT.rotated(base_angle)
+		weapon_visual_offhand.rotation = swing_rotation if left_hand_swings else base_angle
 
 
 func _is_any_action_active() -> bool:
@@ -759,8 +885,10 @@ func apply_input(sample: InputBuffer.Sample) -> void:
 	velocity = fsm.velocity
 	var can_start_move := action_fsm.state == ActionFsm.State.NEUTRAL
 	if sample.attack_pressed and can_start_move and attack_move:
+		_weapon_active_hand_is_right = not _weapon_active_hand_is_right
 		action_fsm.start_move(attack_move)
 	elif sample.skillshot_pressed and can_start_move and skillshot_move:
+		_weapon_active_hand_is_right = not _weapon_active_hand_is_right
 		pending_skillshot_direction = _normalized_aim(sample.aim_direction)
 		action_fsm.start_move(skillshot_move)
 	else:

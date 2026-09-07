@@ -24,3 +24,12 @@ shape = SubResource("CircleShape2D_char")
 [node name="Visual" type="Polygon2D" parent="." unique_id=1284618977]
 color = Color(0.5, 0.2, 0.85, 1)
 polygon = PackedVector2Array(-20, -20, 20, -20, 20, 20, -20, 20)
+
+[node name="WeaponVisual" type="Polygon2D" parent="."]
+color = Color(1, 1, 1, 1)
+polygon = PackedVector2Array(0, -5, 44, -5, 44, 5, 0, 5)
+
+[node name="WeaponVisualOffhand" type="Polygon2D" parent="."]
+visible = false
+color = Color(1, 1, 1, 1)
+polygon = PackedVector2Array(0, -5, 44, -5, 44, 5, 0, 5)

@@ -64,6 +64,15 @@ class Checkpoint:
 	var boot_active_move_frame: int = 0
 	var boot_active_cooldown_frames: int = 0
 	var boot_active_move: MoveDefinition
+	## 2026-09-04: which hand a dual_wielded weapon's next/current swing
+	## uses (CharacterController.apply_input() toggles it exactly when a
+	## new attack_move/skillshot_move starts, mirroring action_state
+	## above -- same one-shot, state-gated-trigger reasoning this
+	## class's own doc comment already gives for that field: replaying
+	## an un-acked input without first restoring this would toggle it
+	## from the wrong starting parity, swapping which hand renders as
+	## active after a reconciliation.
+	var weapon_active_hand_is_right: bool = false
 
 
 var _buffer := InputBuffer.new()

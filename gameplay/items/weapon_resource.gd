@@ -20,3 +20,21 @@ extends Resource
 @export var weapon_name: String = ""
 @export var attack_move: MoveDefinition
 @export var skillshot_move: MoveDefinition
+
+## Placeholder programmer art (human owner's own 2026-09-04 decision:
+## no real weapon sprites exist yet in this project, unlike
+## amazing-nauts' drawn part-based rig -- these describe a plain
+## rectangle blade shape rebuilt at runtime by CharacterController._
+## rebuild_weapon_visual(), swappable for a real Sprite2D texture later
+## without redesigning the swing-angle system in character_controller.gd.
+@export var visual_length: float = 40.0
+@export var visual_width: float = 10.0
+@export var visual_color: Color = Color.WHITE
+
+## True only for Twin Daggers (2026-09-04, human owner's own
+## clarification: "No caso da Twins Danger é uma arma, mas ambas as
+## mãos" -- one weapon, held in both hands at once, unlike Iron
+## Sword/Warhammer's single-hand grip). Draws a 2nd copy of the same
+## blade shape at the off-hand position (CharacterController.
+## _rebuild_weapon_visual()), mirrored, not a 2nd independent weapon.
+@export var dual_wielded: bool = false
