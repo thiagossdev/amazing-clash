@@ -115,6 +115,13 @@ pays for it, which STUN/TURN provider to use, and whether a
 room-listing/matchmaking service ships alongside this or stays a
 separate, later effort.
 
+**Proposed direction for signaling/accounts/matchmaking, 2026-09-05**:
+see [7. Backend Service](07-backend-service.md) — a Rails + SQLite
+service (Action Cable for signaling), built and proven out standalone
+before any Godot-side integration. Still not decided: hosting/cost,
+STUN/TURN provider, and whether matchmaking ships alongside — see that
+file's own "Still open" section.
+
 ## Combat Architecture: Also Inherited
 
 - **Frame data as a Resource** (`MoveDefinition`-equivalent): startup,
