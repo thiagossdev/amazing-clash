@@ -167,6 +167,41 @@ func _ready() -> void:
 	_apply_dev_intermission_overrides()
 
 
+## Found live 2026-09-04 (human owner: "depois que abandonei uma
+## partida não consegui criar outras partidas" / "dou ready e o
+## countdown não inicia"): nothing ever reset current_phase back to
+## LOBBY once a match reached IN_PROGRESS/ROUND_INTERMISSION/POST_GAME
+## -- MatchState is an autoload, so it stayed stuck at that stale phase
+## across an Abandon Match (ui/hud/match_menu.gd) -> re-host/join
+## cycle. net/lobby_state.gd's own _recompute_countdown() unconditionally
+## refuses to start a countdown while current_phase != Phase.LOBBY (by
+## design -- see that function's own doc comment, added specifically to
+## stop a mid-match peer-disconnect from re-triggering the countdown),
+## so a fresh room's very first Ready press silently did nothing.
+## round_wins' own doc comment above already claimed register_local_
+## player() cleared match-progress state "like every other MatchState
+## field" -- that was aspirational, not real: reset_room() (net/
+## lobby_state.gd) only ever cleared ITS OWN fields. This is the
+## function that comment always meant to describe; called from
+## register_local_player() alongside reset_room(), the same "always the
+## first thing a fresh room entry does" hook. Deliberately leaves
+## match_mode/friendly_fire_enabled untouched -- both are always
+## freshly set by enter_loading()/_start_match() before anything reads
+## them again -- and leaves the dev-override *_seconds vars alone,
+## since those are per-process CLI overrides, not match-progress state.
+func reset_for_new_room() -> void:
+	current_phase = Phase.LOBBY
+	round_wins.clear()
+	current_round = 1
+	player_loadout_confirmed.clear()
+	intermission_seconds_remaining = -1.0
+	team_alive_counts.clear()
+	winning_team = -1
+	players_in_grace_period = 0
+	_loaded_peer_ids.clear()
+	_intermission_generation = 0
+
+
 ## Same convention as net/lobby_state.gd's own
 ## _apply_dev_countdown_overrides(): read OS.get_cmdline_user_args()
 ## directly here, guarded with is_valid_float() (a malformed value

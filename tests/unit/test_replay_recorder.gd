@@ -165,3 +165,25 @@ func test_reset_for_testing_starts_a_fresh_file() -> void:
 	ReplayRecorder.reset_for_testing(TEST_REPLAY_DIR)
 	ReplayRecorder.start_recording(MatchState.MatchMode.TEAM, false, 2, [])
 	assert_ne(ReplayRecorder.current_replay_path(), first_path, "reset must open a distinct file")
+
+
+## Found live 2026-09-04, via /hunt's Scope Blast sweep (human owner:
+## "depois que abandonei uma partida não consegui criar outras
+## partidas"): abandoning a match (ui/hud/match_menu.gd) never calls
+## record_match_end(), so _file stayed open from the previous match --
+## the next start_recording() call silently kept appending into that
+## same abandoned match's file instead of starting fresh, corrupting
+## both replays.
+func test_start_recording_again_without_a_prior_match_end_still_opens_a_fresh_file() -> void:
+	ReplayRecorder.start_recording(MatchState.MatchMode.TEAM, false, 2, [])
+	var first_path := ReplayRecorder.current_replay_path()
+	# Deliberately no record_match_end() call -- simulates an abandoned match.
+	ReplayRecorder.start_recording(MatchState.MatchMode.FREE_FOR_ALL, true, 2, [])
+	var second_path := ReplayRecorder.current_replay_path()
+	assert_ne(second_path, first_path, "an abandoned match's file must not be reused")
+	var first_lines := _read_all_lines(first_path)
+	assert_eq(first_lines.size(), 1, "the abandoned match's file must keep only its own header")
+	assert_eq(first_lines[0]["mode"], MatchState.MatchMode.TEAM)
+	var second_lines := _read_all_lines(second_path)
+	assert_eq(second_lines.size(), 1, "the new match's file must start with just its own header")
+	assert_eq(second_lines[0]["mode"], MatchState.MatchMode.FREE_FOR_ALL)

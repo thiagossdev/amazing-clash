@@ -339,8 +339,15 @@ func reset_room() -> void:
 ## NetworkManager.host()/join() succeeds, to register local_chosen_
 ## class_id under this peer's own id. Always the first thing a fresh
 ## room entry does -- see reset_room()'s own doc comment above for why.
+## Also resets MatchState (core/match_state.gd's own reset_for_new_
+## room()) -- found missing live 2026-09-04: a room re-hosted/joined
+## after an abandoned or finished match inherited current_phase stuck
+## at whatever phase that match last reached, silently blocking every
+## countdown attempt in the new room (see that function's own doc
+## comment for the full mechanism).
 func register_local_player() -> void:
 	reset_room()
+	MatchState.reset_for_new_room()
 	var peer_id := multiplayer.get_unique_id()
 	if NetworkManager.is_server():
 		_apply_registration(peer_id, local_chosen_class_id)

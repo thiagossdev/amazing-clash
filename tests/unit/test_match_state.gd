@@ -6,6 +6,7 @@ extends GutTest
 ## (see test_lobby_state.gd's own doc comment).
 
 const MatchStateScript := preload("res://core/match_state.gd")
+const LobbyStateScript := preload("res://net/lobby_state.gd")
 
 ## Phase 18: resolve_round_result() now calls GameLog.info() -- point
 ## every test in this file at a scratch dir so none of them ever touch
@@ -178,3 +179,59 @@ func _replay_record_types() -> Array:
 			types.append((JSON.parse_string(line) as Dictionary)["type"])
 	file.close()
 	return types
+
+
+## Found live 2026-09-04 (human owner: "depois que abandonei uma
+## partida não consegui criar outras partidas" / "dou ready e o
+## countdown não inicia"): nothing ever reset current_phase back to
+## LOBBY once a match reached IN_PROGRESS/ROUND_INTERMISSION/POST_GAME,
+## so net/lobby_state.gd's own _recompute_countdown() -- which
+## deliberately refuses to start a countdown while current_phase !=
+## Phase.LOBBY -- silently blocked every Ready press in a freshly
+## re-hosted/joined room. reset_for_new_room() is the fix; this locks
+## in every field it must clear.
+func test_reset_for_new_room_clears_every_previous_matchs_state() -> void:
+	var ms: Node = add_child_autofree(MatchStateScript.new())
+	ms.current_phase = MatchStateScript.Phase.ROUND_INTERMISSION
+	ms.round_wins = {0: 1, 1: 1}
+	ms.current_round = 2
+	ms.player_loadout_confirmed = {1: true}
+	ms.intermission_seconds_remaining = 3.0
+	ms.team_alive_counts = [2, 1] as Array[int]
+	ms.winning_team = 0
+	ms.players_in_grace_period = 1
+	ms._loaded_peer_ids = {1: true}
+	ms._intermission_generation = 5
+	ms.reset_for_new_room()
+	assert_eq(ms.current_phase, MatchStateScript.Phase.LOBBY)
+	assert_true(ms.round_wins.is_empty())
+	assert_eq(ms.current_round, 1)
+	assert_true(ms.player_loadout_confirmed.is_empty())
+	assert_eq(ms.intermission_seconds_remaining, -1.0)
+	assert_true(ms.team_alive_counts.is_empty())
+	assert_eq(ms.winning_team, -1)
+	assert_eq(ms.players_in_grace_period, 0)
+	assert_true(ms._loaded_peer_ids.is_empty())
+	assert_eq(ms._intermission_generation, 0)
+
+
+## The actual reported symptom, reproduced directly against the real
+## guard (net/lobby_state.gd's own _countdown_still_valid(), the same
+## check test_lobby_state.gd's test_countdown_still_valid_false_once_
+## the_match_has_left_lobby() locks in the OTHER direction for): a
+## stale IN_PROGRESS phase (as if a previous match was abandoned/
+## finished without a full app restart) made this false for every
+## room, forever, until reset_for_new_room() ran.
+func test_reset_for_new_room_unblocks_countdown_still_valid() -> void:
+	var lobby := LobbyStateScript.new()
+	lobby.player_class_ids[1] = "vanguard"
+	lobby.player_ready[1] = true
+	var original_phase := MatchState.current_phase
+	MatchState.current_phase = MatchState.Phase.IN_PROGRESS
+	assert_false(
+		lobby._countdown_still_valid(0), "test setup: a stale non-LOBBY phase blocks the countdown"
+	)
+	MatchState.reset_for_new_room()
+	assert_true(lobby._countdown_still_valid(0))
+	MatchState.current_phase = original_phase
+	lobby.free()

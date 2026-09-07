@@ -63,6 +63,20 @@ var _pending_samples: Array = []
 func start_recording(mode: int, friendly_fire: bool, round_target: int, loadouts: Array) -> void:
 	if not NetworkManager.is_server():
 		return
+	# Found live 2026-09-04, via /hunt's Scope Blast sweep on the same
+	# "abandoning a match skips its own cleanup" pattern that broke
+	# MatchState.current_phase: abandoning mid-match (ui/hud/
+	# match_menu.gd) never calls record_match_end(), so _file stays
+	# open from the PREVIOUS match. _ensure_file_open()'s own `if
+	# _file: return` guard exists for a DIFFERENT reason (don't reopen
+	# mid-match) and would otherwise silently keep writing the new
+	# match's records into the old, abandoned match's file. start_
+	# recording() is this class's own documented "start" bookend -- it
+	# must always begin a genuinely fresh file, regardless of whether
+	# the previous match's "end" bookend ever ran.
+	if _file:
+		_file.close()
+		_file = null
 	_ensure_file_open()
 	if not _file:
 		return
