@@ -121,6 +121,16 @@ func _refresh_room_ui() -> void:
 	_ready_button.button_pressed = local_is_ready
 	_ready_button.text = "Not Ready" if local_is_ready else "Ready"
 	_switch_team_button.visible = team_mode
+	# 2026-09-04 (human owner's own request): "bloquear qualquer mudança
+	# depois de ready, somente pode apertar not ready" -- Switch Team is
+	# the one self-service control built as a fixed node rather than
+	# per-row (see this file's own 2026-09-04 doc comment above), so it's
+	# disabled here; the per-row perk/weapon/boot options get the same
+	# treatment inside _build_perk_option()/_build_weapon_option()/
+	# _build_boot_option() below. _ready_button itself is deliberately
+	# NEVER disabled -- un-readying is the one action that must still
+	# work.
+	_switch_team_button.disabled = local_is_ready
 
 	_refresh_status_label()
 
@@ -184,6 +194,7 @@ func _build_perk_option() -> OptionButton:
 	option.item_selected.connect(
 		func(index: int): LobbyState.set_local_perk(LobbyState.PERK_IDS[index])
 	)
+	option.disabled = LobbyState.is_ready(multiplayer.get_unique_id())
 	return option
 
 
@@ -202,6 +213,7 @@ func _build_weapon_option() -> OptionButton:
 	option.item_selected.connect(
 		func(index: int): LobbyState.set_local_weapon(LobbyState.WEAPON_IDS[index])
 	)
+	option.disabled = LobbyState.is_ready(multiplayer.get_unique_id())
 	return option
 
 
@@ -215,6 +227,7 @@ func _build_boot_option() -> OptionButton:
 	option.item_selected.connect(
 		func(index: int): LobbyState.set_local_boot(LobbyState.BOOT_IDS[index])
 	)
+	option.disabled = LobbyState.is_ready(multiplayer.get_unique_id())
 	return option
 
 

@@ -71,3 +71,52 @@ func test_ready_and_switch_team_buttons_use_doubled_font_size() -> void:
 	var switch_button: Button = lobby.get_node("SwitchTeamButton")
 	assert_eq(ready_button.get_theme_font_size(&"font_size"), 32)
 	assert_eq(switch_button.get_theme_font_size(&"font_size"), 32)
+
+
+## Human owner's own 2026-09-04 follow-up ask: "bloquear qualquer
+## mudança depois de ready, somente pode apertar not ready" -- Switch
+## Team must lock the instant the local peer readies up. ReadyButton
+## itself is deliberately NOT covered by this lock (un-readying must
+## always stay possible) -- see test_ready_button_reflects_the_local_
+## peers_own_ready_state() above, which already exercises toggling it
+## with no disabled check.
+func test_switch_team_button_disabled_once_ready() -> void:
+	var lobby := _spawn_lobby()
+	var switch_button: Button = lobby.get_node("SwitchTeamButton")
+	LobbyState.room_match_mode = MatchState.MatchMode.TEAM
+	LobbyState.room_state_changed.emit()
+	assert_false(switch_button.disabled, "test setup: not ready yet")
+
+	LobbyState.player_ready[multiplayer.get_unique_id()] = true
+	LobbyState.room_state_changed.emit()
+	assert_true(switch_button.disabled)
+
+
+## Same lock, for the 3 self-service options built per-row
+## (_build_player_row() only ever builds these for the LOCAL peer's own
+## row -- see that function's own doc comment). Uses 2 separate lobby
+## instances (not one instance re-emitted twice) since rebuilding the
+## row list calls queue_free() on the old row, which doesn't remove it
+## from the tree until the next idle frame -- a 2nd emit in the same
+## test would risk reading the stale, not-yet-freed row back.
+func test_loadout_options_are_disabled_once_ready() -> void:
+	var lobby := _spawn_lobby()
+	var local_id := multiplayer.get_unique_id()
+	LobbyState.player_class_ids[local_id] = "vanguard"
+	LobbyState.player_ready[local_id] = true
+	LobbyState.room_state_changed.emit()
+	var row: HBoxContainer = lobby.get_node("PlayerListContainer").get_child(0)
+	assert_true((row.get_child(1) as OptionButton).disabled, "perk option")
+	assert_true((row.get_child(2) as OptionButton).disabled, "weapon option")
+	assert_true((row.get_child(3) as OptionButton).disabled, "boot option")
+
+
+func test_loadout_options_stay_enabled_while_not_ready() -> void:
+	var lobby := _spawn_lobby()
+	var local_id := multiplayer.get_unique_id()
+	LobbyState.player_class_ids[local_id] = "vanguard"
+	LobbyState.room_state_changed.emit()
+	var row: HBoxContainer = lobby.get_node("PlayerListContainer").get_child(0)
+	assert_false((row.get_child(1) as OptionButton).disabled, "perk option")
+	assert_false((row.get_child(2) as OptionButton).disabled, "weapon option")
+	assert_false((row.get_child(3) as OptionButton).disabled, "boot option")
