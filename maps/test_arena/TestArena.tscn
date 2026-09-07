@@ -10,6 +10,7 @@
 [ext_resource type="Script" uid="uid://ck2n3c3bjxrcr" path="res://gameplay/match/match_rules.gd" id="8_mrule"]
 [ext_resource type="Script" uid="uid://o3klvpw1hrun" path="res://net/loading_reporter.gd" id="9_ldrep"]
 [ext_resource type="Script" uid="uid://g23jx46kdnmm" path="res://ui/hud/round_intermission_overlay.gd" id="10_rndov"]
+[ext_resource type="Script" path="res://ui/hud/match_menu.gd" id="11_mmenu"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_horiz"]
 size = Vector2(1200, 32)
@@ -146,6 +147,46 @@ offset_left = -100.0
 offset_top = -24.0
 offset_right = 100.0
 offset_bottom = 136.0
+
+[node name="MatchMenu" type="CanvasLayer" parent="."]
+script = ExtResource("11_mmenu")
+
+[node name="TitleLabel" type="Label" parent="MatchMenu"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = -120.0
+offset_right = 150.0
+offset_bottom = -80.0
+theme_override_font_sizes/font_size = 28
+text = "Menu"
+horizontal_alignment = 1
+
+[node name="ResumeButton" type="Button" parent="MatchMenu"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = -60.0
+offset_right = 150.0
+offset_bottom = -10.0
+theme_override_font_sizes/font_size = 24
+text = "Resume"
+
+[node name="AbandonMatchButton" type="Button" parent="MatchMenu"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = 10.0
+offset_right = 150.0
+offset_bottom = 60.0
+theme_override_font_sizes/font_size = 24
+text = "Abandon Match"
 
 [node name="CombatResolver" type="Node" parent="." unique_id=1803979365]
 script = ExtResource("6_cmbtr")

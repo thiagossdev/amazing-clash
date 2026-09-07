@@ -112,3 +112,8 @@ func test_match_hud_controls_fit_the_viewport() -> void:
 func test_round_intermission_overlay_controls_fit_the_viewport() -> void:
 	var arena: Node = add_child_autofree(TEST_ARENA_SCENE.instantiate())
 	_assert_every_control_fits(arena.get_node("RoundIntermissionOverlay"))
+
+
+func test_match_menu_controls_fit_the_viewport() -> void:
+	var arena: Node = add_child_autofree(TEST_ARENA_SCENE.instantiate())
+	_assert_every_control_fits(arena.get_node("MatchMenu"))
