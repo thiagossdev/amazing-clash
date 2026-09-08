@@ -12,6 +12,12 @@ changed but this file wasn't updated.
 
 ## Completed (this session)
 
+- [x] **Doc-only update: reconciled `docs/blueprint/07-backend-service.md` with the real, deployed backend** (the human owner asked for this after getting a full Godot-integration briefing from a session working in the `amazing-clash-backend` repo). No engine/game code touched.
+  - `07-backend-service.md` fully rewritten from the 2026-09-05 *proposal* to the actual *implemented, live* system (deployed at `https://clash.amazing.thi.dev.br`) — verified against that repo's real code (`config/routes.rb`, every `Api::V1::*Controller`, `app/models/{room,match,character}.rb`, `app/channels/room_signaling_channel.rb`), not just its own docs, and cross-checked the shared enums (`class_id`/`weapon_id`/`boot_id`/`perk_id`, `MatchMode`, `Phase`, `MAX_CLIENTS`) directly against `net/lobby_state.gd`, `core/match_state.gd`, `net/network_manager.gd` in this repo — confirmed identical on both sides as of today. Documents the real auth model (bearer token, **no expiry**), every endpoint's exact request/response JSON, the full structured-error-`type` vocabulary, the WebRTC signaling message shapes (note: client sends `to_user_id`, receives `from_user_id` — not a symmetric echo), and the concrete Godot call sites (`MatchState.enter_in_progress()` / `resolve_round_result()` / `enter_post_game()`) each event maps to.
+  - `05-open-questions.md`: added a "Resolved" entry recording the backend as built and live, plus 3 "Still open" entries carried over from the backend's own list (TURN hosting/provider, real Steam credentials, Elo K-factor tuning) — per `07-backend-service.md`'s own instruction not to let those live only in that file.
+  - `03-networking-and-match-modes.md`'s "Future: Internet Play" section and `README.md`'s Contents blurb both updated from "proposed, not yet decided" to "built and live" for the backend piece, keeping the explicit note that **Godot-side integration itself has not started**.
+  - Not done (correctly out of scope for this task): the actual Godot-side integration work (HTTP client, `WebRTCMultiplayerPeer` swap) — this was a documentation reconciliation only, so the next session picking this up has an accurate map instead of a stale 2026-09-05 sketch.
+
 - [x] Copy GUT test infra from amazing-dungeons — `addons/gut/` (9.7.1),
   `.gutconfig.json`, `.gdlintrc`, `.markdownlint-cli2.jsonc`, real
   `agent-md.toml`, `memory/.gdignore`, empty `tests/unit/`; verified by

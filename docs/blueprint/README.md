@@ -32,8 +32,8 @@ blueprint proposes.
 6. [Post-MVP Backlog](06-post-mvp-backlog.md) (destinations for what
    the MVP deliberately cuts, not yet playtest-informed)
 7. [Backend Service](07-backend-service.md) (accounts, rooms,
-   matchmaking, WebRTC signaling — Rails + SQLite, proposed 2026-09-05,
-   not yet implemented on either side)
+   matchmaking, WebRTC signaling — Rails + SQLite, **implemented and
+   live since 2026-09-08**; Godot-side integration has not started)
 
 ## Relationship to the research folders
 

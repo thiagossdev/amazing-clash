@@ -115,12 +115,14 @@ pays for it, which STUN/TURN provider to use, and whether a
 room-listing/matchmaking service ships alongside this or stays a
 separate, later effort.
 
-**Proposed direction for signaling/accounts/matchmaking, 2026-09-05**:
-see [7. Backend Service](07-backend-service.md) — a Rails + SQLite
-service (Action Cable for signaling), built and proven out standalone
-before any Godot-side integration. Still not decided: hosting/cost,
-STUN/TURN provider, and whether matchmaking ships alongside — see that
-file's own "Still open" section.
+**Signaling/accounts/matchmaking: built and live (2026-09-08, updated
+from the 2026-09-05 proposal)** — see [7. Backend Service](07-backend-service.md).
+A Rails + SQLite service (Action Cable for signaling), deployed
+standalone and proven out before any Godot-side integration, per the
+confirmed sequencing above. Godot-side integration itself (the HTTP
+client, the actual `WebRTCMultiplayerPeer` swap) has not started yet.
+Still not decided: TURN provider/hosting, real Steam credentials — see
+that file's own "Still open" section.
 
 ## Combat Architecture: Also Inherited
 

@@ -2,250 +2,318 @@
 
 [← Index](README.md)
 
-**Status (2026-09-05): proposed direction, human owner's own decision,
-not yet implemented on either side.** This is the first design for the
-persistent-account/matchmaking layer this project has never had —
-today every peer is just an ephemeral `peer_id` for the lifetime of one
-`NetworkManager` connection, with no login, no account, no match
-history anywhere. It also answers part of
-[3. Networking and Match Modes](03-networking-and-match-modes.md)'s
-"Future: Internet Play" section, which left signaling/TURN hosting and
-matchmaking explicitly **not yet decided** — see that section's own
-note.
+**Status (2026-09-08): implemented, deployed, and live — code-complete
+on the Rails side.** This supersedes the 2026-09-05 proposal this file
+used to contain: every decision below is either shipped code or an
+explicit, still-open infra item, not a design sketch. **Godot-side
+integration has not started** — that is the next piece of work this
+file exists to brief, per the human owner's own confirmed sequencing
+(build the Rails service standalone and prove it out first, then wire
+Godot to it — see [3](03-networking-and-match-modes.md#future-internet-play-without-manual-port-forwarding)).
 
-**Confirmed sequencing (human owner's own explicit instruction,
-2026-09-05): the Rails service is built and proven out standalone
-first** (accounts, login, rooms, matchmaking, working against its own
-test suite) **before any Godot-side integration work starts.** The
-Godot client only starts talking to this API once it actually exists
-and is reachable. Nothing in this file is scheduled as an amazing-clash
-roadmap phase yet; treat it as the reference to build the Rails side
-against, and to `/think` from once the API is live and it's time to
-wire Godot to it.
+The service lives in a **separate repo**, `amazing-clash-backend`
+(local path `amazing-clash-app` — the GitHub repo was renamed after the
+local directory was created; `amazing-clash-app` is legacy, not a
+different project), deployed at **`https://clash.amazing.thi.dev.br`**.
+Its own docs — the authoritative, code-verified reference, deeper than
+this summary — live at `docs/backend/*.md` in that repo:
+`01-overview.md`, `02-schema.md`, `03-accounts-and-auth.md`,
+`04-characters.md`, `05-rooms-and-matchmaking.md`,
+`06-matches-and-rating.md`, `07-signaling.md`, `08-api-reference.md`.
+Read this file for the Godot-integration briefing; read those for
+backend implementation detail (why a column/validation/lock exists).
+
+It was **not** a blank slate: that repo already shipped a full
+email+password + TOTP MFA + WebAuthn passkey account system (personal
+starter template) before any of this was built. Everything below is
+new on top of that, not a replacement for it.
 
 ## What this service owns
 
-- Accounts: username/password login. First time this project has any
-  persistent player identity at all.
-- Rooms: a room's existence, its code, its host, its lifecycle state
-  (`waiting` / `in_progress` / `finished`) — bookkeeping, not the live
-  `MatchState.Phase` state machine itself.
-- Matches: one row per played match — mode, settings, final result.
-  Written from **events**, not polled from live state.
-- Matchmaking / room listing over the internet (`net/lan_discovery.gd`
-  is LAN-only UDP broadcast and stays exactly as it is; this is the
-  separate internet-facing equivalent `03`'s own doc comment already
-  flags as needed).
-- WebRTC signaling (SDP offer/answer + ICE candidate exchange) via
+- **Accounts.** Email+password login, or Steam login (session-ticket
+  verification, no browser popup), or both linked to one account.
+- **Characters.** A player's roster of named, class-based characters
+  with an editable loadout (weapon/boot/perk). **Created and edited
+  only in-game** — the backend's own web UI can only view them,
+  permanently, by design.
+- **Rooms.** A room's existence, code, host, and lifecycle
+  (`waiting → in_progress → finished`) plus lobby membership
+  (`room_players`) — bookkeeping, not `MatchState.Phase` itself.
+- **Matches.** One row per played match — mode, settings, final result
+  — written from **events the Godot HOST client reports**, never
+  polled from live state.
+- **Matchmaking / room listing over the internet.** `net/lan_discovery.gd`
+  stays exactly as it is (LAN-only UDP broadcast); this is the separate
+  internet-facing equivalent: room codes + a public listing of
+  `waiting` rooms. **No auto-pairing queue in v1.**
+- **WebRTC signaling** (SDP offer/answer + ICE candidate exchange) via
   Action Cable, so `WebRTCMultiplayerPeer` connections can be
   established over the internet without manual port-forwarding.
-- Rating: a single `users.rating` column (simple Elo/Glicko-style),
-  updated once per finished match. **Not** a separately maintained
-  "leaderboard" table — a stored ranking table drifts out of sync with
-  the source data; a leaderboard is a query (`ORDER BY rating`) over
-  `users`, not its own persisted state.
+- **Rating.** `users.rating` (Elo, K=32), updated once per finished
+  match. Not a separate leaderboard table — a leaderboard is a query
+  (`ORDER BY rating`) over `users`.
 
 ## What this service never owns
 
-Same rule this project already enforces for `net/game_log.gd` and
-`net/replay_recorder.gd`, both of which write to local files on the
-host's own machine, never a database: **no per-tick simulation state
-ever reaches this service.** Never position, velocity, aim direction,
-raw input, or physics. Only persistent, occasional events: `match
-created`, `match started`, `match finished`, `player joined`, `player
-left`, `result submitted`. The moment anything resembling per-frame
-data would touch this backend, that's a sign the design has drifted —
-stop and reconsider before adding the column/call.
-
-The match's own live simulation stays exactly as
-[3](03-networking-and-match-modes.md) already describes: server-
-authoritative, with the HOST peer as that authority. Swapping
-`ENetMultiplayerPeer` for `WebRTCMultiplayerPeer` (already scoped in
-that file, isolated to `net/network_manager.gd`) only changes how the
-HOST and CLIENT peers find and connect to each other through NAT — it
-is explicitly **not** a move to a symmetric P2P trust model. The
-connection *topology* between the 2 Godot processes is peer-to-peer
-(no relay in the data path once WebRTC negotiation completes); match
-*authority* stays entirely on the HOST, unchanged from how ENet works
-today.
+**No per-tick simulation state ever reaches this service.** Never
+position, velocity, aim direction, raw input, or physics — only
+persistent, occasional events (match created/started/finished, player
+joined/left). The connection *topology* is a star (every CLIENT
+connects only to the HOST, mirroring ENet today); match *authority*
+stays entirely on the HOST. WebRTC only changes how the HOST and
+CLIENT peers find and connect through NAT — not a move to a P2P trust
+model. **The website never gains a gameplay affordance** — character
+creation/editing, matchmaking, and gameplay stay game-only.
 
 ## Architecture
 
 ```text
                     ┌──────────────────────┐
-                    │      Rails 8.1       │
-                    │                      │
-                    │ SQLite               │
-                    │                      │
-                    │ users                │
-                    │ rooms                │
-                    │ matches              │
-                    │ match_players        │
-                    │                      │
-                    │ Action Cable         │
-                    │ Signaling            │
-                    └──────────┬───────────┘
-                               │
+                    │   Rails 8.1 + SQLite  │
+                    │  amazing-clash-backend│
+                    │                       │
+                    │ users / steam_identities
+                    │ characters            │
+                    │ rooms / room_players   │
+                    │ matches / match_players│
+                    │                       │
+                    │ Action Cable Signaling │
+                    └──────────┬────────────┘
                                │ signaling (SDP/ICE)
-                               │
                         ┌──────┴──────┐
-                        │             │
                    ┌────▼────┐   ┌────▼────┐
-                   │  STUN   │   │  TURN   │
-                   └────┬────┘   └────┬────┘
-                        │  NAT        │ fallback (symmetric
-                        │  traversal  │ NAT, STUN alone fails)
+                   │  STUN   │   │  TURN   │  ← not hosted yet, see
+                   └────┬────┘   └────┬────┘    "Still open" below
+                        │  NAT        │ fallback (symmetric NAT)
                         └──────┬──────┘
                   ┌────────────┴────────────┐
-                  │                         │
              ┌────▼─────┐             ┌────▼─────┐
              │ Godot A  │             │ Godot B  │
-             │   HOST   │             │  CLIENT  │
-             │(authority)│            │          │
-             └────┬─────┘             └────┬─────┘
-                  │                         │
-                  └══ P2P (transport) ══════┘
-                    gameplay, authority on HOST
+             │   HOST   │◄═══ P2P ═══►│  CLIENT  │
+             │(authority)│  transport │          │
+             └──────────┘             └──────────┘
 ```
 
-TURN is drawn as a real fallback path, not an optional extra: STUN
-alone cannot punch through symmetric NAT, and this project's own
-open-questions note already flags TURN as likely necessary, not a
-maybe.
+## Datastore and hosting
 
-## Datastore: SQLite, deliberately
+SQLite (Solid Queue/Cache/Cable, no Redis) — a single Rails process on
+one server. Deployed via Kamal to `thi.dev.br`, sharing that host with
+the `42arks` project behind an external reverse proxy (not managed in
+either repo). `STEAM_AUTH_MODE=mock` **in production right now** — see
+"Still open."
 
-SQLite is enough for this stage — a single Rails process, one
-VPS/machine, no concurrent-writer scale problem yet:
+## Auth: bearer token, no expiry
 
-```text
-VPS
-├── Rails
-├── SQLite
-└── Action Cable
+The game client authenticates with `Authorization: Bearer <token>`
+(never a cookie — that's the website's own, separate flow). The token
+is a 64-char hex secret returned **once**, at login (`POST
+/api/v1/sessions` or `/api/v1/steam_sessions`), and does **not
+expire** — it's valid until an explicit `DELETE /api/v1/sessions`
+(logout) or the account is deactivated. Store it securely client-side;
+there is no refresh flow to build against.
+
+- `POST /api/v1/sessions` `{email_address, password}` → `201
+  {token, user: {id, username, rating}}`. Rate-limited (10/3min →
+  `429 rate_limited`). Errors: `invalid_credentials` (401),
+  `account_deactivated` / `email_unconfirmed` / `mfa_required` (403 —
+  an admin account without MFA satisfied can't log in via the game
+  client at all; not expected to matter for real players).
+- `DELETE /api/v1/sessions` (bearer) → `204`.
+- `POST /api/v1/steam_sessions` `{app_id, ticket}` → `201 {token,
+  user}`, find-or-create automatically (no separate Steam signup).
+  **Mocked today** (`STEAM_AUTH_MODE=mock`): the backend expects a
+  literal ticket string `"mock:<steam_id>:<persona_name>"`, not a real
+  Steamworks call — the real HTTP verifier exists and is tested but
+  isn't wired to a live App ID/Web API key yet. Errors: `invalid_ticket`
+  (401), `registration_conflict` (409, rare).
+- `POST /api/v1/steam_links` (bearer) `{app_id, ticket}` — links Steam
+  to the current account (email+password and Steam can coexist).
+- `POST /api/v1/email_credentials` (bearer) `{email_address,
+  password}` — lets a Steam-only account add email/password later
+  (sends confirmation, doesn't require it to keep playing via Steam).
+
+**Email/password *registration* is web-only** — the game client never
+calls it.
+
+## Characters
+
+```
+GET    /api/v1/characters
+POST   /api/v1/characters   {name, class_id, weapon_id, boot_id, perk_id}
+PATCH  /api/v1/characters/:id
+DELETE /api/v1/characters/:id
+```
+All bearer, scoped to the caller's own roster. Character JSON:
+`{id, name, class_id, weapon_id, boot_id, perk_id}`.
+
+**Enumerated ids — verified identical to `net/lobby_state.gd` right
+now (2026-09-08), but not synced automatically:**
+- `class_id`: `vanguard`, `ranged_mage`, `warden`
+- `weapon_id`: `iron_sword`, `twin_daggers`, `warhammer`
+- `boot_id`: `swift_boots`, `warded_greaves`, `tumbling_boots`
+- `perk_id`: `vitality`, `swift`, `adept`, `balanced`
+
+Any class accepts any weapon/boot/perk (no compatibility table) — this
+matches `net/lobby_state.gd`'s own "4 fully independent axes" model
+exactly. **Adding/renaming a class, weapon, boot, or perk on the Godot
+side requires updating `Character::{CLASS,WEAPON,BOOT,PERK}_IDS` in the
+Rails app in lockstep** — there is no shared source of truth between
+the two repos for this today. A character created with an unrecognized
+id would fail to spawn in a match.
+
+Slot cap: `422 slot_limit_reached` past `character_slot_limit` (default
+5/account). Deleting a character seated in a live lobby → `422
+character_in_use`.
+
+## Rooms (matchmaking v1: room codes + public browse, no queue)
+
+```
+POST   /api/v1/rooms                      {match_mode, character_id, max_players?, friendly_fire?, round_target?}
+GET    /api/v1/rooms?page=1               → {page, rooms: [{code, match_mode, max_players, player_count, friendly_fire, round_target, host_username}, ...]}
+GET    /api/v1/rooms/:code                → full lobby JSON (initial fetch; live updates come via Action Cable, see below)
+POST   /api/v1/rooms/:code/join           {character_id}
+DELETE /api/v1/rooms/:code/leave          (host leaving cancels the whole room — no host migration in v1)
+PATCH  /api/v1/rooms/:code/players/me     {character_id?, team_id?}
+POST   /api/v1/rooms/:code/start          (host-only → creates the match, see below)
 ```
 
-Redis/Sidekiq are not required to start, depending on how the
-WebSocket/Active Job stack ends up configured. When (not if, should
-this project grow that far) multiple Rails instances are needed behind
-a load balancer, that's the natural point to move off SQLite to
-PostgreSQL — not before, and not "because it's production". Keep the
-ActiveRecord layer clean (no raw SQLite-specific SQL in application
-code) so that migration stays mechanical when it actually happens.
+`match_mode`/`character_id` are the only required `create` fields;
+`max_players` (8), `friendly_fire` (false), `round_target` (2) default
+server-side. `:code` is case-insensitive. Browse pagination is 20/page
+with **no `total`/`has_more` field** — stop once a page returns fewer
+than 20 rows.
 
-```text
-             Load Balancer
-                  │
-        ┌─────────┴─────────┐
-        ▼                   ▼
-    Rails #1             Rails #2
-        │                   │
-        └─────────┬─────────┘
-                  │
-               PostgreSQL
+Lobby JSON:
+```json
+{
+  "code": "AB12CD", "status": "waiting", "match_mode": "team",
+  "max_players": 8, "friendly_fire": false, "round_target": 2,
+  "host_id": 1,
+  "players": [
+    {"user_id": 1, "username": "...", "team_id": 0,
+     "character": {"id": 1, "name": "...", "class_id": "...", "weapon_id": "...", "boot_id": "...", "perk_id": "..."}}
+  ]
+}
 ```
 
-## Schema
+Team assignment on join with no explicit `team_id`: smaller team, ties
+→ team 0 (team mode only; `team_id` stays null in free-for-all).
 
-```ruby
-# db/schema.rb
+**Structured error `type`s:** `character_not_found`, `invalid`,
+`code_generation_failed`, `not_found`, `room_not_waiting`,
+`already_in_room`, `room_full`, `not_in_room`, `not_host`,
+`not_enough_players` (min 2), `teams_unbalanced` (team mode needs both
+teams non-empty).
 
-create_table "users" do |t|
-  t.string :username, null: false
-  t.string :password_digest, null: false
-  t.integer :rating, null: false, default: 1000
-  t.timestamps
-end
+## Matches — the real Godot-side work
 
-create_table "rooms" do |t|
-  t.string :code, null: false
-  t.references :host, null: false, foreign_key: { to_table: :users }
-  t.string :status, null: false # waiting | in_progress | finished
-  t.timestamps
-end
+**This is the actual net-new integration work**: the HOST process
+needs an HTTP client reporting events at exactly the hooks that already
+call `GameLog.info()` today:
 
-create_table "matches" do |t|
-  t.references :room, null: false
-  t.string :status, null: false # loading | in_progress | round_intermission | finished
-  t.string :match_mode, null: false # team | free_for_all
-  t.boolean :friendly_fire, null: false, default: false
-  t.integer :round_target, null: false, default: 2 # best-of-3 today, see core/match_state.gd's ROUND_TARGET
-  t.integer :winning_team # null until decided
-  t.boolean :is_draw, null: false, default: false
-  t.datetime :started_at
-  t.datetime :finished_at
-  t.timestamps
-end
+| Godot call site | Event to report |
+|---|---|
+| `MatchState.enter_in_progress()` | `POST /api/v1/matches/:id/events {event:"started"}` |
+| `resolve_round_result()` | `{event:"round_finished", round_wins:{"<user_id>":<count>, ...}}` |
+| `enter_post_game()` | `{event:"finished", winning_team:<0\|1\|null>, is_draw:<bool>}` |
 
-create_table "match_players" do |t|
-  t.references :match, null: false
-  t.references :user, null: false
-  t.integer :team_id # null in free_for_all
-  t.string :class_id, null: false   # vanguard | ranged_mage | warden
-  t.string :weapon_id, null: false  # iron_sword | twin_daggers | warhammer
-  t.string :boot_id, null: false
-  t.string :perk_id, null: false
-  t.integer :round_wins, null: false, default: 0
-  t.timestamps
-end
+The `:id` comes from `POST /api/v1/rooms/:code/start`'s response (the
+match is created there, not by the first event) — that call must
+happen when the host presses Start, i.e. where `LOADING`'s handshake
+begins (`net/loading_reporter.gd`), not at `enter_in_progress()` itself.
+
+Every call is bearer + **host-only** (`403 not_host` otherwise) and
+returns the full match JSON:
+```json
+{
+  "id": 1, "room_code": "AB12CD", "status": "finished",
+  "match_mode": "team", "friendly_fire": false, "round_target": 2,
+  "winning_team": 0, "is_draw": false,
+  "started_at": "...", "finished_at": "...",
+  "players": [
+    {"user_id": 1, "username": "...", "user_deleted": false,
+     "team_id": 0, "character_id": 1,
+     "class_id": "...", "weapon_id": "...", "boot_id": "...", "perk_id": "...",
+     "round_wins": 2, "rating": 1016}
+  ]
+}
 ```
+`username` is already tombstone-safe (frozen at account deletion) —
+always read it from here, never assume a live user lookup.
 
-`match_players`'s 4 loadout columns (`class_id`/`weapon_id`/`boot_id`/
-`perk_id`) mirror the 4 fully independent loadout axes
-`net/lobby_state.gd` already tracks in-match (Phase 16 — see
-`docs/blueprint/02-confirmed-mechanics.md`). `round_target`/
-`round_wins` exist because a match is already best-of-N
-(`core/match_state.gd`'s `ROUND_TARGET`), not first-to-one-win — a
-schema that only stored a single winner with no round count would lose
-real match history. `winning_team`/`is_draw` mirror `MatchState.
-winning_team`/`WinCondition.DRAW`'s own existing semantics
-(`gameplay/match/`), rather than inventing a different shape for the
-same concept.
+`status` can come back **`abandoned`** — backend-only bookkeeping (an
+hourly reaper job closes out a match where every participant's
+connection has looked inactive for 30+ minutes) that the Godot client
+never reports itself but can receive if the host reconnects after the
+job already closed it out. Treat it as terminal, same as `finished`,
+with no winner. Once `finished`/`abandoned`, **every further event is
+a no-op 200** — safe to retry blindly on a flaky connection.
+`unknown_event` (422) for anything outside `started`/`round_finished`/
+`finished`.
 
-Indexes:
+Rating: Elo K=32, team-average or FFA-pairwise-by-`round_wins`,
+applied automatically inside `finished`. Not tuned against real match
+data yet.
 
-```text
-rooms.code
-rooms.status
-matches.room_id
-matches.status
-match_players.match_id
-match_players.user_id
-users.username
+## WebRTC signaling (Action Cable)
+
+Connect: `wss://clash.amazing.thi.dev.br/cable?token=<bearer_token>`.
+Subscribe to `RoomSignalingChannel` with `{room_code:}` (case-
+insensitive) — rejected unless the connection's user has a seat in
+that room.
+
+Send (`perform "receive"`):
+```json
+{"type": "offer" | "answer" | "ice_candidate", "to_user_id": 2, "payload": {...}}
 ```
+Receive (broadcast):
+```json
+{"type": "offer" | "answer" | "ice_candidate", "from_user_id": 1, "payload": {...}}
+```
+Note the key changes from `to_user_id` (send) to `from_user_id`
+(receive) — this is a per-recipient relay, not an echo. An
+unrecognized `type`, a missing `to_user_id`, or a `to_user_id` that
+isn't a member of the same room is silently dropped, no error. Rails
+never interprets the SDP/ICE payload.
 
-## The integration surface Godot needs to grow later
+Topology is the star this project already uses with ENet — no
+mesh, no change to who talks to whom, only how they find each other.
 
-Not built yet, and not implied for free by the signaling channel
-above: the Godot **HOST** process needs an HTTP client reporting
-persistent events to the Rails API. The natural call sites are the
-exact same hooks that already call `GameLog.info()` today —
-`MatchState.enter_in_progress()`, `resolve_round_result()`,
-`enter_post_game()` — since those are already this project's own
-"something persistence-worthy just happened" boundary. This is real,
-net-new work on the Godot side, not a side effect of adding signaling;
-name it explicitly when scoping the integration phase rather than
-assuming it comes bundled.
+```
+GET /api/v1/ice_servers (bearer)
+→ {"ice_servers": [{"urls":"stun:stun.l.google.com:19302"}, {"urls":"turn:...","username":"...","credential":"..."}]}
+```
+STUN (public, free) always present. **TURN entry only appears once
+Rails credentials configure it — not done yet** (see "Still open"):
+without it, players behind symmetric NAT can't connect over the real
+internet, only STUN-reachable NATs.
 
-## Still open
+## The `net/network_manager.gd` transport swap (unchanged from before)
 
-Carried over from [3](03-networking-and-match-modes.md)'s own "not yet
-decided" note, now narrower:
+Still exactly as scoped in
+[3](03-networking-and-match-modes.md#future-internet-play-without-manual-port-forwarding):
+`host()`/`join()` swap `ENetMultiplayerPeer` for a
+`WebRTCMultiplayerPeer` wrapping one `WebRTCPeerConnection`/
+`WebRTCDataChannel` pair per remote peer, fed by the signaling above;
+`get_peer_rtt_ms()` needs a small custom ping/pong RPC (WebRTC has no
+`ENetPacketPeer.PEER_ROUND_TRIP_TIME` equivalent). Every other file
+(`@rpc`, `MultiplayerSpawner`, `multiplayer.get_unique_id()`/
+`get_peers()`) needs zero changes — confirmed by code audit,
+2026-09-04.
 
-- Where the signaling/TURN service is hosted, and who pays for it.
-- Which STUN/TURN provider to use.
-- Whether login is required to play a match at all, or a guest-without-
-  account path stays available (this project has never required
-  identity to play before now).
-- Rating algorithm specifics (Elo vs. Glicko vs. something simpler) —
-  `users.rating`'s existence is proposed here, its update formula is
-  not.
-- Whether matchmaking (auto-pairing players) ships alongside this, or
-  room codes stay the only way to form a room for longer, mirroring
-  `03`'s own still-open framing of that question.
+## Still open (infra, not code — doesn't block starting integration)
 
-Once these settle, record the decisions back into
-[5. Open Questions](05-open-questions.md) the same way every other
-architecture decision in this blueprint is tracked — don't let them
-live only in this file's own "still open" list once they're actually
-answered.
+- **TURN**: no provider hosted/configured yet. Blocks real internet
+  play for players behind symmetric NAT; doesn't block building and
+  testing the integration itself (STUN-only covers most home NATs).
+- **Real Steam credentials**: `STEAM_AUTH_MODE=mock` in production —
+  the real `Steam::HttpTicketVerifier` exists and is tested but has no
+  live App ID/Web API key. Steam login won't work for real players
+  until this is set.
+- **Elo K-factor**: not tuned against real match data.
+- **Where TURN is hosted and who pays** — same open question `3`'s own
+  "Future: Internet Play" section already carried, now narrowed to
+  "which provider," not "whether to have one."
+
+Once these settle, record them in [5. Open Questions](05-open-questions.md)
+— don't let them live only in this file.

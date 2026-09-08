@@ -70,6 +70,20 @@ detail lives:
   [3](03-networking-and-match-modes.md) as intended architecture but is
   not yet implemented — tracked as a backlog item in
   `memory/progress.md`.
+- **Persistent accounts, rooms, matchmaking, and WebRTC signaling
+  backend**: **confirmed built and live** (2026-09-08) — a separate
+  Rails 8.1 + SQLite app (`amazing-clash-backend`, local path
+  `amazing-clash-app`), deployed at `https://clash.amazing.thi.dev.br`.
+  Answers [3](03-networking-and-match-modes.md)'s "Future: Internet
+  Play" question in full on the backend side: accounts (email/password
+  + Steam), room codes + public browse (no auto-pairing queue in v1),
+  match history + Elo rating (K=32, untuned), and Action Cable
+  signaling for the eventual `WebRTCMultiplayerPeer` swap. See
+  [7. Backend Service](07-backend-service.md) for the full API contract
+  — **Godot-side integration itself (the HTTP client at the
+  `GameLog.info()` call sites, the actual transport swap) has not
+  started**, per the human owner's own confirmed sequencing (build the
+  Rails side standalone first).
 
 ## Still open
 
@@ -79,3 +93,14 @@ detail lives:
   [research/eslabong-inspiration/04](../research/eslabong-inspiration/04-a-precedent-for-live-pvp-battlerite.md)).
   Not a blocker for this blueprint or the MVP; flagged so it isn't
   rediscovered the hard way whenever it does come up.
+- **TURN hosting/provider** for the backend's WebRTC signaling — not
+  chosen or configured yet. Blocks real internet play for players
+  behind symmetric NAT specifically, not the Godot-side integration
+  work itself (STUN alone covers most home NATs). See
+  [7](07-backend-service.md)'s "Still open."
+- **Real Steam credentials** (App ID + Steamworks partner Web API key)
+  for the backend's Steam login — it runs in mock mode in production
+  today. See [7](07-backend-service.md)'s "Still open."
+- **Elo K-factor tuning** — the backend ships a concrete K=32 default,
+  not yet tuned against real match data. See
+  [7](07-backend-service.md)'s "Still open."
